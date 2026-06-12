@@ -84,6 +84,21 @@ myagent
 > 安全:`myagent-web` 默认绑 `127.0.0.1`。若改用 `AGENT_WEB_HOST=0.0.0.0` 对外暴露,
 > 务必先设 `AGENT_API_TOKEN`,否则 `/api/*` 控制面将无认证(见鉴权中间件)。
 
+## 连接外部工具(MCP 连接器)
+
+通过 MCP(Model Context Protocol)接入任意外部 server 的工具(文件系统、Git、
+数据库、Notion…)。它们会被包成 `mcp.<server>.<tool>` 能力,**和内置工具一样过治理**
+(硬/软边界、按角色白名单、确认、计费)。
+
+```bash
+pip install "my-agent[mcp]"          # 安装 MCP SDK
+cp mcp_servers.json.example mcp_servers.json   # 按需改成你的 server
+myagent-web                          # 启动时自动连接并注册工具(日志打印 [mcp] ...)
+```
+
+风险默认 fail-safe:工具声明 `readOnlyHint` 才算只读放行,未声明一律按高危需确认。
+连接失败/未装 SDK 时自动跳过,不影响其余功能。
+
 试试这些输入:
 
 ```

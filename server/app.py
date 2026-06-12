@@ -291,6 +291,32 @@ async def _run_ext_channel(channel_name: str) -> None:
             print(f"[{channel_name}] 处理异常: {e}")
 
 
+async def _register_mcp_tools(config_path: str = "mcp_servers.json") -> None:
+    """连接 mcp_servers.json 里的 MCP server,把工具注册为全局附加能力。fail-soft。"""
+    try:
+        from capabilities.mcp_connector import (
+            load_mcp_servers, connect_stdio_server, MCPConnector,
+        )
+        from core.bootstrap import register_extra_capability
+    except Exception:
+        return
+    specs = load_mcp_servers(config_path)
+    if not specs:
+        return
+    for spec in specs:
+        if not spec.get("command"):
+            continue  # 暂只支持 stdio 型(HTTP 型留待后续)
+        try:
+            client = await connect_stdio_server(
+                spec["command"], spec.get("args"), spec.get("env"))
+            caps = await MCPConnector(spec["name"], client).discover()
+            for cap in caps:
+                register_extra_capability(cap)
+            print(f"[mcp] {spec['name']}: 注册 {len(caps)} 个工具")
+        except Exception as e:
+            print(f"[mcp] {spec['name']} 连接失败(已跳过): {e}")
+
+
 def create_app():
     load_env()
     # ── 生命周期:启动时初始化外部渠道 + 定时任务调度器,关闭时停掉调度器 ──
@@ -330,6 +356,11 @@ def create_app():
                 task_type="memory_ingest",
             )
             print(f"[server] 已注册个人数据索引任务({len(Config.PERSONAL_DIRS)} 个目录,每天 03:30)")
+
+        # 外部连接器:按 mcp_servers.json 连接 MCP server,把其工具注册为全局附加能力,
+        # 之后每个会话的 registry 都会带上(同样过治理)。fail-soft:无配置/无 SDK 即跳过。
+        await _register_mcp_tools()
+
         yield
         if _scheduler is not None:
             _scheduler.stop()
@@ -989,6 +1020,13 @@ def create_app():
                 except Exception:
                     pass
 
+            # 证据接入:开启时提供一个含 web.search 的最小 registry 供圆桌检索锚定。
+            rt_registry = None
+            if payload.get("enable_evidence"):
+                from capabilities.base import CapabilityRegistry
+                from capabilities.tools.web import WebSearch
+                rt_registry = CapabilityRegistry([WebSearch()])
+
             try:
                 result = await rt.run(
                     configs=payload.get("agents", []),
@@ -999,9 +1037,14 @@ def create_app():
                     user_queue=rt_user_queue,
                     mode=payload.get("mode", "brainstorm"),
                     goal=record["goal"],
+                    registry=rt_registry,
+                    enable_evidence=bool(payload.get("enable_evidence", False)),
+                    enable_judge=bool(payload.get("enable_judge", False)),
                 )
                 record["stopped"] = result.get("stopped", record["stopped"])
                 record["turns"] = result.get("turns", record["turns"])
+                if result.get("verdict"):
+                    record["verdict"] = result["verdict"]
                 if not record["summary"] and result.get("summary"):
                     record["summary"] = result["summary"]
             except asyncio.CancelledError:

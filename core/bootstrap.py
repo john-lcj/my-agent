@@ -48,12 +48,22 @@ def _gui_capable_profiles() -> frozenset[str]:
     return frozenset({"interactive", "cli"})
 
 
+# 全局附加能力(如启动时连接的 MCP 工具)。在 build_registry 末尾并入每个新建的
+# registry,使外部连接器的工具对 agent 可用,且照样走治理。
+_EXTRA_CAPABILITIES: list = []
+
+
+def register_extra_capability(cap) -> None:
+    """注册一个全局附加能力,后续每次 build_registry 都会带上它(重名跳过)。"""
+    _EXTRA_CAPABILITIES.append(cap)
+
+
 def build_registry(
     profile: str = "interactive",
     *,
     worker_registry: Any = None,
 ) -> CapabilityRegistry:
-    """按 profile 注册能力 + 加载 skill 插件。"""
+    """按 profile 注册能力 + 加载 skill 插件 + 并入全局附加能力(MCP 等)。"""
     caps = [ReadFile(), ListDir(), WriteFile(), RunShell(),
             WebSearch(), WebFetch(),
             RememberMemory(), RecallMemory(),
@@ -70,6 +80,12 @@ def build_registry(
     registry = CapabilityRegistry(caps)
     from skills.paths import build_skill_registry
     build_skill_registry().load_all_into(registry)
+    # 附加能力(MCP 外部工具等):重名跳过,不覆盖内置。
+    for cap in _EXTRA_CAPABILITIES:
+        try:
+            registry.register(cap)
+        except ValueError:
+            pass
     return registry
 
 

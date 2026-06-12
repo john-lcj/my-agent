@@ -1,0 +1,15 @@
+{
+  "_说明": "复制为 mcp_servers.json 即生效。需先 `pip install 'my-agent[mcp]'`(或 pip install mcp)。启动 Web 服务时会连接以下 MCP server,把其工具注册成 mcp.<name>.<tool> 能力,照常走治理。",
+  "servers": [
+    {
+      "name": "fs",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/Documents"]
+    },
+    {
+      "name": "git",
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "/Users/you/project"]
+    }
+  ]
+}

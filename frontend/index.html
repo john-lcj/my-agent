@@ -1147,6 +1147,10 @@ option{background:var(--card)}
         <div class="toggle on" id="rt-interrupt-toggle" onclick="this.classList.toggle('on')"></div>
         <span class="param-label" style="margin-left:8px">头脑风暴</span>
         <div class="toggle on" id="rt-brainstorm-toggle" onclick="this.classList.toggle('on')"></div>
+        <span class="param-label" style="margin-left:8px" title="开场用联网搜索检索议题事实,作为各方共享证据">证据接入</span>
+        <div class="toggle" id="rt-evidence-toggle" onclick="this.classList.toggle('on')"></div>
+        <span class="param-label" style="margin-left:8px" title="会后由独立裁判对各方立场打分、点出最强论证与遗留风险">裁判</span>
+        <div class="toggle" id="rt-judge-toggle" onclick="this.classList.toggle('on')"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1392,7 +1396,10 @@ function handle(ev) {
   else if (etype === 'rt_phase') { rtPhase(p); }
   else if (etype === 'rt_speaking') { showRTThinking(p); }
   else if (etype === 'rt_message')  { rtMessage(p); }
+  else if (etype === 'rt_evidence') { rtEvidence(p.content); }
+  else if (etype === 'rt_stance')   { rtStance(p); }
   else if (etype === 'rt_summary')  { rtSummary(p.content); }
+  else if (etype === 'rt_judge')    { rtJudge(p.content); }
   else if (etype === 'rt_done')     { rtDone(p); }
   else if (etype === 'debate_message') {
     const side = p.side === 'pro' ? t('debatePro') : t('debateCon');
@@ -1862,6 +1869,42 @@ function rtSummary(content) {
   rtData.summary = content;
 }
 
+function rtEvidence(content) {
+  const feed = document.getElementById('rt-feed');
+  if (!feed) return;
+  document.getElementById('rt-empty')?.style && (document.getElementById('rt-empty').style.display = 'none');
+  const d = document.createElement('div');
+  d.className = 'rt-summary-card';
+  d.style.borderLeft = '3px solid #4cbfb0';
+  d.innerHTML = `
+    <div class="rt-summary-title">🔎 共享证据(检索锚定)</div>
+    <div class="rt-summary-content md">${renderMD(content || '')}</div>`;
+  feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+}
+
+function rtStance(p) {
+  const feed = document.getElementById('rt-feed');
+  if (!feed || !p || !p.stance) return;
+  const d = document.createElement('div');
+  d.className = 'rt-phase-banner';
+  d.style.opacity = '0.75';
+  d.textContent = `↳ ${p.agent_name || ''} 立场:${p.stance}`;
+  feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+}
+
+function rtJudge(content) {
+  const feed = document.getElementById('rt-feed');
+  if (!feed) return;
+  const d = document.createElement('div');
+  d.className = 'rt-summary-card';
+  d.style.borderLeft = '3px solid #b08968';
+  d.innerHTML = `
+    <div class="rt-summary-title">⚖ 裁判评判</div>
+    <div class="rt-summary-content md">${renderMD(content || '')}</div>`;
+  feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+  if (window.rtData) rtData.verdict = content;
+}
+
 function rtDone(p) {
   document.getElementById('thinking-rt')?.remove();
   document.getElementById('btn-rt-stop').style.display = 'none';
@@ -2187,6 +2230,8 @@ function startRT() {
   const maxTurns = parseInt(document.getElementById('rt-max-turns').value) || 15;
   const interrupt = document.getElementById('rt-interrupt-toggle').classList.contains('on');
   const brainstorm = document.getElementById('rt-brainstorm-toggle').classList.contains('on');
+  const useEvidence = document.getElementById('rt-evidence-toggle').classList.contains('on');
+  const useJudge = document.getElementById('rt-judge-toggle').classList.contains('on');
   const goal = document.getElementById('rt-goal-inp').value.trim();
 
   const configs = AGENTS.filter(a => agentState[a.id].selected).map(a => {
@@ -2232,6 +2277,8 @@ function startRT() {
     topic, agents: configs,
     max_turns: maxTurns,
     enable_interrupt: interrupt,
+    enable_evidence: useEvidence,
+    enable_judge: useJudge,
     mode: brainstorm ? 'brainstorm' : 'discussion',
     goal,
   }));
