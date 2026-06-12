@@ -9,6 +9,11 @@ description = "一个有分寸感的多 agent 平台:统一能力收口 + 硬/�
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
 authors = [{ name = "captain" }]
 keywords = ["agent", "llm", "multi-agent", "governance", "mcp"]
 
