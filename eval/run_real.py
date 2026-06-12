@@ -76,10 +76,31 @@ async def _run_task(prompt: str, model: str | None) -> str:
 _ARTIFACT_EXT = (".html", ".htm", ".css", ".js", ".md", ".txt", ".json", ".csv", ".svg", ".py")
 
 
-def _collect_artifacts(answer: str, per_file: int = 4000, max_files: int = 3) -> str:
-    """从回答里抓出文件路径,把**磁盘上真实存在**的产物内容读出来给评委核验。
+def _artifact_completeness(text: str, path: str) -> str:
+    """对产物做"完整性体检",让评委不被截断误导成'文件不完整'。"""
+    low = text.lower()
+    flags = []
+    if path.lower().endswith((".html", ".htm")):
+        flags.append(f"DOCTYPE={'✓' if '<!doctype html' in low else '✗'}")
+        flags.append(f"闭合</html>={'✓' if '</html>' in low else '✗'}")
+        flags.append(f"闭合</body>={'✓' if '</body>' in low else '✗'}")
+        flags.append(f"内联<style>={'✓' if '<style' in low else '✗'}")
+    return " ".join(flags)
 
-    真产出 → 评委看到文件内容;凭空编造的路径 → 文件不存在 → 自动落空、应判低分。
+
+def _excerpt(text: str, head: int = 2800, tail: int = 1500) -> str:
+    """大文件取头+尾,中间省略——既能判完整性,又不被截断误判。"""
+    if len(text) <= head + tail:
+        return text
+    return (text[:head]
+            + f"\n\n…(中间省略 {len(text) - head - tail} 字符)…\n\n"
+            + text[-tail:])
+
+
+def _collect_artifacts(answer: str, max_files: int = 3) -> str:
+    """从回答里抓出文件路径,把**磁盘上真实存在**的产物读出来给评委核验。
+
+    真产出 → 评委看到文件头尾 + 完整性体检;凭空编造的路径 → 文件不存在 → 落空、应判低分。
     """
     cands: set[str] = set(re.findall(r"`([^`\n]+)`", answer or ""))
     cands |= set(re.findall(r"(?:^|\s)((?:~|\./|/)[\w./ \-]+\.\w{1,5})", answer or ""))
@@ -97,10 +118,13 @@ def _collect_artifacts(answer: str, per_file: int = 4000, max_files: int = 3) ->
         seen.add(path)
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read(per_file)
+                content = f.read()
         except Exception:
             continue
-        blocks.append(f"--- 文件 {p}({os.path.getsize(path)} 字节)---\n{content}")
+        size = os.path.getsize(path)
+        check = _artifact_completeness(content, p)
+        header = f"--- 文件 {p}({size} 字节;{check})---" if check else f"--- 文件 {p}({size} 字节)---"
+        blocks.append(f"{header}\n{_excerpt(content)}")
         if len(blocks) >= max_files:
             break
     return "\n\n".join(blocks)
@@ -114,7 +138,7 @@ async def _judge(task: dict, answer: str, model: str | None) -> tuple[int, str]:
     judge_answer = (answer or "")[:4000]
     artifacts = _collect_artifacts(answer or "")
     if artifacts:
-        judge_answer += "\n\n【agent 实际产出的文件(从磁盘读取,用于核验)】\n" + artifacts[:8000]
+        judge_answer += "\n\n【agent 实际产出的文件(从磁盘读取,用于核验;大文件取头尾+完整性体检)】\n" + artifacts[:12000]
     prompt = _JUDGE_PROMPT.format(
         prompt=task["prompt"], rubric=task["rubric"], answer=judge_answer)
     step = await llm.next_step([Message(role=Role.USER, content=prompt)], [])
