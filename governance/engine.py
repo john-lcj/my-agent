@@ -49,7 +49,8 @@ _DEFAULT_POLICY = {
         "block_remember_for_roles": ["scheduler"],
     },
     "confirm": {
-        "capabilities": ["fs.write", "gui.control", "payment."],
+        "capabilities": ["fs.write", "gui.control", "payment.",
+                         "skill.file_edit", "skill.file_append"],
         "shell_patterns": [
             {"pattern": r"\brm\b", "reason": "删除文件或目录,需确认。"},
             {"pattern": r"\bmv\b", "reason": "移动/重命名会改动现有文件,需确认。"},

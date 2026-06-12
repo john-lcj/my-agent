@@ -62,6 +62,8 @@ confirm:
     - fs.write
     - gui.control
     - payment.
+    - skill.file_edit      # 改文件,等同 fs.write,需确认
+    - skill.file_append    # 追加写文件,需确认
   shell_patterns:
     - pattern: '\brm\b'
       reason: '删除文件或目录,需确认。'
