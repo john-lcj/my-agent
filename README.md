@@ -9,6 +9,27 @@
 > 执行 shell、读写文件——治理层提供"分寸"约束,但不是沙箱。**未经额外加固(`/ws` 鉴权、
 > shell 沙箱化、多用户隔离),请勿对公网开放或作为多用户在线服务。** 详见 [SECURITY.md](SECURITY.md)。
 
+## 60 秒快速开始
+
+**方式一 · 本机(有 Python)**
+
+```bash
+make setup     # 创建 .venv 并装好依赖(首次)
+make web       # 启动网页 → http://127.0.0.1:8000
+make cli       # 或:终端对话(MockLLM 零配置即可跑)
+```
+
+**方式二 · Docker(零环境依赖)**
+
+```bash
+echo "AGENT_API_TOKEN=$(openssl rand -hex 16)" >> .env   # 容器访问需令牌
+make docker-up                                            # = docker compose up -d --build
+# 打开 http://127.0.0.1:8000 → 设置→「访问令牌」填入上面的 token 即可使用
+```
+
+> 没有 `make`?对应命令见下文与 `Makefile`。要用真实模型,在 `.env` 配 `DEEPSEEK_API_KEY`
+> 等并参考[质量评测](#质量评测用真实模型跑)一节。
+
 ## 当前状态
 
 - ✅ **单 agent 闭环**:感知 → 规划 → 治理 → 行动 → 反思(mock 与真实 DeepSeek 均验证)。

@@ -1,0 +1,20 @@
+# 不进镜像:虚拟环境、版本库、密钥、运行时数据、缓存。
+.venv/
+venv/
+.git/
+.gitignore
+.env
+.env.*
+logs/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.cursor/
+.idea/
+.vscode/
+.DS_Store
+node_modules/

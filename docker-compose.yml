@@ -1,0 +1,30 @@
+# my-agent —— 一键启动:docker compose up -d
+#
+# 前置:在项目根放一个 .env(至少含 AGENT_API_TOKEN;要用真实模型再加 DEEPSEEK_API_KEY 等)。
+#   echo "AGENT_API_TOKEN=$(openssl rand -hex 16)" >> .env
+#
+# 打开 http://127.0.0.1:8000,在设置→「访问令牌」里填入上面的 AGENT_API_TOKEN 即可使用。
+
+services:
+  myagent:
+    build: .
+    image: my-agent:latest
+    container_name: my-agent
+    ports:
+      # 默认只绑宿主机本机(127.0.0.1)。要让局域网/公网访问,改成 "8000:8000",
+      # 并务必已设置 AGENT_API_TOKEN(否则非本机访问会被拒)。
+      - "127.0.0.1:8000:8000"
+    environment:
+      # 容器内访问视为非本机 → 必须设令牌,否则 /ws 与 /api/* 全部拒绝。未设置则启动报错。
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:?请先在 .env 设置 AGENT_API_TOKEN(容器访问需令牌)}
+      AGENT_WEB_HOST: "0.0.0.0"
+      AGENT_WEB_PORT: "8000"
+      # 用真实模型时从 .env 透传(留空则回退 mock,可离线试用)。
+      AGENT_PROVIDER: ${AGENT_PROVIDER:-mock}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # 持久化:会话/记忆/任务/日志。删容器不丢数据。
+      - ./logs:/app/logs
+    restart: unless-stopped
