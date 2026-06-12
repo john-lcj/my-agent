@@ -88,17 +88,17 @@ uvicorn server.app:app --port 8000
 
 ```bash
 # 方式一:零安装运行(uv,推荐别人快速试)
-uvx --from "git+https://github.com/<你的用户名>/my-agent" myagent          # 终端对话
-uvx --from "git+https://github.com/<你的用户名>/my-agent[web]" myagent-web   # Web 界面
+uvx --from "git+https://github.com/john-lcj/my-agent" myagent          # 终端对话
+uvx --from "git+https://github.com/john-lcj/my-agent[web]" myagent-web   # Web 界面
 
 # 方式二:用 pipx 常驻安装
-pipx install "git+https://github.com/<你的用户名>/my-agent"
-pipx install "git+https://github.com/<你的用户名>/my-agent[all]"   # 含真实模型/Web/记忆/渠道全部依赖
+pipx install "git+https://github.com/john-lcj/my-agent"
+pipx install "git+https://github.com/john-lcj/my-agent[all]"   # 含真实模型/Web/记忆/渠道全部依赖
 myagent          # 终端对话(MockLLM 零依赖即可跑)
 myagent-web      # 启动 Web → http://127.0.0.1:8000
 
 # 方式三:克隆后可编辑安装(开发推荐,相对路径最稳)
-git clone https://github.com/<你的用户名>/my-agent && cd my-agent
+git clone https://github.com/john-lcj/my-agent && cd my-agent
 pip install -e ".[all]"
 myagent
 ```
