@@ -1,0 +1,38 @@
+# 单 agent 闭环(MockLLM)零依赖即可运行。
+# 下面是按需启用的可选依赖:
+
+# 真实模型 provider(用哪个装哪个):
+openai>=1.30.0          # OpenAI 及 DeepSeek(OpenAI 兼容协议)
+anthropic>=0.34.0       # Claude
+
+# 声明式策略 YAML(不装则回退到内置安全默认):
+PyYAML>=6.0
+
+# 向量记忆(RAG):
+sqlite-vec>=0.1.9
+numpy>=1.24.0
+
+# Token 计数(P1B):
+tiktoken>=0.7.0
+
+# GUI 控制(P3):
+# macOS: 零额外依赖(screencapture + osascript 系统内置)
+# 如需 Windows/Linux 可选装 pyautogui>=0.9.54
+
+# 外部渠道:
+aiohttp>=3.9.0          # 企业微信 / QQ Bot REST API
+aiosmtplib>=3.0.0       # 异步 SMTP 发信
+aioimaplib>=1.1.0       # 异步 IMAP 收信(轮询)
+cryptography>=42.0.0      # QQ Bot webhook URL 验证(Ed25519 签名)
+# pycryptodome>=3.20.0  # 企业微信消息加密 AES(可选,pip install pycryptodome)
+
+# CLI 交互(斜杠补全菜单):
+prompt_toolkit>=3.0.0
+
+# 聊天界面(Web)服务:
+fastapi>=0.110.0
+uvicorn>=0.29.0
+websockets>=12.0
+
+# 回归测试:
+pytest>=8.0.0
