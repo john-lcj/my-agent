@@ -1197,6 +1197,23 @@ function setAccessToken(t) {
   };
 })();
 
+/* ══ Skill 中文标签(id → 中文描述,用于调用时的友好提示)════════════ */
+const SKILL_LABELS = {};
+async function loadSkillLabels() {
+  try {
+    const res = await fetch('/api/skills');
+    const data = await res.json();
+    (data.skills || []).forEach(s => {
+      if (s && s.name) SKILL_LABELS[s.name] = s.description || s.name;
+    });
+  } catch { /* 离线:用 id 兜底 */ }
+}
+function skillLabel(skillId) {
+  const desc = SKILL_LABELS[skillId];
+  if (!desc) return skillId;
+  return desc.length > 22 ? desc.slice(0, 20) + '…' : desc;
+}
+
 /* ══ 全局状态 ════════════════════════════════════════════════════ */
 let ws = null;
 let currentView = 'chat';
@@ -1396,7 +1413,7 @@ function handle(ev) {
       return;
     }
     if (name.startsWith('skill.')) {
-      chatEvent('call', 'Skill', `${name.slice(6)} ${JSON.stringify(args)}`);
+      chatEvent('call', 'Skill', `正在调用「${skillLabel(name.slice(6))}」`);
       return;
     }
     chatEvent('call', t('evtCall'), `${name}`);
@@ -1620,7 +1637,7 @@ function updateThinkingStatus(name, intent) {
   const span = thinkingEl.querySelector('.thinking-label');
   if (!span) return;
   let label = CAP_STATUS_LABELS[name];
-  if (!label && name.startsWith('skill.')) label = `正在调用 ${name.slice(6)}…`;
+  if (!label && name.startsWith('skill.')) label = `正在调用「${skillLabel(name.slice(6))}」…`;
   if (!label) label = intent ? `${intent.slice(0, 40)}…` : '正在处理…';
   span.textContent = label;
 }
@@ -4113,6 +4130,7 @@ window.addEventListener('resize', () => {
 refreshSessions();
 loadRoundtablePresets().then(() => loadRosterAgents());
 loadSlashCommands();
+loadSkillLabels();
 loadSettingsUI();
 connect();
 </script>
