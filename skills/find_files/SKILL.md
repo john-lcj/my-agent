@@ -1,6 +1,6 @@
 ---
 name: find_files
-description: 按文件名通配符在目录下递归查找文件(如 *.py、index.*)
+description: 按文件名通配符在指定目录下递归查找文件,自动跳过噪声目录
 trigger: 找文件 哪个文件 find 列出 所有 .py 文件
 risk: READ
 ---

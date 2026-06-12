@@ -1,6 +1,6 @@
 ---
 name: json_tools
-description: 校验 / 美化 / 压缩 JSON,或列出顶层键(报错会定位到行列)
+description: 校验、美化或压缩 JSON,可列顶层键并在出错时定位行列
 trigger: json 格式化 校验 美化 压缩
 risk: READ
 ---

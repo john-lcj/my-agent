@@ -1,6 +1,6 @@
 ---
 name: markdown_toc
-description: 从 Markdown 标题生成目录(带锚点链接),可设最大层级
+description: 扫描各级标题生成带锚点链接的目录,可设层级跳过代码块内容
 trigger: 目录 toc markdown 大纲 标题
 risk: READ
 ---

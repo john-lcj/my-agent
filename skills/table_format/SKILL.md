@@ -1,6 +1,6 @@
 ---
 name: table_format
-description: 把 CSV/TSV 文本转成 Markdown 表格(自动识别分隔符)
+description: 把逗号或制表符分隔的文本转成规整的表格,并自动识别分隔符
 trigger: 表格 markdown csv tsv 转表
 risk: READ
 ---

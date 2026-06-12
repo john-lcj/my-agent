@@ -1,6 +1,6 @@
 ---
 name: keyword_extract
-description: 从文本提取 Top-N 关键词/短语（词频+停用词过滤）。
+description: 从文本中按词频提取最高频的若干个关键词,并过滤常见停用词
 trigger: 关键词 标签 词频 提取
 risk: READ
 ---

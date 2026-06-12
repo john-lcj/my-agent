@@ -1,6 +1,6 @@
 ---
 name: csv_stats
-description: 读取 CSV 文件或文本,给出行列概览、每列类型、数值列统计与缺失值
+description: 读取表格文件或文本,给出行列概览、每列类型与缺失值的统计
 trigger: csv 表格 数据 统计 分析 列
 risk: READ
 ---

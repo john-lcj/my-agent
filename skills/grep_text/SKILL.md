@@ -1,6 +1,6 @@
 ---
 name: grep_text
-description: 在目录里跨文件搜索字符串/正则,返回 文件:行号:内容
+description: 在目录中跨文件搜索字符串或正则,返回文件、行号与匹配内容
 trigger: 搜索 查找 grep 哪里用了 出现在 包含
 risk: READ
 ---

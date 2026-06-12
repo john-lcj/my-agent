@@ -1,6 +1,6 @@
 ---
 name: file_append
-description: 向文件末尾追加内容(文件不存在则创建),不覆盖原内容
+description: 向文件末尾追加文本,文件不存在则自动新建,不覆盖原有内容
 trigger: 追加 append 续写 加到末尾 记一笔
 risk: WRITE
 ---

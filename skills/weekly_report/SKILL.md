@@ -1,6 +1,6 @@
 ---
 name: weekly_report
-description: 写周报/工作汇报的指南:成果导向、量化、风险前置、下周计划
+description: 写好周报与工作汇报的指南:成果导向、量化、风险前置与计划
 trigger: 周报 汇报 工作总结 月报 进展
 risk: READ
 ---

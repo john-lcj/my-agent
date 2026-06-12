@@ -1,6 +1,6 @@
 ---
 name: email_writing
-description: 高效写邮件的指南：结构、语气分寸、常见场景模板(中英)
+description: 高效写邮件的指南:结构、语气分寸与各类常见场景的写法模板
 trigger: 邮件 email 写信 回复 致函
 risk: READ
 ---

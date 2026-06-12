@@ -1,6 +1,6 @@
 ---
 name: file_edit
-description: 在文件里精确查找并替换文本(原地编辑,带唯一性校验)
+description: 在指定文件中精确查找并替换文本,原地编辑带唯一性校验保护
 trigger: 修改 编辑 替换 改文件 改一行 把..改成
 risk: WRITE
 ---

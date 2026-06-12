@@ -1,6 +1,6 @@
 ---
 name: design_taste_frontend
-description: 反 AI 味前端设计规范 — 落地页/作品集/改版；Design Read、三拨盘、Pre-flight 检查。
+description: 反套路前端设计规范:落地页与作品集等的审美检查与避坑清单
 trigger: 落地页 作品集 改版 反模板 设计品味
 risk: READ
 ---

@@ -1,6 +1,6 @@
 ---
 name: readability_score
-description: 评估文本可读性：句长、过长句占比、简易可读分。
+description: 评估一段文本可读性:平均句长、过长句占比与简易可读性评分
 trigger: 可读性 句长 润色 评分
 risk: READ
 ---

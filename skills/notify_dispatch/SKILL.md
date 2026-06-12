@@ -1,6 +1,6 @@
 ---
 name: notify_dispatch
-description: 统一推送至 email/wechat/qq；未配置凭证时返回可手动发送的文稿。
+description: 统一推送到邮件微信或QQ,未配置凭证时返回可手动发的文稿
 trigger: 推送 发送 通知 邮件 企微
 risk: WRITE
 ---

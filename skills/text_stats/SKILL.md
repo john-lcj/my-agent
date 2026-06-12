@@ -1,6 +1,6 @@
 ---
 name: text_stats
-description: 统计文本的字数(中英文友好)、字符、行数、段落、句子与预计阅读时长
+description: 统计文本的字符词数行数段落句子,中英文友好并估算阅读时长
 trigger: 统计 字数 文本 行数 阅读时长
 risk: READ
 ---

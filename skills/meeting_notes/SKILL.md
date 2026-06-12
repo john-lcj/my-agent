@@ -1,6 +1,6 @@
 ---
 name: meeting_notes
-description: 把会议内容整理成结构化纪要:决议、行动项(负责人+截止)、风险
+description: 把会议讨论整理为结构化纪要:含决议、行动项与负责人和截止
 trigger: 会议 纪要 记录 minutes 决议 行动项
 risk: READ
 ---

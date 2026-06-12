@@ -1,6 +1,6 @@
 ---
 name: text_diff
-description: 对比两段文本,输出统一 diff、相似度与新增/删除行数
+description: 逐行对比两段文本,给出差异块、相似度与新增和删除的总行数
 trigger: 对比 差异 diff 比较 改动
 risk: READ
 ---

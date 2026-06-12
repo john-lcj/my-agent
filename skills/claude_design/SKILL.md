@@ -1,6 +1,6 @@
 ---
 name: claude_design
-description: 设计流程与品味 — 落地页/原型/deck 从 brief 到可打开 HTML artifact 的完整工作流。
+description: 落地页与原型的设计品味指南:从构想到可直接打开的网页成品
 trigger: 设计 落地页 原型 deck 幻灯片 UI UX
 risk: READ
 ---

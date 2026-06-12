@@ -1,6 +1,6 @@
 ---
 name: personal_search
-description: 在主人的个人笔记/文档索引中做语义检索,返回相关片段及来源文件。
+description: 在主人的个人笔记与文档的索引中做语义检索,返回片段与来源
 trigger: 我笔记 我的笔记 我之前写过 我的文档 我记过 笔记里
 risk: READ
 ---

@@ -1,6 +1,6 @@
 ---
 name: date_calc
-description: 日期计算:加减天数、查星期几、两个日期相差多少天
+description: 日期计算:加减天数、查询星期几、计算两个日期相差的天数。
 trigger: 日期 几天 星期 相差 倒计时 截止
 risk: READ
 ---
