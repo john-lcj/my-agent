@@ -11,12 +11,17 @@
 
 ## 已知限制(对公网/多用户场景)
 
-1. **WebSocket 聊天口(`/ws`)无鉴权**。`/api/*` 控制面已有 token 中间件(非本机访问需
-   `AGENT_API_TOKEN`),但 `/ws` 没有——而它能直接驱动 agent 跑 shell、写文件。对公网开放前
-   必须给 `/ws` 也加鉴权。
-2. **shell.run 直接在宿主机执行**,无容器/沙箱隔离。危险命令黑名单(`policy.yaml`
-   `forbidden_patterns`)是纵深防御的 backstop,**不是**真正的沙箱;命令字符串可被混淆绕过。
-   面向不可信输入时,应在容器 / 受限用户 / seccomp 等隔离环境中运行。
+1. **鉴权**:`/api/*` 与 `/ws` 都已加 token 鉴权——本机(loopback)放行,非本机访问需
+   `AGENT_API_TOKEN`(`/api/*` 用 `X-Agent-Token` 头;`/ws` 用 `?token=` 或同名头)。
+   ✅ 因此对外暴露时,设置 `AGENT_API_TOKEN` 即可关闭无认证敞口。仍**无多用户身份体系**
+   (单一共享 token),如需按用户隔离/审计,需进一步开发。
+2. **shell.run 默认在宿主机执行**,危险命令黑名单(`policy.yaml` `forbidden_patterns`)是
+   纵深防御的 backstop、**不是**沙箱,命令字符串可被混淆绕过。已提供隔离钩子,运营方可插入
+   真实沙箱:
+   - `AGENT_SHELL_WRAPPER`:命令前缀,如 `firejail --quiet --private` 或
+     `docker run --rm -i --network none <img> sh -c`。
+   - `AGENT_SHELL_CWD`:限定命令的工作目录。
+   面向不可信输入时**必须**配置上述隔离(或在容器/受限用户下整体运行)。
 3. **密钥以明文存于本地**(`logs/model_keys.json`、`logs/channels.json`)。这些文件已被
    `.gitignore` 排除,但在共享主机上仍需注意文件权限。
 4. **SSRF 防护为尽力而为**:已解析 IP 判网段并逐跳校验重定向,但 DNS rebinding 仍是残留风险。

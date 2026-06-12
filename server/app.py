@@ -771,6 +771,16 @@ def create_app():
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        # /ws 能驱动 agent 跑 shell / 写文件,敏感程度等同 /api/*。
+        # 本机(loopback)放行,保持本地零配置;非本机连接需 AGENT_API_TOKEN
+        # (通过 ?token= 查询参数或 X-Agent-Token 头携带),否则直接拒绝握手。
+        client_host = ws.client.host if ws.client else ""
+        if not _is_loopback(client_host):
+            token = os.environ.get("AGENT_API_TOKEN", "").strip()
+            provided = ws.query_params.get("token") or ws.headers.get("x-agent-token", "")
+            if not token or not hmac.compare_digest(provided, token):
+                await ws.close(code=1008)  # 1008 = policy violation
+                return
         await ws.accept()
         channel = WebChannel()
         ws_model: List[Optional[str]] = [None]

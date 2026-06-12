@@ -26,15 +26,29 @@ class RunShell:
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        import os
         command = str(args.get("command", "")).strip()
         timeout = float(args.get("timeout", 30))
         if not command:
             return CapabilityResult(ok=False, error="缺少参数 command")
+
+        # 沙箱钩子(运营方可插入真实隔离,默认空=现状,在宿主机直接跑):
+        #   AGENT_SHELL_WRAPPER  命令前缀,如 "firejail --quiet --private" 或
+        #                        "docker run --rm -i --network none alpine sh -c"
+        #   AGENT_SHELL_CWD      限定工作目录(命令在此目录下执行)
+        wrapper = os.environ.get("AGENT_SHELL_WRAPPER", "").strip()
+        full_command = f"{wrapper} {command}" if wrapper else command
+        cwd = os.environ.get("AGENT_SHELL_CWD", "").strip() or None
+        if cwd:
+            cwd = os.path.expanduser(cwd)
+            if not os.path.isdir(cwd):
+                return CapabilityResult(ok=False, error=f"AGENT_SHELL_CWD 不是有效目录:{cwd}")
         try:
             proc = await asyncio.create_subprocess_shell(
-                command,
+                full_command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
             )
             out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:

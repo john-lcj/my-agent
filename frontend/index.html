@@ -757,6 +757,19 @@ option{background:var(--card)}
           <div id="model-keys-result" class="field-hint" style="margin-top:6px"></div>
         </div>
         <div class="field-group">
+          <div class="field-label">访问令牌(远程访问用)</div>
+          <div class="field-hint" style="margin-bottom:8px">仅当服务对外暴露(非 127.0.0.1)时需要:填入服务端 <code>AGENT_API_TOKEN</code>,本浏览器访问 /ws 与 /api/* 时自动携带。本机使用可留空。仅存于本浏览器。</div>
+          <div class="field-row">
+            <div class="field-group">
+              <input class="field-input" id="cfg-access-token" type="password" placeholder="未设置" autocomplete="off"/>
+            </div>
+            <div class="field-group" style="align-self:flex-end">
+              <button class="btn-sm primary" type="button" onclick="saveAccessToken()">保存</button>
+            </div>
+          </div>
+          <div id="access-token-result" class="field-hint" style="margin-top:6px"></div>
+        </div>
+        <div class="field-group">
           <div class="field-label" id="lbl-gov">治理档位</div>
           <select id="cfg-governance-mode">
             <option value="conservative">保守(写操作多确认)</option>
@@ -1161,6 +1174,29 @@ option{background:var(--card)}
 </div>
 
 <script>
+/* ══ 访问令牌(远程访问 /ws 与 /api/* 时需要;本机可留空)════════════ */
+function getAccessToken() { try { return localStorage.getItem('agentApiToken') || ''; } catch { return ''; } }
+function setAccessToken(t) {
+  try { t ? localStorage.setItem('agentApiToken', t) : localStorage.removeItem('agentApiToken'); } catch {}
+}
+/* 给所有 /api/* 请求自动带上 X-Agent-Token(若已配置 token)。本机访问可不配。 */
+(function patchFetchWithToken() {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    try {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      const tok = getAccessToken();
+      if (tok && url.indexOf('/api/') !== -1) {
+        init = init || {};
+        const h = new Headers(init.headers || {});
+        if (!h.has('X-Agent-Token')) h.set('X-Agent-Token', tok);
+        init.headers = h;
+      }
+    } catch (e) { /* 忽略,降级为原始请求 */ }
+    return _fetch(input, init);
+  };
+})();
+
 /* ══ 全局状态 ════════════════════════════════════════════════════ */
 let ws = null;
 let currentView = 'chat';
@@ -1263,7 +1299,9 @@ let sessionId = 's-chat-pending';
 
 /* ══ WebSocket ═══════════════════════════════════════════════════ */
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const _tok = getAccessToken();
+  const _q = _tok ? `?token=${encodeURIComponent(_tok)}` : '';
+  ws = new WebSocket(`ws://${location.host}/ws${_q}`);
   ws.onopen = () => {
     document.getElementById('dot').classList.add('on');
     ws.send(JSON.stringify(wsInitPayload()));
@@ -2560,6 +2598,20 @@ async function selectModel(modelId) {
 
 const MODEL_KEY_FIELDS = { deepseek: 'key-deepseek', openai: 'key-openai', claude: 'key-claude' };
 
+function saveAccessToken() {
+  const el = document.getElementById('cfg-access-token');
+  const result = document.getElementById('access-token-result');
+  const v = (el?.value || '').trim();
+  setAccessToken(v);
+  if (el) { el.value = ''; el.placeholder = v ? '已设置(留空清除)' : '未设置'; }
+  if (result) result.textContent = v ? '已保存。重连后生效(刷新页面或重开会话)。' : '已清除访问令牌。';
+}
+
+function loadAccessTokenField() {
+  const el = document.getElementById('cfg-access-token');
+  if (el) { el.value = ''; el.placeholder = getAccessToken() ? '已设置(留空清除)' : '未设置'; }
+}
+
 async function loadModelKeys() {
   try {
     const res = await fetch('/api/keys');
@@ -2651,6 +2703,7 @@ async function loadSettingsUI() {
   } catch { /* 离线 */ }
   await loadModelOptions(cfg.model || 'deepseek-v4-flash');
   await loadModelKeys();
+  loadAccessTokenField();
   document.getElementById('cfg-governance-mode').value = cfg.governanceMode || 'balanced';
   document.getElementById('cfg-max-cost').value = cfg.maxCost ?? '';
   document.getElementById('cfg-max-steps').value = cfg.maxSteps || 20;
