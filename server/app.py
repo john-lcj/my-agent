@@ -1124,3 +1124,26 @@ def create_app():
 
 
 app = create_app()
+
+
+def run() -> None:
+    """Web 服务入口(console_scripts: myagent-web)。默认绑 127.0.0.1:8000。
+
+    可用环境变量覆盖:AGENT_WEB_HOST / AGENT_WEB_PORT。
+    ⚠ 对外暴露(host=0.0.0.0)前请设置 AGENT_API_TOKEN(见 /api/* 鉴权中间件)。
+    """
+    import os as _os
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    _os.environ.setdefault("AGENT_PROJECT_ROOT", root)
+    try:
+        _os.chdir(root)
+    except OSError:
+        pass
+    try:
+        import uvicorn
+    except ImportError:
+        raise SystemExit("需要 uvicorn:请先安装 `pip install 'my-agent[web]'` 或 `pip install uvicorn`。")
+    host = _os.environ.get("AGENT_WEB_HOST", "127.0.0.1")
+    port = int(_os.environ.get("AGENT_WEB_PORT", "8000"))
+    print(f"Web 聊天 → http://{host}:{port}  (Ctrl+C 停止)")
+    uvicorn.run(app, host=host, port=port)

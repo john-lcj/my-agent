@@ -243,8 +243,23 @@ async def main() -> None:
             _push_status(time.time() - t0)
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """控制台入口(console_scripts)。
+
+    打包安装后通过 `myagent` 调用。把工作目录切到项目根,使 policy.yaml /
+    skills/ / frontend/ 等相对路径正常解析(editable 安装下即仓库目录)。
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    os.environ.setdefault("AGENT_PROJECT_ROOT", root)
+    try:
+        os.chdir(root)
+    except OSError:
+        pass
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n再见。")
+
+
+if __name__ == "__main__":
+    cli()

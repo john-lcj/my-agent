@@ -215,6 +215,12 @@ class DeclarativePolicy:
             return GovReview(Decision.BLOCK, reason="该能力被标记为禁止。", rule="risk:forbidden")
 
         need, reason, rule = self._needs_confirm(call)
+        # 风险兜底:任何 DESTRUCTIVE 能力(MCP 外部工具 / 未来新增工具等)默认需确认,
+        # 不能因为不在 confirm 名单里就自动放行。shell.run 有自己的命令级判定,排除在外。
+        if not need and call.name != "shell.run" and risk >= Risk.DESTRUCTIVE:
+            need = True
+            reason = "高危能力(可能不可逆或有外部副作用),需你确认。"
+            rule = "risk:destructive"
         if need:
             if (
                 call.name == "fs.write"

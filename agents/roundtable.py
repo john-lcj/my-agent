@@ -125,6 +125,18 @@ class RTAgentConfig:
 OnEvent = Callable[[dict], Awaitable[None]]
 
 
+def _first_sentence(text: str, limit: int = 80) -> str:
+    """取一段发言的首句作为"当前立场"快照(确定性、零额外 LLM 调用)。"""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    for sep in ("。", "!", "?", "!", "?", "\n", ". "):
+        idx = t.find(sep)
+        if 0 < idx < limit:
+            return t[: idx + (0 if sep in ("\n", ". ") else len(sep))].strip()
+    return t[:limit].strip()
+
+
 class AdvancedRoundtable:
     def __init__(self, llm_factory: Callable[[str], Any], max_turns: int = 12) -> None:
         self._llm_factory = llm_factory
@@ -140,6 +152,9 @@ class AdvancedRoundtable:
         user_queue: Optional[asyncio.Queue] = None,
         mode: str = "brainstorm",
         goal: str = "",
+        registry: Any = None,
+        enable_evidence: bool = False,
+        enable_judge: bool = False,
     ) -> dict:
         max_turns = max_turns or self.max_turns
         mode = mode if mode in ("brainstorm", "discussion") else "brainstorm"
@@ -172,6 +187,18 @@ class AdvancedRoundtable:
         llms = {cfg.id: self._llm_factory(cfg.model) for cfg in agent_cfgs}
 
         conversation: list[Message] = []
+        # 立场跟踪:每个 agent 维护一句话当前立场,随发言更新(用于收敛判定与裁判)。
+        stances: dict[str, str] = {}
+
+        # 证据接入(可选):传入 registry 且含 web.search 时,先检索议题事实作为共享证据,
+        # 让讨论从"凭空空想"变成"有据可依"。证据以 USER 角色注入,信息隔离的 agent 也能看到。
+        if enable_evidence and registry is not None:
+            evidence = await self._gather_evidence(topic, registry)
+            if evidence:
+                conversation.append(Message(role=Role.USER, content=evidence, name="证据"))
+                if on_event:
+                    await on_event({"type": "rt_evidence", "content": evidence})
+
         stopped = "达到最大轮数"
         turn = 0
         last_msg: Optional[Message] = None
@@ -242,6 +269,17 @@ class AdvancedRoundtable:
                 "phase": phase if mode == "brainstorm" else None,
             })
 
+            # 立场跟踪:把该 agent 的最新立场更新为本次发言的要点(首句)。
+            stance = _first_sentence(content)
+            if stance and stances.get(speaker_cfg.id) != stance:
+                stances[speaker_cfg.id] = stance
+                await emit({
+                    "type": "rt_stance",
+                    "agent_id": speaker_cfg.id,
+                    "agent_name": speaker_cfg.name,
+                    "stance": stance,
+                })
+
             if mode == "brainstorm" and turn >= 6 and turn % 3 == 0:
                 if await self._ready_to_conclude(topic, conversation, llms[agent_cfgs[0].id], goal):
                     stopped = "已形成可执行结论"
@@ -254,6 +292,18 @@ class AdvancedRoundtable:
             topic, conversation, llms.get(agent_cfgs[0].id), goal=goal, mode=mode,
         )
         await emit({"type": "rt_summary", "content": summary})
+
+        # 裁判(可选):独立角色对各方最终立场打分、点出最强论证与遗留风险。
+        verdict = ""
+        if enable_judge:
+            await emit({"type": "rt_speaking", "agent_id": "judge",
+                        "agent_name": "裁判", "agent_color": "#b08968"})
+            verdict = await self._judge(
+                topic, conversation, agent_cfgs, stances,
+                llms.get(agent_cfgs[0].id), goal=goal,
+            )
+            await emit({"type": "rt_judge", "content": verdict})
+
         await emit({"type": "rt_done", "turns": turn, "stopped": stopped})
 
         return {
@@ -262,6 +312,8 @@ class AdvancedRoundtable:
             "turns": turn,
             "stopped": stopped,
             "configs": agent_cfgs,
+            "stances": stances,
+            "verdict": verdict,
         }
 
     # ── 核心方法 ───────────────────────────────────────────────────────────────
@@ -392,6 +444,57 @@ class AdvancedRoundtable:
             return text.startswith("y") or text.startswith("是")
         except Exception:
             return False
+
+    async def _gather_evidence(self, topic: str, registry: Any) -> str:
+        """用 registry 里的 web.search 检索议题事实,失败则静默返回空(降级)。"""
+        cap = registry.get("web.search") if hasattr(registry, "get") else None
+        if cap is None:
+            return ""
+        try:
+            res = await asyncio.wait_for(cap.invoke({"query": topic, "k": 5}, None), timeout=12.0)
+        except Exception:
+            return ""
+        body = (getattr(res, "output", "") or "").strip()
+        if not body or not getattr(res, "ok", False):
+            return ""
+        return (
+            "[共享证据 — 以下为检索到的客观资料,请各位据此论证,而非凭空判断]\n"
+            + body[:1800]
+        )
+
+    async def _judge(
+        self,
+        topic: str,
+        conversation: list[Message],
+        configs: list[RTAgentConfig],
+        stances: dict[str, str],
+        llm,
+        goal: str = "",
+    ) -> str:
+        """独立裁判:对各方最终立场打分,点出最强论证、最弱环节与遗留风险。"""
+        if llm is None or not conversation:
+            return ""
+        stance_lines = "\n".join(
+            f"- {c.name}({c.role}):{stances.get(c.id, '(未形成明确立场)')}"
+            for c in configs
+        )
+        transcript = "\n".join(f"【{m.name}】{m.content}" for m in conversation[-16:])
+        prompt = (
+            f"你是中立裁判,不参与讨论,只做评判。\n"
+            f"议题:{topic}\n"
+            f"期望产出:{goal or '可执行的明确结论'}\n\n"
+            f"各方最终立场:\n{stance_lines}\n\n"
+            f"近期讨论:\n{transcript}\n\n"
+            f"请用 Markdown 输出评判:\n"
+            f"## 最有说服力的立场\n指名某方并说明为何(证据/逻辑最强)\n\n"
+            f"## 最薄弱的环节\n点出讨论中最站不住脚的论点\n\n"
+            f"## 遗留风险/未决问题\n仍需验证或可能出问题的点"
+        )
+        try:
+            step = await llm.next_step([Message(role=Role.USER, content=prompt)], [])
+            return step.text or ""
+        except Exception as e:
+            return f"裁判评判失败:{e}"
 
     def _build_context(self, cfg: RTAgentConfig, full: list[Message]) -> list[Message]:
         """can_see_others=False 时,只返回该 agent 自己的发言(仍包含用户插话)。"""

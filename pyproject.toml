@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-agent"
+version = "0.1.0"
+description = "一个有分寸感的多 agent 平台:统一能力收口 + 硬/软边界治理 + 记忆 + 多渠道 + 圆桌协作 + Web"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "captain" }]
+keywords = ["agent", "llm", "multi-agent", "governance", "mcp"]
+
+# 基座最小依赖:让 `myagent`(MockLLM)开箱即跑。
+# numpy 为记忆层默认路径所需,PyYAML 用于加载 governance/policy.yaml(缺失则回退内置策略)。
+# 真实模型 / Web / 向量检索 / 渠道等更重的能力按需装下面的 extras。
+dependencies = ["numpy>=1.24.0", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+llm = ["openai>=1.30.0", "anthropic>=0.34.0", "tiktoken>=0.7.0"]
+web = ["fastapi>=0.110.0", "uvicorn>=0.29.0", "PyYAML>=6.0"]
+memory = ["sqlite-vec>=0.1.9", "numpy>=1.24.0"]
+channels = ["aiohttp>=3.9.0", "aiosmtplib>=3.0.0", "aioimaplib>=1.1.0", "cryptography>=42.0.0"]
+cli = ["prompt_toolkit>=3.0.0", "PyYAML>=6.0"]
+all = [
+    "openai>=1.30.0", "anthropic>=0.34.0", "tiktoken>=0.7.0",
+    "fastapi>=0.110.0", "uvicorn>=0.29.0", "PyYAML>=6.0",
+    "sqlite-vec>=0.1.9", "numpy>=1.24.0",
+    "aiohttp>=3.9.0", "aiosmtplib>=3.0.0", "aioimaplib>=1.1.0", "cryptography>=42.0.0",
+    "prompt_toolkit>=3.0.0",
+]
+
+[project.scripts]
+myagent = "main:cli"
+myagent-web = "server.app:run"
+
+[tool.setuptools]
+# 项目用 PEP 420 命名空间包(多数目录无 __init__.py),显式列出以确保可被安装。
+py-modules = ["main", "config"]
+packages = [
+    "agents",
+    "capabilities",
+    "capabilities.tools",
+    "channels",
+    "core",
+    "governance",
+    "llm",
+    "memory",
+    "observability",
+    "scheduler",
+    "server",
+    "skills",
+]
+
+[tool.setuptools.package-data]
+# 随包一起发布的数据文件:策略、技能说明与实现等(随各自所在包发布)。
+governance = ["*.yaml"]
+skills = ["**/*.py", "**/*.md"]
+"*" = ["*.yaml", "*.yml", "*.md"]

@@ -57,6 +57,33 @@ pip install -r requirements.txt
 uvicorn server.app:app --port 8000
 ```
 
+## 安装与分享(开源分发)
+
+项目已打包,可作为命令行工具安装,装好后在终端任意位置直接敲 `myagent`。
+
+```bash
+# 方式一:零安装运行(uv,推荐别人快速试)
+uvx --from "git+https://github.com/<你的用户名>/my-agent" myagent          # 终端对话
+uvx --from "git+https://github.com/<你的用户名>/my-agent[web]" myagent-web   # Web 界面
+
+# 方式二:用 pipx 常驻安装
+pipx install "git+https://github.com/<你的用户名>/my-agent"
+pipx install "git+https://github.com/<你的用户名>/my-agent[all]"   # 含真实模型/Web/记忆/渠道全部依赖
+myagent          # 终端对话(MockLLM 零依赖即可跑)
+myagent-web      # 启动 Web → http://127.0.0.1:8000
+
+# 方式三:克隆后可编辑安装(开发推荐,相对路径最稳)
+git clone https://github.com/<你的用户名>/my-agent && cd my-agent
+pip install -e ".[all]"
+myagent
+```
+
+依赖按需取用:基座零依赖(MockLLM);`[llm]` 真实模型、`[web]` Web 服务、
+`[memory]` 向量记忆、`[channels]` 外部渠道、`[cli]` 斜杠补全、`[all]` 全部。
+
+> 安全:`myagent-web` 默认绑 `127.0.0.1`。若改用 `AGENT_WEB_HOST=0.0.0.0` 对外暴露,
+> 务必先设 `AGENT_API_TOKEN`,否则 `/api/*` 控制面将无认证(见鉴权中间件)。
+
 试试这些输入:
 
 ```
