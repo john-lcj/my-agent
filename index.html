@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Captain — 有分寸感的 AI 助理</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+  body{
+    background:#08080e;
+    color:#d4d4dc;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    line-height:1.6;
+    overflow-x:hidden
+  }
+  ::selection{background:#6c5ce7;color:#fff}
+
+  h1,h2,h3{font-weight:500;letter-spacing:-0.02em;color:#f0f0f5}
+  .display{font-size:clamp(2.6rem,6vw,4.8rem);line-height:1.1;font-weight:450}
+  .heading-lg{font-size:clamp(1.8rem,4vw,3rem);line-height:1.2}
+  .body-sm{font-size:0.9rem;color:#8a8aa0}
+
+  section{padding:6rem 1.5rem;position:relative}
+  .container{max-width:1200px;margin:0 auto}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem}
+
+  .hero{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding-top:2rem;
+    position:relative;
+    overflow:hidden
+  }
+  .hero::before{
+    content:'';
+    position:absolute;
+    width:80vmax;height:80vmax;
+    top:-20vmax;right:-10vmax;
+    background:radial-gradient(circle,rgba(108,92,231,0.08) 0%,transparent 70%);
+    pointer-events:none
+  }
+  .hero::after{
+    content:'';
+    position:absolute;
+    width:60vmax;height:60vmax;
+    bottom:-20vmax;left:-15vmax;
+    background:radial-gradient(circle,rgba(0,201,167,0.06) 0%,transparent 70%);
+    pointer-events:none
+  }
+  .hero-content{position:relative;z-index:1;max-width:900px}
+  .hero .badge{
+    display:inline-block;
+    padding:0.4rem 1.2rem;
+    border-radius:100px;
+    font-size:0.8rem;
+    letter-spacing:0.06em;
+    color:#8a8aa0;
+    border:1px solid rgba(255,255,255,0.08);
+    margin-bottom:2rem;
+    background:rgba(255,255,255,0.03)
+  }
+  .hero .display{margin-bottom:1.5rem}
+  .hero .subtitle{
+    font-size:clamp(1rem,2vw,1.2rem);
+    color:#8a8aa0;
+    max-width:640px;
+    margin:0 auto 2.5rem;
+    line-height:1.7
+  }
+  .hero .highlight{color:#a29bfe}
+
+  .btn-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:0.5rem;
+    padding:0.85rem 2rem;
+    border-radius:0.7rem;
+    font-size:0.95rem;
+    font-weight:500;
+    text-decoration:none;
+    transition:all 0.3s ease;
+    cursor:pointer;
+    border:none
+  }
+  .btn-primary{
+    background:#6c5ce7;
+    color:#fff;
+    box-shadow:0 2px 20px rgba(108,92,231,0.2)
+  }
+  .btn-primary:hover{background:#7c6cf7;transform:translateY(-2px);box-shadow:0 6px 30px rgba(108,92,231,0.35)}
+  .btn-ghost{
+    background:rgba(255,255,255,0.05);
+    color:#d4d4dc;
+    border:1px solid rgba(255,255,255,0.1)
+  }
+  .btn-ghost:hover{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.2)}
+
+  .features{background:linear-gradient(180deg,#08080e 0%,#0c0c18 50%,#08080e 100%)}
+  .features-header,.steps-header,.scenarios-header{text-align:center;margin-bottom:4rem}
+  .features-header .heading-lg,.steps-header .heading-lg,.scenarios-header .heading-lg{margin-bottom:1rem}
+  .features-header p,.steps-header p,.scenarios-header p{color:#8a8aa0;max-width:520px;margin:0 auto}
+
+  .feature-card{
+    padding:2.5rem;
+    border-radius:1.2rem;
+    background:rgba(255,255,255,0.02);
+    border:1px solid rgba(255,255,255,0.05);
+    transition:all 0.4s ease;
+    position:relative;
+    overflow:hidden
+  }
+  .feature-card:hover{
+    background:rgba(255,255,255,0.04);
+    border-color:rgba(108,92,231,0.2);
+    transform:translateY(-4px)
+  }
+  .feature-card .icon{
+    width:3rem;height:3rem;
+    border-radius:0.8rem;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.3rem;
+    margin-bottom:1.5rem;
+    background:rgba(108,92,231,0.1);
+    color:#a29bfe
+  }
+  .feature-card h3{font-size:1.15rem;margin-bottom:0.6rem;font-weight:500}
+  .feature-card p{font-size:0.9rem;color:#8a8aa0;line-height:1.7}
+
+  .steps{background:#0c0c18}
+  .step-list{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;counter-reset:step}
+  .step-item{position:relative;padding-top:3.5rem}
+  .step-item::before{
+    counter-increment:step;
+    content:'0' counter(step);
+    position:absolute;top:0;left:0;
+    font-size:3rem;font-weight:600;
+    color:rgba(108,92,231,0.15);
+    line-height:1;
+    letter-spacing:-0.04em
+  }
+  .step-item h3{font-size:1.15rem;margin-bottom:0.6rem;font-weight:500}
+  .step-item p{font-size:0.9rem;color:#8a8aa0;line-height:1.7}
+
+  .scenarios{background:linear-gradient(180deg,#08080e 0%,#0a0a14 100%)}
+  .scenario-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1.5rem}
+  .scenario-card{
+    display:flex;
+    align-items:flex-start;
+    gap:1.2rem;
+    padding:1.5rem;
+    border-radius:1rem;
+    background:rgba(255,255,255,0.02);
+    border:1px solid rgba(255,255,255,0.05);
+    transition:all 0.3s ease
+  }
+  .scenario-card:hover{background:rgba(255,255,255,0.04);border-color:rgba(0,201,167,0.15)}
+  .scenario-card .emoji-icon{
+    width:2.8rem;height:2.8rem;
+    border-radius:0.7rem;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.3rem;
+    background:rgba(0,201,167,0.08);
+    flex-shrink:0
+  }
+  .scenario-card h4{font-size:1rem;font-weight:500;margin-bottom:0.3rem}
+  .scenario-card p{font-size:0.85rem;color:#8a8aa0;line-height:1.6}
+
+  .cta{
+    text-align:center;
+    padding:7rem 1.5rem;
+    background:linear-gradient(180deg,#0c0c18 0%,#08080e 100%);
+    position:relative;
+    overflow:hidden
+  }
+  .cta::before{
+    content:'';
+    position:absolute;
+    width:50vmax;height:50vmax;
+    top:50%;left:50%;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle,rgba(108,92,231,0.06) 0%,transparent 70%);
+    pointer-events:none
+  }
+  .cta-content{position:relative;z-index:1;max-width:600px;margin:0 auto}
+  .cta .heading-lg{margin-bottom:1rem}
+  .cta p{color:#8a8aa0;margin-bottom:2.5rem}
+
+  footer{
+    text-align:center;
+    padding:2rem 1.5rem;
+    border-top:1px solid rgba(255,255,255,0.04);
+    color:#4a4a60;
+    font-size:0.8rem
+  }
+
+  .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent);max-width:600px;margin:0 auto}
+
+  @media(max-width:900px){
+    .grid-3,.step-list{grid-template-columns:1fr;gap:2rem}
+    .scenario-grid{grid-template-columns:1fr}
+    section{padding:4rem 1.2rem}
+  }
+  @media(max-width:600px){
+    .hero .btn-group{flex-direction:column;align-items:center}
+    .hero .btn{width:100%;justify-content:center}
+  }
+
+  .reveal{opacity:0;transform:translateY(30px);transition:all 0.8s ease}
+  .reveal.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-content">
+    <span class="badge">✦ v1.0 · 现在可用</span>
+    <h1 class="display">
+      一个<span class="highlight">有分寸感</span>的<br>自主 AI 助理
+    </h1>
+    <p class="subtitle">
+      听懂你的目标，拆解步骤，自己调用工具把事情做完。<br>
+      不啰嗦，不编造，不越界。像靠谱的搭档，不是工具。
+    </p>
+    <div class="btn-group">
+      <a href="#features" class="btn btn-primary">了解能力 →</a>
+      <a href="#cta" class="btn btn-ghost">开始使用</a>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="container">
+    <div class="features-header reveal">
+      <h2 class="heading-lg">不是对话机器人，是执行者</h2>
+      <p>你说目标，它自己规划路径、调用工具、交付结果</p>
+    </div>
+    <div class="grid-3">
+      <div class="feature-card reveal">
+        <div class="icon">🎯</div>
+        <h3>自主拆解</h3>
+        <p>听懂你的目标后，在内心里拆解步骤、选定策略，然后自己调用工具把事情做完，不需要你手把手教每一步。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="icon">🧰</div>
+        <h3>工具全栈</h3>
+        <p>搜索、读文件、写代码、控制 GUI、调用 API、发推送。所有能力整合在一起，一个助理搞定原本需要多个工具的事。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="icon">⚖️</div>
+        <h3>分寸感</h3>
+        <p>知道什么时候该自己做，什么时候该问人。不编造答案，做错了就承认。有安全边界，该确认时会确认，不该做的不做。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="steps">
+  <div class="container">
+    <div class="steps-header reveal">
+      <h2 class="heading-lg">三步就够了</h2>
+      <p>从目标到落地的完整链路</p>
+    </div>
+    <div class="step-list">
+      <div class="step-item reveal">
+        <h3>说出目标</h3>
+        <p>用自然语言告诉助理你想做什么，不需要拆成指令清单。说「帮我做个落地页」就行，不用管用什么技术栈。</p>
+      </div>
+      <div class="step-item reveal">
+        <h3>自动执行</h3>
+        <p>助理在内心里规划步骤、按顺序调用工具。搜索资料、读文件、写代码、跑命令，连续推进直到完成或需要你决策。</p>
+      </div>
+      <div class="step-item reveal">
+        <h3>交付结果</h3>
+        <p>完成后给你一份简洁的总结：做了什么、产出在哪里、关键决策。不贴冗长日志，想追问细节随时展开。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="scenarios">
+  <div class="container">
+    <div class="scenarios-header reveal">
+      <h2 class="heading-lg">适用场景</h2>
+      <p>从开发到日常，一个助理覆盖</p>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">🌐</div>
+        <div>
+          <h4>落地页与前端</h4>
+          <p>说出产品定位，直接产出可打开的 HTML 页面，设计品味把关、Pre-flight 检查全自动。</p>
+        </div>
+      </div>
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">📊</div>
+        <div>
+          <h4>数据分析</h4>
+          <p>丢一个 CSV 文件过去，自动统计行列、类型、缺失值、数值分布，转成表格或图表说明。</p>
+        </div>
+      </div>
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">✍️</div>
+        <div>
+          <h4>写作与编辑</h4>
+          <p>写邮件、周报、会议纪要、技术文档。按场景自动匹配语气和结构，统计字数与可读性。</p>
+        </div>
+      </div>
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">🔍</div>
+        <div>
+          <h4>事实核查</h4>
+          <p>遇到时效性信息自动查日期、搜索核实，不做记忆推断。不确定的结论不交付。</p>
+        </div>
+      </div>
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">📁</div>
+        <div>
+          <h4>个人知识库</h4>
+          <p>在你的笔记和文档中做语义检索，找到相关内容及来源文件，不遗漏上下文。</p>
+        </div>
+      </div>
+      <div class="scenario-card reveal">
+        <div class="emoji-icon">🤝</div>
+        <div>
+          <h4>团队协作</h4>
+          <p>把子任务委托给其他专家 Agent，协调多个角色并行推进，你只需要验收最终结果。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="cta" id="cta">
+  <div class="cta-content reveal">
+    <h2 class="heading-lg">准备好试试了吗？</h2>
+    <p>不说废话，不编造，有分寸。找一个真正能帮你干活的助理。</p>
+    <a href="#" class="btn btn-primary">立即开始 →</a>
+  </div>
+</section>
+
+<footer>
+  <p>© 2025 Captain · 分寸感 AI 助理</p>
+</footer>
+
+<script>
+(function(){
+  const observer = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+})();
+</script>
+
+</body>
+</html>

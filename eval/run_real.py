@@ -37,6 +37,9 @@ _JUDGE_PROMPT = """你是严格的 agent 评测官。根据评分要点给 agent
 【agent 的回答】
 {answer}
 
+注:若回答末尾附有「agent 实际产出的文件」段,说明这些文件已**真实写入磁盘**,
+请据此核验产物是否存在、是否满足要求;若任务要求产出文件却未见该段,则产物不存在。
+
 打分标准:5=完全满足要点且超出预期;4=满足全部要点;3=满足主要要点有小缺陷;
 2=部分满足;1=基本未满足或答非所问。
 
@@ -70,13 +73,50 @@ async def _run_task(prompt: str, model: str | None) -> str:
     return await coordinator.run(prompt, bundle.ctx, auto_confirm)
 
 
+_ARTIFACT_EXT = (".html", ".htm", ".css", ".js", ".md", ".txt", ".json", ".csv", ".svg", ".py")
+
+
+def _collect_artifacts(answer: str, per_file: int = 4000, max_files: int = 3) -> str:
+    """从回答里抓出文件路径,把**磁盘上真实存在**的产物内容读出来给评委核验。
+
+    真产出 → 评委看到文件内容;凭空编造的路径 → 文件不存在 → 自动落空、应判低分。
+    """
+    cands: set[str] = set(re.findall(r"`([^`\n]+)`", answer or ""))
+    cands |= set(re.findall(r"(?:^|\s)((?:~|\./|/)[\w./ \-]+\.\w{1,5})", answer or ""))
+    blocks: list[str] = []
+    seen: set[str] = set()
+    for raw in cands:
+        p = raw.strip().strip("`").strip()
+        if not p.lower().endswith(_ARTIFACT_EXT):
+            continue
+        path = os.path.expanduser(p)
+        if not os.path.isabs(path):
+            path = os.path.abspath(path)
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read(per_file)
+        except Exception:
+            continue
+        blocks.append(f"--- 文件 {p}({os.path.getsize(path)} 字节)---\n{content}")
+        if len(blocks) >= max_files:
+            break
+    return "\n\n".join(blocks)
+
+
 async def _judge(task: dict, answer: str, model: str | None) -> tuple[int, str]:
     from core.types import Message, Role
     from llm.factory import build_llm
 
     llm = build_llm(model=model)
+    judge_answer = (answer or "")[:4000]
+    artifacts = _collect_artifacts(answer or "")
+    if artifacts:
+        judge_answer += "\n\n【agent 实际产出的文件(从磁盘读取,用于核验)】\n" + artifacts[:8000]
     prompt = _JUDGE_PROMPT.format(
-        prompt=task["prompt"], rubric=task["rubric"], answer=(answer or "")[:4000])
+        prompt=task["prompt"], rubric=task["rubric"], answer=judge_answer)
     step = await llm.next_step([Message(role=Role.USER, content=prompt)], [])
     m = re.search(r"\{.*\}", step.text or "", re.DOTALL)
     if not m:
