@@ -91,13 +91,17 @@ myagent
 ## 质量评测(用真实模型跑)
 
 回归测试(MockLLM)保证"水管不漏";真实模型评测回答"答案好不好"。在你本机(已配
-`DEEPSEEK_API_KEY`)运行:
+`DEEPSEEK_API_KEY`)运行——用项目自带的 `.venv`,从本地目录安装(尚未发布 PyPI):
 
 ```bash
-pip install "my-agent[llm]"                       # 需要 openai SDK(DeepSeek 走兼容协议)
-python -m eval.run_real --model deepseek-v4-flash  # 全量 10 个任务,LLM 评委打分
-python -m eval.run_real --only code-explain        # 只跑某个任务
+cd "~/Desktop/my agent"                                  # 进项目目录
+.venv/bin/python -m pip install -e ".[llm]"              # 装 openai SDK(DeepSeek 走兼容协议)
+.venv/bin/python -m eval.run_real --model deepseek-v4-flash   # 全量 10 个任务,LLM 评委打分
+.venv/bin/python -m eval.run_real --only code-explain         # 只跑某个任务
 ```
+
+> macOS 上 `python`/`pip` 常不在 PATH(系统是 `python3`/`pip3`)。直接用 `.venv/bin/python`
+> 最省事:不用激活、不依赖 PATH。
 
 报告落在 `logs/eval_reports/YYYY-MM-DD.md`,并自动与上一份对比。把报告贴回来即可据此
 迭代 system prompt / 编排策略。
