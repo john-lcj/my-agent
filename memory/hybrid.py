@@ -4,9 +4,16 @@ store/forget 同步写入两套后端;retrieve 合并两路 Top-K,按内容去�
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from memory.base import MemoryItem
+
+
+def _normalize(text: str) -> str:
+    """归一化内容用于近重复判断:去空白、去标点、转小写。"""
+    t = re.sub(r"\s+", "", text.strip().lower())
+    return re.sub(r"[,。.!!??;;、,:：\"'“”‘’()()【】\[\]]", "", t)
 
 
 class HybridMemory:
@@ -21,14 +28,20 @@ class HybridMemory:
     def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]:
         kw_hits = self._kw.retrieve(query, k=k)
         sem_hits = self._sem.retrieve(query, k=k)
-        seen: set[str] = set()
+        kept_norm: list[str] = []
         merged: list[MemoryItem] = []
         # 向量结果优先(语义相近),再补关键词命中。
+        # 近重复去重:归一化后相等、或互为子串,都视为重复,避免"喜欢咖啡 / 喜欢喝咖啡。"挤占名额。
         for item in sem_hits + kw_hits:
-            key = item.content.strip()
-            if not key or key in seen:
+            content = item.content.strip()
+            if not content:
                 continue
-            seen.add(key)
+            norm = _normalize(content)
+            if not norm:
+                continue
+            if any(norm == kn or norm in kn or kn in norm for kn in kept_norm):
+                continue
+            kept_norm.append(norm)
             merged.append(item)
             if len(merged) >= k:
                 break

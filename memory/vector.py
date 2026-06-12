@@ -76,11 +76,15 @@ class VectorMemory:
         if not rows:
             return []
 
+        now = time.time()
         scored: list[tuple[float, sqlite3.Row]] = []
         for row in rows:
             rv = _unpack(row["vec"])
             sim = _cosine(q_vec, rv)
-            scored.append((sim, row))
+            # 复合打分:相似度为主,重要性与近用性做温和乘性加权。
+            # 相似度差距大时仍由相似度主导;相近时让"更重要、更近期"的记忆胜出。
+            score = _rank_score(sim, row["importance"], row["created_at"], row["last_used"], now)
+            scored.append((score, row))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         top = scored[:k]
@@ -153,6 +157,19 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     if na == 0 or nb == 0:
         return 0.0
     return float(np.dot(a, b) / (na * nb))
+
+
+def _rank_score(sim: float, importance: float, created_at: float,
+                last_used: float, now: float) -> float:
+    """检索复合打分。相似度为主(乘性因子均 ≤1 且区间窄,不颠覆强相似度差距):
+      最终 = sim × 重要性因子(0.7~1.0) × 近因因子(0.85~1.0)
+    重要性高、最近用过/新建的记忆,在相似度接近时排序更靠前。
+    """
+    age_days = max(0.0, (now - max(created_at, last_used)) / 86400.0)
+    recency = 0.5 ** (age_days / 30.0)                 # 30 天半衰期
+    imp = 0.7 + 0.3 * max(0.0, min(1.0, importance))   # 0.7 ~ 1.0
+    rec = 0.85 + 0.15 * recency                         # 0.85 ~ 1.0
+    return sim * imp * rec
 
 
 # ── Embed 实现 ─────────────────────────────────────────────────────────────────
