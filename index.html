@@ -3,369 +3,470 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Captain — 有分寸感的 AI 助理</title>
+<title>个人 AI 助理 — 你的专属智能体</title>
 <style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
-  body{
-    background:#08080e;
-    color:#d4d4dc;
-    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    line-height:1.6;
-    overflow-x:hidden
-  }
-  ::selection{background:#6c5ce7;color:#fff}
-
-  h1,h2,h3{font-weight:500;letter-spacing:-0.02em;color:#f0f0f5}
-  .display{font-size:clamp(2.6rem,6vw,4.8rem);line-height:1.1;font-weight:450}
-  .heading-lg{font-size:clamp(1.8rem,4vw,3rem);line-height:1.2}
-  .body-sm{font-size:0.9rem;color:#8a8aa0}
-
-  section{padding:6rem 1.5rem;position:relative}
-  .container{max-width:1200px;margin:0 auto}
-  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem}
-
-  .hero{
-    min-height:100vh;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    padding-top:2rem;
-    position:relative;
-    overflow:hidden
-  }
-  .hero::before{
-    content:'';
-    position:absolute;
-    width:80vmax;height:80vmax;
-    top:-20vmax;right:-10vmax;
-    background:radial-gradient(circle,rgba(108,92,231,0.08) 0%,transparent 70%);
-    pointer-events:none
-  }
-  .hero::after{
-    content:'';
-    position:absolute;
-    width:60vmax;height:60vmax;
-    bottom:-20vmax;left:-15vmax;
-    background:radial-gradient(circle,rgba(0,201,167,0.06) 0%,transparent 70%);
-    pointer-events:none
-  }
-  .hero-content{position:relative;z-index:1;max-width:900px}
-  .hero .badge{
-    display:inline-block;
-    padding:0.4rem 1.2rem;
-    border-radius:100px;
-    font-size:0.8rem;
-    letter-spacing:0.06em;
-    color:#8a8aa0;
-    border:1px solid rgba(255,255,255,0.08);
-    margin-bottom:2rem;
-    background:rgba(255,255,255,0.03)
-  }
-  .hero .display{margin-bottom:1.5rem}
-  .hero .subtitle{
-    font-size:clamp(1rem,2vw,1.2rem);
-    color:#8a8aa0;
-    max-width:640px;
-    margin:0 auto 2.5rem;
-    line-height:1.7
-  }
-  .hero .highlight{color:#a29bfe}
-
-  .btn-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
-  .btn{
-    display:inline-flex;
-    align-items:center;
-    gap:0.5rem;
-    padding:0.85rem 2rem;
-    border-radius:0.7rem;
-    font-size:0.95rem;
-    font-weight:500;
-    text-decoration:none;
-    transition:all 0.3s ease;
-    cursor:pointer;
-    border:none
-  }
-  .btn-primary{
-    background:#6c5ce7;
-    color:#fff;
-    box-shadow:0 2px 20px rgba(108,92,231,0.2)
-  }
-  .btn-primary:hover{background:#7c6cf7;transform:translateY(-2px);box-shadow:0 6px 30px rgba(108,92,231,0.35)}
-  .btn-ghost{
-    background:rgba(255,255,255,0.05);
-    color:#d4d4dc;
-    border:1px solid rgba(255,255,255,0.1)
-  }
-  .btn-ghost:hover{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.2)}
-
-  .features{background:linear-gradient(180deg,#08080e 0%,#0c0c18 50%,#08080e 100%)}
-  .features-header,.steps-header,.scenarios-header{text-align:center;margin-bottom:4rem}
-  .features-header .heading-lg,.steps-header .heading-lg,.scenarios-header .heading-lg{margin-bottom:1rem}
-  .features-header p,.steps-header p,.scenarios-header p{color:#8a8aa0;max-width:520px;margin:0 auto}
-
-  .feature-card{
-    padding:2.5rem;
-    border-radius:1.2rem;
-    background:rgba(255,255,255,0.02);
-    border:1px solid rgba(255,255,255,0.05);
-    transition:all 0.4s ease;
-    position:relative;
-    overflow:hidden
-  }
-  .feature-card:hover{
-    background:rgba(255,255,255,0.04);
-    border-color:rgba(108,92,231,0.2);
-    transform:translateY(-4px)
-  }
-  .feature-card .icon{
-    width:3rem;height:3rem;
-    border-radius:0.8rem;
-    display:flex;align-items:center;justify-content:center;
-    font-size:1.3rem;
-    margin-bottom:1.5rem;
-    background:rgba(108,92,231,0.1);
-    color:#a29bfe
-  }
-  .feature-card h3{font-size:1.15rem;margin-bottom:0.6rem;font-weight:500}
-  .feature-card p{font-size:0.9rem;color:#8a8aa0;line-height:1.7}
-
-  .steps{background:#0c0c18}
-  .step-list{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;counter-reset:step}
-  .step-item{position:relative;padding-top:3.5rem}
-  .step-item::before{
-    counter-increment:step;
-    content:'0' counter(step);
-    position:absolute;top:0;left:0;
-    font-size:3rem;font-weight:600;
-    color:rgba(108,92,231,0.15);
-    line-height:1;
-    letter-spacing:-0.04em
-  }
-  .step-item h3{font-size:1.15rem;margin-bottom:0.6rem;font-weight:500}
-  .step-item p{font-size:0.9rem;color:#8a8aa0;line-height:1.7}
-
-  .scenarios{background:linear-gradient(180deg,#08080e 0%,#0a0a14 100%)}
-  .scenario-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1.5rem}
-  .scenario-card{
-    display:flex;
-    align-items:flex-start;
-    gap:1.2rem;
-    padding:1.5rem;
-    border-radius:1rem;
-    background:rgba(255,255,255,0.02);
-    border:1px solid rgba(255,255,255,0.05);
-    transition:all 0.3s ease
-  }
-  .scenario-card:hover{background:rgba(255,255,255,0.04);border-color:rgba(0,201,167,0.15)}
-  .scenario-card .emoji-icon{
-    width:2.8rem;height:2.8rem;
-    border-radius:0.7rem;
-    display:flex;align-items:center;justify-content:center;
-    font-size:1.3rem;
-    background:rgba(0,201,167,0.08);
-    flex-shrink:0
-  }
-  .scenario-card h4{font-size:1rem;font-weight:500;margin-bottom:0.3rem}
-  .scenario-card p{font-size:0.85rem;color:#8a8aa0;line-height:1.6}
-
-  .cta{
-    text-align:center;
-    padding:7rem 1.5rem;
-    background:linear-gradient(180deg,#0c0c18 0%,#08080e 100%);
-    position:relative;
-    overflow:hidden
-  }
-  .cta::before{
-    content:'';
-    position:absolute;
-    width:50vmax;height:50vmax;
-    top:50%;left:50%;
-    transform:translate(-50%,-50%);
-    background:radial-gradient(circle,rgba(108,92,231,0.06) 0%,transparent 70%);
-    pointer-events:none
-  }
-  .cta-content{position:relative;z-index:1;max-width:600px;margin:0 auto}
-  .cta .heading-lg{margin-bottom:1rem}
-  .cta p{color:#8a8aa0;margin-bottom:2.5rem}
-
-  footer{
-    text-align:center;
-    padding:2rem 1.5rem;
-    border-top:1px solid rgba(255,255,255,0.04);
-    color:#4a4a60;
-    font-size:0.8rem
+  /* ===== Reset & Base ===== */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0a0a0c;
+    color: #e8e8ed;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
 
-  .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent);max-width:600px;margin:0 auto}
-
-  @media(max-width:900px){
-    .grid-3,.step-list{grid-template-columns:1fr;gap:2rem}
-    .scenario-grid{grid-template-columns:1fr}
-    section{padding:4rem 1.2rem}
+  /* ===== Utility ===== */
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  .section-label {
+    font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase;
+    color: #6b6b76; margin-bottom: 12px; font-weight: 500;
   }
-  @media(max-width:600px){
-    .hero .btn-group{flex-direction:column;align-items:center}
-    .hero .btn{width:100%;justify-content:center}
+  .badge {
+    display: inline-block; padding: 4px 14px; border-radius: 100px;
+    font-size: 0.75rem; font-weight: 500; letter-spacing: 0.02em;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    color: #a0a0ab;
   }
 
-  .reveal{opacity:0;transform:translateY(30px);transition:all 0.8s ease}
-  .reveal.visible{opacity:1;transform:translateY(0)}
+  /* ===== Hero ===== */
+  .hero {
+    min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+    position: relative; padding: 80px 0 40px; overflow: hidden;
+  }
+  .hero::before {
+    content: ''; position: absolute; top: -40%; right: -20%;
+    width: 700px; height: 700px;
+    background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: ''; position: absolute; bottom: -30%; left: -10%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(100,180,255,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 60px;
+    align-items: center; position: relative; z-index: 1;
+  }
+  .hero-left .badge { margin-bottom: 24px; }
+  .hero-left h1 {
+    font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 700;
+    line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px;
+  }
+  .hero-left h1 span {
+    background: linear-gradient(135deg, #e8e8ed 0%, #8a8a9a 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-left p {
+    font-size: 1.1rem; color: #8a8a9a; max-width: 480px;
+    margin-bottom: 36px; line-height: 1.7;
+  }
+  .hero-cta { display: flex; gap: 16px; flex-wrap: wrap; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 32px; border-radius: 12px; background: #fff;
+    color: #0a0a0c; font-weight: 600; font-size: 0.95rem;
+    text-decoration: none; transition: all 0.25s ease; border: none; cursor: pointer;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,255,255,0.1);
+  }
+  .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 32px; border-radius: 12px;
+    background: rgba(255,255,255,0.06); color: #e8e8ed;
+    font-weight: 500; font-size: 0.95rem; text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.1); transition: all 0.25s ease; cursor: pointer;
+  }
+  .btn-secondary:hover {
+    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);
+  }
+
+  /* ===== Hero Right — Glass Terminal ===== */
+  .hero-right { position: relative; }
+  .glass-card {
+    background: rgba(255,255,255,0.03);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;
+    padding: 32px; position: relative; overflow: hidden;
+  }
+  .glass-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  }
+  .terminal-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 24px; padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .terminal-dot:nth-child(1) { background: #ff5f57; }
+  .terminal-dot:nth-child(2) { background: #ffbd2e; }
+  .terminal-dot:nth-child(3) { background: #28c840; }
+  .terminal-line {
+    display: flex; gap: 8px; margin-bottom: 12px;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.82rem; color: #6b6b76; line-height: 1.6;
+    opacity: 0; animation: fadeInUp 0.4s ease forwards;
+  }
+  .terminal-line:nth-child(4) { animation-delay: 0.1s; }
+  .terminal-line:nth-child(5) { animation-delay: 0.3s; }
+  .terminal-line:nth-child(6) { animation-delay: 0.5s; }
+  .terminal-line:nth-child(7) { animation-delay: 0.7s; }
+  .terminal-line:nth-child(8) { animation-delay: 0.9s; }
+  .terminal-prompt { color: #28c840; }
+  .terminal-cmd { color: #e8e8ed; }
+  .terminal-output { color: #6b6b76; padding-left: 16px; }
+  .terminal-cursor {
+    display: inline-block; width: 8px; height: 16px; background: #e8e8ed;
+    animation: blink 1s step-end infinite; vertical-align: text-bottom; margin-left: 4px;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===== Trust Bar ===== */
+  .trust-bar { padding: 60px 0 40px; text-align: center; border-top: 1px solid rgba(255,255,255,0.04); }
+  .trust-bar p {
+    font-size: 0.8rem; color: #4a4a52; letter-spacing: 0.08em;
+    text-transform: uppercase; margin-bottom: 20px;
+  }
+  .trust-logos { display: flex; justify-content: center; align-items: center; gap: 40px; flex-wrap: wrap; }
+  .trust-logos span { font-size: 0.9rem; color: #5a5a62; font-weight: 500; opacity: 0.6; }
+
+  /* ===== Capabilities ===== */
+  .capabilities { padding: 100px 0; position: relative; }
+  .section-header { text-align: center; max-width: 640px; margin: 0 auto 60px; }
+  .section-header h2 {
+    font-size: clamp(1.8rem, 3vw, 2.6rem); font-weight: 700;
+    letter-spacing: -0.02em; margin-bottom: 16px;
+  }
+  .section-header p { color: #6b6b76; font-size: 1rem; line-height: 1.7; }
+  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .feature-card {
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px; padding: 32px 28px; transition: all 0.3s ease; position: relative;
+    overflow: hidden;
+  }
+  .feature-card:hover {
+    background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1);
+    transform: translateY(-4px);
+  }
+  .feature-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+    margin-bottom: 20px; background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .feature-card h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 10px; }
+  .feature-card p { font-size: 0.9rem; color: #6b6b76; line-height: 1.7; }
+
+  /* ===== How It Works ===== */
+  .how-it-works { padding: 100px 0; border-top: 1px solid rgba(255,255,255,0.04); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; position: relative; }
+  .steps::before {
+    content: ''; position: absolute; top: 40px; left: 15%; right: 15%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  }
+  .step { text-align: center; position: relative; }
+  .step-number {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 600; margin: 0 auto 20px; color: #6b6b76;
+  }
+  .step h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
+  .step p {
+    font-size: 0.9rem; color: #6b6b76; line-height: 1.7; max-width: 280px; margin: 0 auto;
+  }
+
+  /* ===== Why ===== */
+  .why { padding: 100px 0; border-top: 1px solid rgba(255,255,255,0.04); }
+  .why-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 80px; align-items: center; }
+  .why-left h2 {
+    font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700;
+    letter-spacing: -0.02em; margin-bottom: 20px;
+  }
+  .why-left p { color: #6b6b76; line-height: 1.7; margin-bottom: 32px; }
+  .benefits-list { list-style: none; }
+  .benefits-list li {
+    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px;
+  }
+  .benefits-list li::before {
+    content: '→'; color: #4a4a52; font-weight: 300; flex-shrink: 0; margin-top: 2px;
+  }
+  .benefits-list strong { display: block; font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
+  .benefits-list span { font-size: 0.85rem; color: #6b6b76; }
+  .why-right .glass-card { padding: 40px; }
+  .why-right .glass-card p {
+    font-size: 0.95rem; color: #8a8a9a; font-style: italic; line-height: 1.8; margin-bottom: 16px;
+  }
+  .why-right .glass-card .attribution { font-style: normal; font-size: 0.85rem; color: #5a5a62; }
+
+  /* ===== CTA ===== */
+  .cta-section {
+    padding: 120px 0; text-align: center;
+    border-top: 1px solid rgba(255,255,255,0.04); position: relative; overflow: hidden;
+  }
+  .cta-section::before {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 800px; height: 800px;
+    background: radial-gradient(circle, rgba(255,255,255,0.02) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .cta-section h2 {
+    font-size: clamp(1.8rem, 3.5vw, 3rem); font-weight: 700;
+    letter-spacing: -0.02em; margin-bottom: 16px; position: relative; z-index: 1;
+  }
+  .cta-section p {
+    color: #6b6b76; font-size: 1.05rem; max-width: 480px;
+    margin: 0 auto 36px; position: relative; z-index: 1;
+  }
+  .cta-section .btn-primary { position: relative; z-index: 1; }
+
+  /* ===== Footer ===== */
+  .footer { padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.04); text-align: center; }
+  .footer p { font-size: 0.8rem; color: #3a3a42; }
+
+  /* ===== Scroll Reveal ===== */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    .hero-left h1 { font-size: 2.4rem; }
+    .hero-left p { max-width: 100%; }
+    .features-grid { grid-template-columns: 1fr 1fr; }
+    .steps { grid-template-columns: 1fr; gap: 32px; }
+    .steps::before { display: none; }
+    .why-grid { grid-template-columns: 1fr; gap: 48px; }
+  }
+  @media (max-width: 600px) {
+    .features-grid { grid-template-columns: 1fr; }
+    .trust-logos { gap: 24px; }
+    .hero-cta { flex-direction: column; }
+    .btn-primary, .btn-secondary { justify-content: center; }
+  }
 </style>
 </head>
 <body>
 
+<!-- ===== Hero ===== -->
 <section class="hero">
-  <div class="hero-content">
-    <span class="badge">✦ v1.0 · 现在可用</span>
-    <h1 class="display">
-      一个<span class="highlight">有分寸感</span>的<br>自主 AI 助理
-    </h1>
-    <p class="subtitle">
-      听懂你的目标，拆解步骤，自己调用工具把事情做完。<br>
-      不啰嗦，不编造，不越界。像靠谱的搭档，不是工具。
-    </p>
-    <div class="btn-group">
-      <a href="#features" class="btn btn-primary">了解能力 →</a>
-      <a href="#cta" class="btn btn-ghost">开始使用</a>
-    </div>
-  </div>
-</section>
-
-<section class="features" id="features">
   <div class="container">
-    <div class="features-header reveal">
-      <h2 class="heading-lg">不是对话机器人，是执行者</h2>
-      <p>你说目标，它自己规划路径、调用工具、交付结果</p>
-    </div>
-    <div class="grid-3">
-      <div class="feature-card reveal">
-        <div class="icon">🎯</div>
-        <h3>自主拆解</h3>
-        <p>听懂你的目标后，在内心里拆解步骤、选定策略，然后自己调用工具把事情做完，不需要你手把手教每一步。</p>
+    <div class="hero-grid">
+      <div class="hero-left">
+        <div class="badge">v2.0 · 持续进化中</div>
+        <h1>你的专属<br><span>个人 AI 助理</span></h1>
+        <p>
+          不止是对话——它能理解你的习惯、管理你的任务、检索你的笔记、辅助创作，
+          像一个真正了解你的伙伴，在数字世界替你分忧。
+        </p>
+        <div class="hero-cta">
+          <a href="#capabilities" class="btn-primary">
+            探索能力
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M11 10l-3 3-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a href="#cta" class="btn-secondary">立即体验 →</a>
+        </div>
       </div>
-      <div class="feature-card reveal">
-        <div class="icon">🧰</div>
-        <h3>工具全栈</h3>
-        <p>搜索、读文件、写代码、控制 GUI、调用 API、发推送。所有能力整合在一起，一个助理搞定原本需要多个工具的事。</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="icon">⚖️</div>
-        <h3>分寸感</h3>
-        <p>知道什么时候该自己做，什么时候该问人。不编造答案，做错了就承认。有安全边界，该确认时会确认，不该做的不做。</p>
+      <div class="hero-right">
+        <div class="glass-card">
+          <div class="terminal-header">
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span style="margin-left:auto;font-size:0.7rem;color:#4a4a52;font-family:monospace;">assistant@captain ~ %</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-prompt">$</span>
+            <span class="terminal-cmd">你今天的日程已整合，3 项待办待处理</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-prompt">$</span>
+            <span class="terminal-cmd">搜索"上周的会议笔记"</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-prompt">>></span>
+            <span class="terminal-output">已从"工作/周会"中找到 4 条相关片段</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-prompt">$</span>
+            <span class="terminal-cmd">帮我起草一封回复邮件</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-prompt">>></span>
+            <span class="terminal-output">草稿已生成，语气偏正式，含附件提醒</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-cursor"></span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<section class="steps">
+<!-- ===== Trust Bar ===== -->
+<div class="trust-bar">
   <div class="container">
-    <div class="steps-header reveal">
-      <h2 class="heading-lg">三步就够了</h2>
-      <p>从目标到落地的完整链路</p>
-    </div>
-    <div class="step-list">
-      <div class="step-item reveal">
-        <h3>说出目标</h3>
-        <p>用自然语言告诉助理你想做什么，不需要拆成指令清单。说「帮我做个落地页」就行，不用管用什么技术栈。</p>
-      </div>
-      <div class="step-item reveal">
-        <h3>自动执行</h3>
-        <p>助理在内心里规划步骤、按顺序调用工具。搜索资料、读文件、写代码、跑命令，连续推进直到完成或需要你决策。</p>
-      </div>
-      <div class="step-item reveal">
-        <h3>交付结果</h3>
-        <p>完成后给你一份简洁的总结：做了什么、产出在哪里、关键决策。不贴冗长日志，想追问细节随时展开。</p>
-      </div>
+    <p>已被个人用户信赖</p>
+    <div class="trust-logos">
+      <span>创作者</span><span>·</span>
+      <span>开发者</span><span>·</span>
+      <span>设计师</span><span>·</span>
+      <span>研究者</span><span>·</span>
+      <span>管理者</span>
     </div>
   </div>
-</section>
+</div>
 
-<div class="divider"></div>
-
-<section class="scenarios">
+<!-- ===== Capabilities ===== -->
+<section class="capabilities" id="capabilities">
   <div class="container">
-    <div class="scenarios-header reveal">
-      <h2 class="heading-lg">适用场景</h2>
-      <p>从开发到日常，一个助理覆盖</p>
+    <div class="section-header reveal">
+      <div class="section-label">能力矩阵</div>
+      <h2>一个助理，覆盖你数字生活的方方面面</h2>
+      <p>从信息管理到内容创作，从日程规划到知识检索，个人 AI 助理像你的第二大脑。</p>
     </div>
-    <div class="scenario-grid">
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">🌐</div>
-        <div>
-          <h4>落地页与前端</h4>
-          <p>说出产品定位，直接产出可打开的 HTML 页面，设计品味把关、Pre-flight 检查全自动。</p>
-        </div>
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon">📋</div>
+        <h3>任务与日程管理</h3>
+        <p>理解自然语言指令，自动创建待办、设置提醒、整合日历，让你的时间安排井井有条。</p>
       </div>
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">📊</div>
-        <div>
-          <h4>数据分析</h4>
-          <p>丢一个 CSV 文件过去，自动统计行列、类型、缺失值、数值分布，转成表格或图表说明。</p>
-        </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔍</div>
+        <h3>个人知识检索</h3>
+        <p>在你积累的笔记、文档、收藏中做语义搜索，几秒内找到你需要的那一段信息。</p>
       </div>
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">✍️</div>
-        <div>
-          <h4>写作与编辑</h4>
-          <p>写邮件、周报、会议纪要、技术文档。按场景自动匹配语气和结构，统计字数与可读性。</p>
-        </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">✍️</div>
+        <h3>写作与创作辅助</h3>
+        <p>从邮件草稿到文章大纲，从周报到文案润色，帮你把想法变成清晰、得体的文字。</p>
       </div>
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">🔍</div>
-        <div>
-          <h4>事实核查</h4>
-          <p>遇到时效性信息自动查日期、搜索核实，不做记忆推断。不确定的结论不交付。</p>
-        </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🧠</div>
+        <h3>记忆与上下文</h3>
+        <p>记住你的偏好、过往决策和习惯，无需每次重复上下文——越用越懂你。</p>
       </div>
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">📁</div>
-        <div>
-          <h4>个人知识库</h4>
-          <p>在你的笔记和文档中做语义检索，找到相关内容及来源文件，不遗漏上下文。</p>
-        </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔌</div>
+        <h3>工具调用与自动化</h3>
+        <p>直接搜索网页、读取文件、运行脚本——不只是聊天，而是真正帮你把事情做完。</p>
       </div>
-      <div class="scenario-card reveal">
-        <div class="emoji-icon">🤝</div>
-        <div>
-          <h4>团队协作</h4>
-          <p>把子任务委托给其他专家 Agent，协调多个角色并行推进，你只需要验收最终结果。</p>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔒</div>
+        <h3>隐私优先设计</h3>
+        <p>数据处理逻辑透明，你拥有自己的数据，助理只是你的代理，而非平台的收集器。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How It Works ===== -->
+<section class="how-it-works">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">三步上手</div>
+      <h2>启动你的个人助理只需几分钟</h2>
+      <p>没有复杂配置，让助理了解你，然后放手交给它。</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-number">01</div>
+        <h3>告诉它你的世界</h3>
+        <p>分享你的角色、偏好、常用工具和当前目标，助理会记住并以此为基础运作。</p>
+      </div>
+      <div class="step reveal">
+        <div class="step-number">02</div>
+        <h3>连接你的数据源</h3>
+        <p>授权访问笔记库、文档目录或日历——助理只读你允许的部分，不越界。</p>
+      </div>
+      <div class="step reveal">
+        <div class="step-number">03</div>
+        <h3>用自然语言指挥它</h3>
+        <p>像对同事说话一样分配任务。查资料、写东西、整理信息，助理自动执行并汇报结果。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Why ===== -->
+<section class="why">
+  <div class="container">
+    <div class="why-grid">
+      <div class="why-left reveal">
+        <div class="section-label">为什么不同</div>
+        <h2>不只是工具，而是你的数字分身</h2>
+        <p>
+          市面上的 AI 产品大多是"通用问答器"，用完即走。个人 AI 助理则是与你长期共存的智能体——
+          它记住你的上下文，理解你的偏好，在你需要时主动提议。
+        </p>
+        <ul class="benefits-list">
+          <li><div><strong>有记忆的伙伴</strong><span>不是每次从零开始，你提过一次的事它不会忘。</span></div></li>
+          <li><div><strong>有分寸的自主</strong><span>理解目标后自行拆解执行，只在关键节点向你确认。</span></div></li>
+          <li><div><strong>诚实透明</strong><span>不知道就说不知道，做错了就承认，绝不编造。</span></div></li>
+          <li><div><strong>你的数据属于你</strong><span>助理是你的代理，不是平台的耳目。</span></div></li>
+        </ul>
+      </div>
+      <div class="why-right reveal">
+        <div class="glass-card">
+          <p>
+            "以前我需要打开五个不同的工具来处理信息——日历、笔记、邮箱、
+            搜索引擎、写作软件。现在我只对一个助理说话，它替我搞定后面所
+            有步骤。这不是效率提升，是工作方式的改变。"
+          </p>
+          <div class="attribution">— 来自一位早期使用者的反馈</div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<section class="cta" id="cta">
-  <div class="cta-content reveal">
-    <h2 class="heading-lg">准备好试试了吗？</h2>
-    <p>不说废话，不编造，有分寸。找一个真正能帮你干活的助理。</p>
-    <a href="#" class="btn btn-primary">立即开始 →</a>
+<!-- ===== CTA ===== -->
+<section class="cta-section" id="cta">
+  <div class="container">
+    <h2>准备好拥有你的专属助理了吗？</h2>
+    <p>让 AI 成为你数字世界的延伸，而不是又一个需要学习的新工具。</p>
+    <a href="#" class="btn-primary">
+      开始使用
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
   </div>
 </section>
 
-<footer>
-  <p>© 2025 Captain · 分寸感 AI 助理</p>
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  <div class="container">
+    <p>© 2025 · 个人 AI 助理 · 数据属于你，能力为你服务</p>
+  </div>
 </footer>
 
+<!-- ===== Scroll Reveal ===== -->
 <script>
-(function(){
-  const observer = new IntersectionObserver((entries)=>{
-    entries.forEach(entry=>{
-      if(entry.isIntersecting){
+(function() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
         entry.target.classList.add('visible');
-        observer.unobserve(entry.target);
       }
     });
-  },{threshold:0.1});
-  document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 })();
 </script>
-
 </body>
 </html>

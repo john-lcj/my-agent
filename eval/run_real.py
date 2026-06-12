@@ -152,6 +152,47 @@ async def _judge(task: dict, answer: str, model: str | None) -> tuple[int, str]:
         return 0, f"解析失败:{e}"
 
 
+_TRANSIENT_RE = re.compile(
+    r"无法连接模型服务|connection error|connect error|timed out|timeout|"
+    r"rate limit|过于频繁|额度不足|\b429\b|\b502\b|\b503\b|temporarily|service unavailable",
+    re.I,
+)
+
+
+def _is_transient(text: object) -> bool:
+    """是否是临时性基础设施错误(网络/超时/限流),而非'答得差'。"""
+    return bool(text) and bool(_TRANSIENT_RE.search(str(text)))
+
+
+async def _run_task_retry(prompt: str, model: str | None, tries: int = 3) -> str:
+    """跑任务,遇临时错误自动重试,避免把网络抖动当成 agent 失败。"""
+    answer = ""
+    for i in range(tries):
+        try:
+            answer = await _run_task(prompt, model)
+        except Exception as e:
+            answer = f"(执行异常: {e})"
+        if not _is_transient(answer):
+            return answer
+        if i < tries - 1:
+            await asyncio.sleep(2 * (i + 1))
+    return answer
+
+
+async def _judge_retry(task: dict, answer: str, model: str | None, tries: int = 3):
+    """评分,遇临时错误自动重试。返回 (score, comment, transient)。"""
+    for i in range(tries):
+        try:
+            score, comment = await _judge(task, answer, model)
+            return score, comment, False
+        except Exception as e:
+            if _is_transient(str(e)) and i < tries - 1:
+                await asyncio.sleep(2 * (i + 1))
+                continue
+            return 0, f"评委异常:{e}", _is_transient(str(e))
+    return 0, "评委多次异常", True
+
+
 def _previous_avg() -> tuple[str, float] | None:
     """读取最近一份报告的平均分,用于对比。"""
     if not os.path.isdir(REPORT_DIR):
@@ -193,20 +234,21 @@ async def main() -> int:
 
     for t in tasks:
         t0 = time.time()
-        try:
-            answer = await _run_task(t["prompt"], args.model)
-        except Exception as e:
-            answer = f"(执行异常: {e})"
-        try:
-            score, comment = await _judge(t, answer, args.model)
-        except Exception as e:
-            score, comment = 0, f"评委异常:{e}"
+        answer = await _run_task_retry(t["prompt"], args.model)
+        if _is_transient(answer):
+            # agent 侧多次仍连不上模型:基础设施问题,不计分(不冤枉 agent)。
+            score, comment, errored = None, "模型连接异常(已重试),跳过不计分", True
+        else:
+            score, comment, errored = await _judge_retry(t, answer, args.model)
         elapsed = time.time() - t0
         rows.append({"id": t["id"], "score": score, "comment": comment,
-                     "elapsed": elapsed, "answer": answer})
-        print(f" [{score}/5] {t['id']}  ({elapsed:.0f}s)  {comment}")
+                     "elapsed": elapsed, "answer": answer, "error": errored})
+        disp = f"{score}/5" if isinstance(score, int) and score > 0 else "ERR"
+        print(f" [{disp}] {t['id']}  ({elapsed:.0f}s)  {comment}")
 
-    scored = [r for r in rows if r["score"] > 0]
+    scored = [r for r in rows
+              if isinstance(r["score"], int) and r["score"] > 0 and not r.get("error")]
+    errored = [r for r in rows if r.get("error")]
     avg = sum(r["score"] for r in scored) / len(scored) if scored else 0.0
 
     os.makedirs(REPORT_DIR, exist_ok=True)
@@ -216,19 +258,25 @@ async def main() -> int:
         f"# 真实任务评测报告 {today}",
         "",
         f"- 模型: {args.model or Config.MODEL}",
-        f"- 任务数: {len(rows)}(有效评分 {len(scored)})",
-        f"- 平均分: {avg:.2f}",
+        f"- 任务数: {len(rows)}(有效评分 {len(scored)},连接异常跳过 {len(errored)})",
+        f"- 平均分: {avg:.2f}(仅统计有效评分,临时连接错误不计入)",
     ]
     if prev:
         delta = avg - prev[1]
         trend = "↑ 变好" if delta > 0.05 else ("↓ 变差" if delta < -0.05 else "→ 持平")
-        lines.append(f"- 与上次({prev[0]},{prev[1]:.2f})对比: {delta:+.2f} {trend}")
+        note = " ⚠任务范围可能不同,仅供参考" if args.only else ""
+        lines.append(f"- 与上次({prev[0]},{prev[1]:.2f})对比: {delta:+.2f} {trend}{note}")
+    if errored:
+        lines.append(f"- ⚠ 本次有 {len(errored)} 项因模型连接错误未计分:"
+                     + "、".join(r["id"] for r in errored))
     lines += ["", "| 任务 | 得分 | 点评 | 耗时 |", "|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r['id']} | {r['score']}/5 | {r['comment']} | {r['elapsed']:.0f}s |")
+        sc = f"{r['score']}/5" if isinstance(r["score"], int) and r["score"] > 0 else "ERR"
+        lines.append(f"| {r['id']} | {sc} | {r['comment']} | {r['elapsed']:.0f}s |")
     lines += ["", "## 回答全文", ""]
     for r in rows:
-        lines += [f"### {r['id']}({r['score']}/5)", "", (r["answer"] or "")[:2000], ""]
+        sc = f"{r['score']}/5" if isinstance(r["score"], int) and r["score"] > 0 else "ERR"
+        lines += [f"### {r['id']}({sc})", "", (r["answer"] or "")[:2000], ""]
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
