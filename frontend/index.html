@@ -173,14 +173,13 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .msg-user{align-self:flex-end;max-width:88%;padding:10px 14px 12px;border-radius:16px 16px 4px 16px;
           background:rgba(217,119,87,.11);border:1px solid rgba(217,119,87,.28);
           color:var(--txt);white-space:pre-wrap;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-.msg-agent{align-self:stretch;max-width:100%;padding:12px 14px 14px;border-radius:4px 16px 16px 16px;
-           background:var(--panel);border:1px solid var(--border);
-           border-left:3px solid var(--blue);color:var(--txt);position:relative;
-           box-shadow:0 1px 2px rgba(0,0,0,.03)}
+/* Claude 风格:助手回复是画布上的纯文本,无气泡/无边框/无左色条,更像文档而非聊天框。 */
+.msg-agent{align-self:stretch;max-width:100%;padding:4px 2px 10px;
+           color:var(--txt);position:relative}
 .msg-head{margin-bottom:6px}
 .msg-label{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:none}
 .msg-label-user{color:var(--accent)}
-.msg-label-agent{color:var(--blue)}
+.msg-label-agent{color:var(--muted)}
 .msg-body.user-body{white-space:pre-wrap;line-height:1.6}
 .msg-agent:hover .msg-actions{opacity:1}
 .msg-actions{position:absolute;top:0;right:0;display:flex;gap:4px;opacity:0;transition:opacity .12s}
