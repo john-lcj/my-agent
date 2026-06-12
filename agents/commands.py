@@ -124,12 +124,14 @@ def format_experts_help(workers: list) -> str:
 
 def format_skills_help(manifests: list) -> str:
     lines = [
-        "Skill 插件(显式调用):",
+        f"Skill 插件 · 共 {len(manifests)} 个(显式调用):",
         "  /skills               列出本帮助",
         "  /skill <名> <参数>    调用指定 skill",
         "",
     ]
+    # 命令列左对齐,描述列对齐,读起来更整齐。
+    width = max((len(m.name) for m in manifests), default=0) + 1
     for m in manifests:
-        lines.append(f"  /{m.name}  —  {m.description or m.name}")
+        lines.append(f"  /{m.name.ljust(width)} {m.description or m.name}")
     lines += ["", "示例: /text_stats 你好世界"]
     return "\n".join(lines)
