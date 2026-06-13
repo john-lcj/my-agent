@@ -32,12 +32,14 @@ class Coordinator:
         resource_lock: Optional[ResourceLock] = None,
         bus: Optional[EventBus] = None,
         graph_dispatcher=None,
+        verifier=None,
     ) -> None:
         self._main = main_agent
         self._workers = worker_registry
         self._dispatcher = dispatcher
         # 升级路径优先用 DAG 编排(依赖感知 + 共享黑板 + 验证返修);未提供则退回扁平派发。
         self._graph_dispatcher = graph_dispatcher
+        self._verifier = verifier   # 验收官:子任务产出后对照 acceptance 自检 + 有界返修
         self._lock = resource_lock or ResourceLock()
         self._bus = bus or EventBus()
 

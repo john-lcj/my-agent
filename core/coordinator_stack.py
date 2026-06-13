@@ -50,6 +50,7 @@ def build_coordinator_stack(
 
     from agents.dispatcher import AutoDispatcher
     from agents.graph_dispatcher import GraphDispatcher
+    from agents.verifier import LLMVerifier
     from llm.model_registry import default_model_id, get_model, normalize_model_id
 
     mode = governance_mode or Config.GOVERNANCE_MODE
@@ -75,5 +76,6 @@ def build_coordinator_stack(
         bus=bundle.bus,
         dispatcher=AutoDispatcher(build_llm(model=model_id)),
         graph_dispatcher=GraphDispatcher(build_llm(model=model_id)),
+        verifier=LLMVerifier(build_llm(model=model_id)),
     )
     return coordinator, bundle
