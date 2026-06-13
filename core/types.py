@@ -144,6 +144,7 @@ class EventType(str, Enum):
     GOVERNANCE_DECISION = "governance_decision"  # 治理裁决(含命中规则+原因),供审计与统计
     TASK_DONE = "task_done"
     STATUS_BAR = "status_bar"           # 输入框上方状态栏(模型/上下文/时长)
+    PLAN_UPDATE = "plan_update"         # DAG 编排:计划图 + 节点状态(待定/执行/完成/失败/返修)
     ERROR = "error"
 
 

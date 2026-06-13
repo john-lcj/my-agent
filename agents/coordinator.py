@@ -31,10 +31,13 @@ class Coordinator:
         dispatcher=None,
         resource_lock: Optional[ResourceLock] = None,
         bus: Optional[EventBus] = None,
+        graph_dispatcher=None,
     ) -> None:
         self._main = main_agent
         self._workers = worker_registry
         self._dispatcher = dispatcher
+        # 升级路径优先用 DAG 编排(依赖感知 + 共享黑板 + 验证返修);未提供则退回扁平派发。
+        self._graph_dispatcher = graph_dispatcher
         self._lock = resource_lock or ResourceLock()
         self._bus = bus or EventBus()
 
@@ -93,7 +96,7 @@ class Coordinator:
             "source": "coordinator",
         })
 
-        if self._dispatcher is None:
+        if self._dispatcher is None and self._graph_dispatcher is None:
             return (
                 f"Captain 在限定步数内未能完成任务。\n\n{captain_summary}\n\n"
                 "（未配置专家路由，请使用 /专家名 指定专家。）"
@@ -105,6 +108,12 @@ class Coordinator:
             f"{task.strip()}\n\n"
             f"[Captain 已尝试但未完成]\n{captain_summary}"
         )
+
+        # 优先走 DAG 编排:依赖感知 + 共享黑板 + 验证返修。
+        if self._graph_dispatcher is not None:
+            return await self._run_graph(
+                task, route_text, workers, ctx, confirm, captain_summary)
+
         plan = await self._dispatcher.route(route_text, workers)
         if plan.is_empty():
             return (
@@ -117,6 +126,57 @@ class Coordinator:
         return await self._execute_plan(
             task, plan, ctx, confirm, captain_summary=captain_summary, route_reason=reason,
         )
+
+    async def _run_graph(self, original_task, route_text, workers, ctx, confirm,
+                         captain_summary):
+        """DAG 编排升级路径:规划成依赖图 → 执行器并行+黑板执行 → Captain 汇总。"""
+        from agents.graph_orchestrator import GraphOrchestrator
+
+        graph = await self._graph_dispatcher.route(route_text, workers)
+        if graph.is_empty():
+            # 规划器认为无需/无法分解 → 退回扁平派发(若有),否则提示。
+            if self._dispatcher is not None:
+                plan = await self._dispatcher.route(route_text, workers)
+                if not plan.is_empty():
+                    return await self._execute_plan(
+                        original_task, plan, ctx, confirm,
+                        captain_summary=captain_summary, route_reason=plan.reason)
+            return (f"Captain 在限定步数内未能完成,且暂无合适专家可承接。\n\n"
+                    f"{captain_summary}\n\n请换用 /experts 查看专家并显式调用。")
+
+        if not self._has_user_turn(ctx, original_task):
+            ctx.add_user(original_task)
+            self._emit(EventType.USER_MESSAGE, {"text": original_task})
+
+        self._emit(EventType.CAPABILITY_CALL, {
+            "name": "coordinator.plan",
+            "args": {"nodes": [{"id": n.id, "agent": n.agent, "sub_task": n.sub_task,
+                                "depends_on": n.depends_on} for n in graph.nodes]},
+            "intent": graph.reason or "依赖图编排",
+        })
+
+        orch = GraphOrchestrator(
+            self._workers,
+            on_event=self._graph_event_sink(),
+            verifier=self._make_verifier(),
+            max_revisions=1,
+        )
+        result = await orch.run(graph, original_task, captain_summary)
+        self._emit(EventType.CAPABILITY_RESULT, {
+            "ok": True, "output": f"DAG 完成 {len(result['results'])} 个子任务",
+        })
+        return await self._captain_synthesize(
+            original_task, result["results"], graph.reason or "依赖图编排", ctx, confirm)
+
+    def _graph_event_sink(self):
+        """把执行器的节点级事件转发到总线(供前端渲染执行计划图)。"""
+        def sink(payload: dict) -> None:
+            self._emit(EventType.PLAN_UPDATE, payload)
+        return sink
+
+    def _make_verifier(self):
+        """Phase 2 在子类/装配处注入真实 verifier;默认不验证。"""
+        return getattr(self, "_verifier", None)
 
     async def _execute_plan(
         self,
