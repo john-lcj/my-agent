@@ -573,6 +573,25 @@ option{background:var(--card)}
 .stat-pill{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
 .stat-pill b{font-size:16px;font-variant-numeric:tabular-nums}
 .stat-pill span{display:block;font-size:11px;color:var(--dim);margin-top:2px}
+/* 执行计划图(DAG 编排) */
+.plan-card{margin:8px 0;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r);
+           background:var(--panel)}
+.plan-title{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--txt)}
+.plan-node{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;border-top:1px solid var(--border)}
+.plan-node:first-of-type{border-top:none}
+.plan-node.dim{opacity:.55}
+.plan-node-id{color:var(--dim);font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.plan-node-agent{color:var(--accent);font-weight:600;white-space:nowrap}
+.plan-node-task{color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plan-deps{color:var(--dim);font-size:11px;white-space:nowrap}
+.plan-badge{flex:0 0 auto;font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.plan-badge.pending{background:var(--border);color:var(--dim)}
+.plan-badge.running{background:rgba(61,111,214,.16);color:var(--blue)}
+.plan-badge.done{background:rgba(45,138,94,.16);color:var(--green)}
+.plan-badge.revising{background:rgba(184,134,11,.18);color:var(--yellow)}
+.plan-badge.failed{background:rgba(199,62,62,.16);color:var(--red)}
+.plan-badge.blocked{background:var(--border);color:var(--dim)}
+.plan-replan{margin-top:8px;font-size:12px;color:var(--yellow)}
 .settings-modal{width:min(960px,96vw);max-height:88vh;position:relative;display:flex;flex-direction:column}
 .settings-close{position:absolute;top:10px;right:10px;z-index:3}
 .settings-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;
@@ -1411,6 +1430,7 @@ function handle(ev) {
     if (conciseChat && currentView === 'chat') return;
     const name = p.name || '';
     const args = p.args || {};
+    if (name === 'coordinator.plan') return;   // 由 plan_update 事件渲染执行计划图
     if (name === 'coordinator.dispatch') {
       const items = (args.assignments || []).map(a => `${a.agent}: ${(a.sub_task||'').slice(0,80)}`).join('\n');
       chatEvent('call', t('evtDispatch'), items || (p.intent || t('evtAutoDispatch')));
@@ -1447,6 +1467,7 @@ function handle(ev) {
     chatEvent('err', t('errLabel'), p.message||'');
     setTaskRunning(false);
   }
+  else if (etype === 'plan_update') { handlePlanUpdate(p); }
   else if (etype === 'status_bar') { updateStatusBar(p); }
   else if (etype === 'task_done') {
     removeThinking();
@@ -1932,6 +1953,59 @@ function rtSummary(content) {
     <div class="rt-summary-content md">${renderMD(content)}</div>`;
   feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
   rtData.summary = content;
+}
+
+/* ══ 执行计划图(DAG 编排可观测)════════════════════════════════ */
+const PLAN_STATUS = {
+  pending:  { zh:'待定', cls:'pending' },
+  running:  { zh:'执行中', cls:'running' },
+  done:     { zh:'完成', cls:'done' },
+  revised:  { zh:'返修后完成', cls:'done' },
+  revising: { zh:'返修中', cls:'revising' },
+  failed:   { zh:'失败', cls:'failed' },
+  blocked:  { zh:'跳过', cls:'blocked' },
+};
+function handlePlanUpdate(p) {
+  if (!p) return;
+  if (p.type === 'plan') return renderPlanCard(p);
+  if (p.type === 'node') return updatePlanNode(p);
+  if (p.type === 'replan') return planReplanNote(p);
+}
+function renderPlanCard(p) {
+  const feed = document.getElementById('chat-messages') || document.getElementById('chat-feed');
+  if (!feed) return;
+  const card = document.createElement('div');
+  card.className = 'plan-card';
+  const nodes = (p.nodes || []).map(n => {
+    const deps = (n.depends_on && n.depends_on.length) ? `<span class="plan-deps">← ${n.depends_on.join(', ')}</span>` : '';
+    return `<div class="plan-node" data-node="${escHtml(n.id)}">
+      <span class="plan-badge pending">待定</span>
+      <span class="plan-node-id">${escHtml(n.id)}</span>
+      <span class="plan-node-agent">${escHtml(n.agent || 'captain')}</span>
+      <span class="plan-node-task">${escHtml((n.sub_task||'').slice(0,70))}</span>${deps}
+    </div>`;
+  }).join('');
+  card.innerHTML = `<div class="plan-title">🧭 执行计划${p.reason ? ' · '+escHtml(p.reason) : ''}</div>${nodes}`;
+  card.id = 'plan-card-active';
+  feed.appendChild(card);
+  feed.scrollTop = feed.scrollHeight;
+}
+function updatePlanNode(p) {
+  const row = document.querySelector(`#plan-card-active .plan-node[data-node="${CSS.escape(p.id||'')}"]`);
+  if (!row) return;
+  const badge = row.querySelector('.plan-badge');
+  const st = PLAN_STATUS[p.status] || { zh:p.status, cls:'pending' };
+  if (badge) { badge.textContent = st.zh; badge.className = 'plan-badge ' + st.cls; }
+  if (p.status === 'failed' || p.status === 'blocked') row.classList.add('dim');
+}
+function planReplanNote(p) {
+  const card = document.getElementById('plan-card-active');
+  if (!card) return;
+  const note = document.createElement('div');
+  note.className = 'plan-replan';
+  note.textContent = `↻ 检测到失败,正在重规划补救(${(p.failed||[]).join(', ')})`;
+  card.appendChild(note);
+  card.id = '';   // 让后续 plan 事件渲染新卡片
 }
 
 function rtEvidence(content) {
