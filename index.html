@@ -1,314 +1,573 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>个人 AI 助理 — 你的专属智能体</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Captain — 你的个人 AI 助理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
-  /* ===== Reset & Base ===== */
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: #0a0a0c;
-    color: #e8e8ed;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    background: #0a0a0f;
+    color: #e8e6e1;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
   }
 
-  /* ===== Utility ===== */
-  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
-  .section-label {
-    font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase;
-    color: #6b6b76; margin-bottom: 12px; font-weight: 500;
-  }
-  .badge {
-    display: inline-block; padding: 4px 14px; border-radius: 100px;
-    font-size: 0.75rem; font-weight: 500; letter-spacing: 0.02em;
-    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
-    color: #a0a0ab;
+  :root {
+    --accent: #d97706;
+    --accent-soft: #f59e0b;
+    --accent-glow: rgba(217, 119, 6, 0.15);
+    --surface: #12121a;
+    --surface-2: #1a1a26;
+    --border: #2a2a3a;
+    --text: #e8e6e1;
+    --text-muted: #8a8a9a;
+    --radius: 12px;
+    --radius-lg: 20px;
   }
 
-  /* ===== Hero ===== */
+  /* ===== NAV ===== */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 16px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(10, 10, 15, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    height: 64px;
+  }
+  .nav-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; font-size: 1.125rem;
+    letter-spacing: -0.02em;
+  }
+  .nav-logo mark {
+    background: none;
+    color: var(--accent-soft);
+    font-weight: 700;
+  }
+  .nav-logo .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; color: #0a0a0f; font-weight: 700;
+  }
+  .nav-links { display: flex; gap: 28px; align-items: center; }
+  .nav-links a {
+    color: var(--text-muted); text-decoration: none; font-size: 0.875rem;
+    font-weight: 500; transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    background: var(--accent); color: #0a0a0f !important; font-weight: 600;
+    padding: 8px 20px; border-radius: var(--radius);
+    font-size: 0.875rem; transition: all 0.2s;
+  }
+  .nav-cta:hover { background: var(--accent-soft); transform: translateY(-1px); }
+
+  /* ===== CONTAINER ===== */
+  .container { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ===== HERO ===== */
   .hero {
-    min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
-    position: relative; padding: 80px 0 40px; overflow: hidden;
+    min-height: 100dvh;
+    display: flex; align-items: center;
+    padding-top: 64px;
+    position: relative;
+    overflow: hidden;
   }
   .hero::before {
-    content: ''; position: absolute; top: -40%; right: -20%;
+    content: '';
+    position: absolute;
+    top: -40%; right: -20%;
     width: 700px; height: 700px;
-    background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(217,119,6,0.06) 0%, transparent 70%);
     pointer-events: none;
   }
   .hero::after {
-    content: ''; position: absolute; bottom: -30%; left: -10%;
+    content: '';
+    position: absolute;
+    bottom: -30%; left: -15%;
     width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(100,180,255,0.04) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(245,158,11,0.04) 0%, transparent 70%);
     pointer-events: none;
   }
   .hero-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 60px;
-    align-items: center; position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+    width: 100%;
+    position: relative;
+    z-index: 1;
   }
-  .hero-left .badge { margin-bottom: 24px; }
-  .hero-left h1 {
-    font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 700;
-    line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px;
+  .hero-content { padding: 40px 0; }
+  .hero-eyebrow {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+    background: rgba(217,119,6,0.1);
+    padding: 4px 12px;
+    border-radius: 9999px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(217,119,6,0.2);
   }
-  .hero-left h1 span {
-    background: linear-gradient(135deg, #e8e8ed 0%, #8a8a9a 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  .hero h1 {
+    font-size: clamp(2.5rem, 4.5vw, 4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 20px;
+  }
+  .hero h1 .highlight {
+    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
     background-clip: text;
   }
-  .hero-left p {
-    font-size: 1.1rem; color: #8a8a9a; max-width: 480px;
-    margin-bottom: 36px; line-height: 1.7;
+  .hero-sub {
+    font-size: 1.125rem;
+    color: var(--text-muted);
+    max-width: 460px;
+    line-height: 1.7;
+    margin-bottom: 32px;
   }
-  .hero-cta { display: flex; gap: 16px; flex-wrap: wrap; }
+  .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
   .btn-primary {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 14px 32px; border-radius: 12px; background: #fff;
-    color: #0a0a0c; font-weight: 600; font-size: 0.95rem;
-    text-decoration: none; transition: all 0.25s ease; border: none; cursor: pointer;
+    background: var(--accent); color: #0a0a0f;
+    font-weight: 600; font-size: 0.95rem;
+    padding: 12px 28px; border-radius: var(--radius);
+    text-decoration: none; transition: all 0.25s;
+    border: none; cursor: pointer;
   }
   .btn-primary:hover {
-    transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,255,255,0.1);
+    background: var(--accent-soft);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px var(--accent-glow);
   }
   .btn-secondary {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 14px 32px; border-radius: 12px;
-    background: rgba(255,255,255,0.06); color: #e8e8ed;
-    font-weight: 500; font-size: 0.95rem; text-decoration: none;
-    border: 1px solid rgba(255,255,255,0.1); transition: all 0.25s ease; cursor: pointer;
+    background: transparent; color: var(--text);
+    font-weight: 500; font-size: 0.95rem;
+    padding: 12px 28px; border-radius: var(--radius);
+    text-decoration: none; transition: all 0.25s;
+    border: 1px solid var(--border);
   }
   .btn-secondary:hover {
-    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);
+    border-color: var(--text-muted);
+    background: rgba(255,255,255,0.03);
   }
 
-  /* ===== Hero Right — Glass Terminal ===== */
-  .hero-right { position: relative; }
-  .glass-card {
-    background: rgba(255,255,255,0.03);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;
-    padding: 32px; position: relative; overflow: hidden;
+  /* Hero visual */
+  .hero-visual {
+    display: flex; justify-content: center; align-items: center;
+    position: relative;
   }
-  .glass-card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  .hero-terminal {
+    width: 100%;
+    max-width: 480px;
+    background: #0d0d18;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 20px 80px rgba(0,0,0,0.6);
   }
   .terminal-header {
     display: flex; align-items: center; gap: 8px;
-    margin-bottom: 24px; padding-bottom: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border);
   }
-  .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .terminal-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
   .terminal-dot:nth-child(1) { background: #ff5f57; }
-  .terminal-dot:nth-child(2) { background: #ffbd2e; }
+  .terminal-dot:nth-child(2) { background: #febc2e; }
   .terminal-dot:nth-child(3) { background: #28c840; }
-  .terminal-line {
-    display: flex; gap: 8px; margin-bottom: 12px;
-    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-    font-size: 0.82rem; color: #6b6b76; line-height: 1.6;
-    opacity: 0; animation: fadeInUp 0.4s ease forwards;
+  .terminal-title {
+    margin-left: auto; font-size: 0.75rem; color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
   }
-  .terminal-line:nth-child(4) { animation-delay: 0.1s; }
-  .terminal-line:nth-child(5) { animation-delay: 0.3s; }
-  .terminal-line:nth-child(6) { animation-delay: 0.5s; }
-  .terminal-line:nth-child(7) { animation-delay: 0.7s; }
-  .terminal-line:nth-child(8) { animation-delay: 0.9s; }
-  .terminal-prompt { color: #28c840; }
-  .terminal-cmd { color: #e8e8ed; }
-  .terminal-output { color: #6b6b76; padding-left: 16px; }
+  .terminal-body {
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+  }
+  .terminal-line { opacity: 0; animation: fadeSlideIn 0.4s forwards; }
+  .terminal-line:nth-child(1) { animation-delay: 0.2s; }
+  .terminal-line:nth-child(2) { animation-delay: 1.0s; }
+  .terminal-line:nth-child(3) { animation-delay: 1.8s; }
+  .terminal-line:nth-child(4) { animation-delay: 2.6s; }
+  .terminal-line:nth-child(5) { animation-delay: 3.2s; }
+  .terminal-prompt { color: var(--accent-soft); }
+  .terminal-cmd { color: #c0beb8; }
+  .terminal-output { color: var(--text-muted); }
+  .terminal-output span { color: #6cd4a0; }
   .terminal-cursor {
-    display: inline-block; width: 8px; height: 16px; background: #e8e8ed;
-    animation: blink 1s step-end infinite; vertical-align: text-bottom; margin-left: 4px;
+    display: inline-block;
+    width: 8px; height: 1.1em;
+    background: var(--accent-soft);
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+    margin-left: 4px;
   }
-  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-  @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(8px); }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
-
-  /* ===== Trust Bar ===== */
-  .trust-bar { padding: 60px 0 40px; text-align: center; border-top: 1px solid rgba(255,255,255,0.04); }
-  .trust-bar p {
-    font-size: 0.8rem; color: #4a4a52; letter-spacing: 0.08em;
-    text-transform: uppercase; margin-bottom: 20px;
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
   }
-  .trust-logos { display: flex; justify-content: center; align-items: center; gap: 40px; flex-wrap: wrap; }
-  .trust-logos span { font-size: 0.9rem; color: #5a5a62; font-weight: 500; opacity: 0.6; }
 
-  /* ===== Capabilities ===== */
-  .capabilities { padding: 100px 0; position: relative; }
-  .section-header { text-align: center; max-width: 640px; margin: 0 auto 60px; }
-  .section-header h2 {
-    font-size: clamp(1.8rem, 3vw, 2.6rem); font-weight: 700;
-    letter-spacing: -0.02em; margin-bottom: 16px;
+  /* ===== SECTION BASE ===== */
+  section { padding: 100px 0; position: relative; }
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+    margin-bottom: 12px;
   }
-  .section-header p { color: #6b6b76; font-size: 1rem; line-height: 1.7; }
-  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .feature-card {
-    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 16px; padding: 32px 28px; transition: all 0.3s ease; position: relative;
+  .section-title {
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+  .section-desc {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    max-width: 600px;
+    line-height: 1.7;
+  }
+  .section-header { margin-bottom: 56px; }
+
+  /* ===== FEATURES BENTO ===== */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .bento-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 36px 32px;
+    transition: all 0.3s;
+    position: relative;
     overflow: hidden;
   }
-  .feature-card:hover {
-    background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1);
-    transform: translateY(-4px);
+  .bento-card:hover {
+    border-color: rgba(217,119,6,0.2);
+    transform: translateY(-2px);
   }
-  .feature-icon {
-    width: 44px; height: 44px; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
-    margin-bottom: 20px; background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.06);
+  .bento-card.featured {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: center;
+    background: linear-gradient(135deg, var(--surface) 0%, #1a1410 100%);
+    border-color: rgba(217,119,6,0.15);
   }
-  .feature-card h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 10px; }
-  .feature-card p { font-size: 0.9rem; color: #6b6b76; line-height: 1.7; }
-
-  /* ===== How It Works ===== */
-  .how-it-works { padding: 100px 0; border-top: 1px solid rgba(255,255,255,0.04); }
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; position: relative; }
-  .steps::before {
-    content: ''; position: absolute; top: 40px; left: 15%; right: 15%; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  .bento-card.featured:hover {
+    border-color: rgba(217,119,6,0.3);
   }
-  .step { text-align: center; position: relative; }
-  .step-number {
-    width: 48px; height: 48px; border-radius: 50%;
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  .bento-icon {
+    width: 40px; height: 40px;
+    background: rgba(217,119,6,0.1);
+    border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; font-weight: 600; margin: 0 auto 20px; color: #6b6b76;
+    font-size: 1.2rem;
+    margin-bottom: 16px;
   }
-  .step h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
-  .step p {
-    font-size: 0.9rem; color: #6b6b76; line-height: 1.7; max-width: 280px; margin: 0 auto;
+  .bento-card h3 {
+    font-size: 1.15rem; font-weight: 600;
+    margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .bento-card p {
+    color: var(--text-muted); font-size: 0.9rem; line-height: 1.7;
+  }
+  .bento-feature-list {
+    list-style: none; margin-top: 12px;
+  }
+  .bento-feature-list li {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-muted); font-size: 0.875rem;
+    padding: 4px 0;
+  }
+  .bento-feature-list li::before {
+    content: '';
+    width: 5px; height: 5px;
+    background: var(--accent-soft);
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
-  /* ===== Why ===== */
-  .why { padding: 100px 0; border-top: 1px solid rgba(255,255,255,0.04); }
-  .why-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 80px; align-items: center; }
-  .why-left h2 {
-    font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700;
-    letter-spacing: -0.02em; margin-bottom: 20px;
+  .capabilities-tags {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
   }
-  .why-left p { color: #6b6b76; line-height: 1.7; margin-bottom: 32px; }
-  .benefits-list { list-style: none; }
-  .benefits-list li {
-    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px;
+  .capabilities-tags span {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
   }
-  .benefits-list li::before {
-    content: '→'; color: #4a4a52; font-weight: 300; flex-shrink: 0; margin-top: 2px;
-  }
-  .benefits-list strong { display: block; font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
-  .benefits-list span { font-size: 0.85rem; color: #6b6b76; }
-  .why-right .glass-card { padding: 40px; }
-  .why-right .glass-card p {
-    font-size: 0.95rem; color: #8a8a9a; font-style: italic; line-height: 1.8; margin-bottom: 16px;
-  }
-  .why-right .glass-card .attribution { font-style: normal; font-size: 0.85rem; color: #5a5a62; }
 
-  /* ===== CTA ===== */
-  .cta-section {
-    padding: 120px 0; text-align: center;
-    border-top: 1px solid rgba(255,255,255,0.04); position: relative; overflow: hidden;
+  /* ===== PROCESS ===== */
+  .process-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    counter-reset: step;
   }
-  .cta-section::before {
-    content: ''; position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 800px; height: 800px;
-    background: radial-gradient(circle, rgba(255,255,255,0.02) 0%, transparent 60%);
+  .process-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    position: relative;
+    transition: all 0.3s;
+  }
+  .process-step:hover {
+    border-color: rgba(217,119,6,0.2);
+    transform: translateY(-3px);
+  }
+  .process-step .step-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: 500;
+    color: rgba(217,119,6,0.2);
+    line-height: 1;
+    margin-bottom: 16px;
+  }
+  .process-step h3 {
+    font-size: 1.05rem; font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .process-step p {
+    color: var(--text-muted); font-size: 0.875rem; line-height: 1.7;
+  }
+
+  /* ===== TOOLS / SKILLS MARQUEE ===== */
+  .tools-section {
+    background: linear-gradient(180deg, transparent, rgba(217,119,6,0.02), transparent);
+  }
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .tool-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.25s;
+  }
+  .tool-chip:hover {
+    border-color: rgba(217,119,6,0.25);
+    background: rgba(217,119,6,0.04);
+  }
+  .tool-chip .tool-icon {
+    width: 28px; height: 28px;
+    background: rgba(217,119,6,0.1);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+  .tool-chip .tool-desc {
+    font-size: 0.75rem; color: var(--text-muted); font-weight: 400;
+  }
+
+  /* ===== MEMORY SECTION ===== */
+  .memory-showcase {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .memory-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .memory-card .mem-icon {
+    font-size: 1.3rem; flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .memory-card h4 {
+    font-size: 0.95rem; font-weight: 600; margin-bottom: 4px;
+  }
+  .memory-card p {
+    font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;
+  }
+
+  /* ===== CTA BANNER ===== */
+  .cta-banner {
+    background: linear-gradient(135deg, rgba(217,119,6,0.08) 0%, transparent 60%);
+    border: 1px solid rgba(217,119,6,0.15);
+    border-radius: var(--radius-lg);
+    padding: 64px 48px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .cta-banner::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: 50%;
+    transform: translateX(-50%);
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(217,119,6,0.06) 0%, transparent 70%);
     pointer-events: none;
   }
-  .cta-section h2 {
-    font-size: clamp(1.8rem, 3.5vw, 3rem); font-weight: 700;
-    letter-spacing: -0.02em; margin-bottom: 16px; position: relative; z-index: 1;
+  .cta-banner h2 {
+    font-size: clamp(1.5rem, 2.5vw, 2.2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+    position: relative;
   }
-  .cta-section p {
-    color: #6b6b76; font-size: 1.05rem; max-width: 480px;
-    margin: 0 auto 36px; position: relative; z-index: 1;
+  .cta-banner p {
+    color: var(--text-muted);
+    max-width: 480px;
+    margin: 0 auto 28px;
+    font-size: 1rem;
+    line-height: 1.7;
+    position: relative;
   }
-  .cta-section .btn-primary { position: relative; z-index: 1; }
+  .cta-banner .btn-primary {
+    position: relative;
+    font-size: 1rem;
+    padding: 14px 36px;
+  }
 
-  /* ===== Footer ===== */
-  .footer { padding: 40px 0; border-top: 1px solid rgba(255,255,255,0.04); text-align: center; }
-  .footer p { font-size: 0.8rem; color: #3a3a42; }
+  /* ===== FOOTER ===== */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.825rem;
+  }
 
-  /* ===== Scroll Reveal ===== */
-  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
-  .reveal.visible { opacity: 1; transform: translateY(0); }
+  /* ===== SCROLL REVEAL ===== */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
 
-  /* ===== Responsive ===== */
+  /* ===== RESPONSIVE ===== */
   @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-    .hero-left h1 { font-size: 2.4rem; }
-    .hero-left p { max-width: 100%; }
-    .features-grid { grid-template-columns: 1fr 1fr; }
-    .steps { grid-template-columns: 1fr; gap: 32px; }
-    .steps::before { display: none; }
-    .why-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+    .hero-visual { order: -1; }
+    .hero-terminal { max-width: 100%; }
+    .bento-grid { grid-template-columns: 1fr; }
+    .bento-card.featured { grid-template-columns: 1fr; }
+    .process-steps { grid-template-columns: 1fr; }
+    .tools-grid { grid-template-columns: repeat(2, 1fr); }
+    .memory-showcase { grid-template-columns: 1fr; }
+    .nav-links a:not(.nav-cta) { display: none; }
+    section { padding: 64px 0; }
+    .cta-banner { padding: 40px 24px; }
+    .hero-content { padding: 20px 0; }
   }
-  @media (max-width: 600px) {
-    .features-grid { grid-template-columns: 1fr; }
-    .trust-logos { gap: 24px; }
-    .hero-cta { flex-direction: column; }
-    .btn-primary, .btn-secondary { justify-content: center; }
+  @media (max-width: 520px) {
+    .tools-grid { grid-template-columns: 1fr; }
+    nav { padding: 12px 16px; }
+    .hero h1 { font-size: 2rem; }
+    .bento-card { padding: 24px 20px; }
   }
 </style>
 </head>
 <body>
 
-<!-- ===== Hero ===== -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-grid">
-      <div class="hero-left">
-        <div class="badge">v2.0 · 持续进化中</div>
-        <h1>你的专属<br><span>个人 AI 助理</span></h1>
-        <p>
-          不止是对话——它能理解你的习惯、管理你的任务、检索你的笔记、辅助创作，
-          像一个真正了解你的伙伴，在数字世界替你分忧。
-        </p>
-        <div class="hero-cta">
-          <a href="#capabilities" class="btn-primary">
-            探索能力
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M11 10l-3 3-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </a>
-          <a href="#cta" class="btn-secondary">立即体验 →</a>
-        </div>
+<nav>
+  <div class="nav-logo">
+    <div class="logo-icon">C</div>
+    <span><mark>Captain</mark> 助理</span>
+  </div>
+  <div class="nav-links">
+    <a href="#features">能力</a>
+    <a href="#process">工作流</a>
+    <a href="#tools">工具箱</a>
+    <a href="#cta" class="nav-cta">开始使用</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="hero">
+  <div class="container hero-grid">
+    <div class="hero-content">
+      <div class="hero-eyebrow">Autonomous AI Assistant</div>
+      <h1>你的 <span class="highlight">个人 AI 助理</span><br/>说到做到, 不拖泥带水</h1>
+      <p class="hero-sub">
+        Captain 会听懂你的目标, 自主拆解步骤、调用工具、完成任务。
+        不需要你手把手指挥——把目标说出来, 剩下的交给它。
+      </p>
+      <div class="hero-ctas">
+        <a href="#cta" class="btn-primary">
+          免费使用
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="#features" class="btn-secondary">了解能力</a>
       </div>
-      <div class="hero-right">
-        <div class="glass-card">
-          <div class="terminal-header">
-            <span class="terminal-dot"></span>
-            <span class="terminal-dot"></span>
-            <span class="terminal-dot"></span>
-            <span style="margin-left:auto;font-size:0.7rem;color:#4a4a52;font-family:monospace;">assistant@captain ~ %</span>
+    </div>
+    <div class="hero-visual">
+      <div class="hero-terminal">
+        <div class="terminal-header">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <span class="terminal-title">captain@assistant</span>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-line">
+            <span class="terminal-prompt">$</span>
+            <span class="terminal-cmd"> 帮我整理本周项目进度周报</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-output"><span>></span> 正在检索项目仓库...</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-output"><span>></span> 提取 3 个里程碑、12 个任务状态</span>
+          </div>
+          <div class="terminal-line">
+            <span class="terminal-output"><span>></span> 生成周报已完成, 可推送至邮箱</span>
           </div>
           <div class="terminal-line">
             <span class="terminal-prompt">$</span>
-            <span class="terminal-cmd">你今天的日程已整合，3 项待办待处理</span>
-          </div>
-          <div class="terminal-line">
-            <span class="terminal-prompt">$</span>
-            <span class="terminal-cmd">搜索"上周的会议笔记"</span>
-          </div>
-          <div class="terminal-line">
-            <span class="terminal-prompt">>></span>
-            <span class="terminal-output">已从"工作/周会"中找到 4 条相关片段</span>
-          </div>
-          <div class="terminal-line">
-            <span class="terminal-prompt">$</span>
-            <span class="terminal-cmd">帮我起草一封回复邮件</span>
-          </div>
-          <div class="terminal-line">
-            <span class="terminal-prompt">>></span>
-            <span class="terminal-output">草稿已生成，语气偏正式，含附件提醒</span>
-          </div>
-          <div class="terminal-line">
             <span class="terminal-cursor"></span>
           </div>
         </div>
@@ -317,147 +576,231 @@
   </div>
 </section>
 
-<!-- ===== Trust Bar ===== -->
-<div class="trust-bar">
-  <div class="container">
-    <p>已被个人用户信赖</p>
-    <div class="trust-logos">
-      <span>创作者</span><span>·</span>
-      <span>开发者</span><span>·</span>
-      <span>设计师</span><span>·</span>
-      <span>研究者</span><span>·</span>
-      <span>管理者</span>
-    </div>
-  </div>
-</div>
-
-<!-- ===== Capabilities ===== -->
-<section class="capabilities" id="capabilities">
+<!-- FEATURES -->
+<section id="features">
   <div class="container">
     <div class="section-header reveal">
-      <div class="section-label">能力矩阵</div>
-      <h2>一个助理，覆盖你数字生活的方方面面</h2>
-      <p>从信息管理到内容创作，从日程规划到知识检索，个人 AI 助理像你的第二大脑。</p>
+      <div class="section-label">Capabilities</div>
+      <h2 class="section-title">真正的自主, 不只是聊天</h2>
+      <p class="section-desc">
+        不是一问一答的对话机器, 而是能拆解目标、规划步骤、调用工具、交付成果的 AI 助理。
+      </p>
     </div>
-    <div class="features-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon">📋</div>
-        <h3>任务与日程管理</h3>
-        <p>理解自然语言指令，自动创建待办、设置提醒、整合日历，让你的时间安排井井有条。</p>
+    <div class="bento-grid">
+      <div class="bento-card reveal">
+        <div class="bento-icon">&#9881;</div>
+        <h3>自主拆解与执行</h3>
+        <p>听懂你的目标后，在内心拆解步骤、选定策略，然后自己调用工具把事情做完。无需每一步都请示。</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">🔍</div>
-        <h3>个人知识检索</h3>
-        <p>在你积累的笔记、文档、收藏中做语义搜索，几秒内找到你需要的那一段信息。</p>
+      <div class="bento-card reveal">
+        <div class="bento-icon">&#128218;</div>
+        <h3>80+ 内置技能</h3>
+        <p>从读写文件、搜索网页、数据分析，到邮件推送、JSON 处理、文本统计。工具箱随需而用。</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">✍️</div>
-        <h3>写作与创作辅助</h3>
-        <p>从邮件草稿到文章大纲，从周报到文案润色，帮你把想法变成清晰、得体的文字。</p>
+      <div class="bento-card reveal">
+        <div class="bento-icon">&#128200;</div>
+        <h3>事实核查优先</h3>
+        <p>涉及基准测试、价格、版本等时效信息时，自动先查日期再搜索核实，绝不依赖过时记忆。</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">🧠</div>
-        <h3>记忆与上下文</h3>
-        <p>记住你的偏好、过往决策和习惯，无需每次重复上下文——越用越懂你。</p>
+      <div class="bento-card reveal">
+        <div class="bento-icon">&#128172;</div>
+        <h3>有分寸的沟通</h3>
+        <p>向主人只汇报结果——做了什么、关键路径、是否成功。过程细节不展开，除非主人追问。</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">🔌</div>
-        <h3>工具调用与自动化</h3>
-        <p>直接搜索网页、读取文件、运行脚本——不只是聊天，而是真正帮你把事情做完。</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">🔒</div>
-        <h3>隐私优先设计</h3>
-        <p>数据处理逻辑透明，你拥有自己的数据，助理只是你的代理，而非平台的收集器。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== How It Works ===== -->
-<section class="how-it-works">
-  <div class="container">
-    <div class="section-header reveal">
-      <div class="section-label">三步上手</div>
-      <h2>启动你的个人助理只需几分钟</h2>
-      <p>没有复杂配置，让助理了解你，然后放手交给它。</p>
-    </div>
-    <div class="steps">
-      <div class="step reveal">
-        <div class="step-number">01</div>
-        <h3>告诉它你的世界</h3>
-        <p>分享你的角色、偏好、常用工具和当前目标，助理会记住并以此为基础运作。</p>
-      </div>
-      <div class="step reveal">
-        <div class="step-number">02</div>
-        <h3>连接你的数据源</h3>
-        <p>授权访问笔记库、文档目录或日历——助理只读你允许的部分，不越界。</p>
-      </div>
-      <div class="step reveal">
-        <div class="step-number">03</div>
-        <h3>用自然语言指挥它</h3>
-        <p>像对同事说话一样分配任务。查资料、写东西、整理信息，助理自动执行并汇报结果。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== Why ===== -->
-<section class="why">
-  <div class="container">
-    <div class="why-grid">
-      <div class="why-left reveal">
-        <div class="section-label">为什么不同</div>
-        <h2>不只是工具，而是你的数字分身</h2>
-        <p>
-          市面上的 AI 产品大多是"通用问答器"，用完即走。个人 AI 助理则是与你长期共存的智能体——
-          它记住你的上下文，理解你的偏好，在你需要时主动提议。
-        </p>
-        <ul class="benefits-list">
-          <li><div><strong>有记忆的伙伴</strong><span>不是每次从零开始，你提过一次的事它不会忘。</span></div></li>
-          <li><div><strong>有分寸的自主</strong><span>理解目标后自行拆解执行，只在关键节点向你确认。</span></div></li>
-          <li><div><strong>诚实透明</strong><span>不知道就说不知道，做错了就承认，绝不编造。</span></div></li>
-          <li><div><strong>你的数据属于你</strong><span>助理是你的代理，不是平台的耳目。</span></div></li>
-        </ul>
-      </div>
-      <div class="why-right reveal">
-        <div class="glass-card">
-          <p>
-            "以前我需要打开五个不同的工具来处理信息——日历、笔记、邮箱、
-            搜索引擎、写作软件。现在我只对一个助理说话，它替我搞定后面所
-            有步骤。这不是效率提升，是工作方式的改变。"
+      <div class="bento-card featured reveal">
+        <div>
+          <div class="bento-icon">&#128221;</div>
+          <h3>长效记忆与个性化</h3>
+          <p>当你透露了值得长期记住的事——称呼、偏好、长期目标、重要事实——Captain 会记下来。
+          下次再见时, 它还记得你是谁、喜欢什么。</p>
+          <ul class="bento-feature-list">
+            <li>记住你的称呼与沟通风格</li>
+            <li>累积对项目与偏好的理解</li>
+            <li>跨会话语境自然衔接</li>
+          </ul>
+        </div>
+        <div>
+          <div class="capabilities-tags">
+            <span>memory.remember</span>
+            <span>memory.recall</span>
+            <span>program.remember</span>
+            <span>personal_search</span>
+          </div>
+          <p style="margin-top:20px;font-size:0.85rem;color:var(--text-muted);">
+            基于持久记忆系统，Captain 能精准检索过往上下文，在长周期协作中保持连贯。
           </p>
-          <div class="attribution">— 来自一位早期使用者的反馈</div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===== CTA ===== -->
-<section class="cta-section" id="cta">
+<!-- PROCESS -->
+<section id="process" style="background: rgba(255,255,255,0.01);">
   <div class="container">
-    <h2>准备好拥有你的专属助理了吗？</h2>
-    <p>让 AI 成为你数字世界的延伸，而不是又一个需要学习的新工具。</p>
-    <a href="#" class="btn-primary">
-      开始使用
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </a>
+    <div class="section-header reveal">
+      <div class="section-label">How It Works</div>
+      <h2 class="section-title">三步交付, 清晰透明</h2>
+      <p class="section-desc">
+        从接收目标到交付成果, 每一步都可追溯、可验证。
+      </p>
+    </div>
+    <div class="process-steps">
+      <div class="process-step reveal">
+        <div class="step-number">01</div>
+        <h3>接收目标</h3>
+        <p>你告诉 Captain 想做什么。可以是一句话的指令, 也可以是详细的 Brief。</p>
+      </div>
+      <div class="process-step reveal">
+        <div class="step-number">02</div>
+        <h3>自主执行</h3>
+        <p>Captain 在内部拆解任务、选定工具链, 然后一步步执行。读写搜索、跑命令、调 API，全部自主完成。</p>
+      </div>
+      <div class="process-step reveal">
+        <div class="step-number">03</div>
+        <h3>交付与检查</h3>
+        <p>结果输出到你面前，关键产物真实落盘。遇到不确定的事, 会诚实说不知道, 绝不编造。</p>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- ===== Footer ===== -->
-<footer class="footer">
+<!-- TOOLS -->
+<section id="tools" class="tools-section">
   <div class="container">
-    <p>© 2025 · 个人 AI 助理 · 数据属于你，能力为你服务</p>
+    <div class="section-header reveal">
+      <div class="section-label">Toolbox</div>
+      <h2 class="section-title">完整工具箱, 随调随用</h2>
+      <p class="section-desc">
+        每一个能力都由独立工具驱动，可组合、可扩展。
+      </p>
+    </div>
+    <div class="tools-grid">
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128196;</div>
+        <div>
+          <div>文件系统</div>
+          <div class="tool-desc">读写 / 搜索 / 编辑文件</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#127760;</div>
+        <div>
+          <div>网络检索</div>
+          <div class="tool-desc">搜索 + 抓取网页正文</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128187;</div>
+        <div>
+          <div>Shell 命令</div>
+          <div class="tool-desc">终端执行与脚本运维</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128202;</div>
+        <div>
+          <div>数据分析</div>
+          <div class="tool-desc">CSV 统计 / JSON 处理</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128233;</div>
+        <div>
+          <div>通知推送</div>
+          <div class="tool-desc">邮件 / 微信 / QQ</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128214;</div>
+        <div>
+          <div>文本处理</div>
+          <div class="tool-desc">Diff / 字数 / 可读性评分</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128295;</div>
+        <div>
+          <div>技能扩展</div>
+          <div class="tool-desc">按需创建新 Skill</div>
+        </div>
+      </div>
+      <div class="tool-chip reveal">
+        <div class="tool-icon">&#128065;</div>
+        <div>
+          <div>GUI 控制</div>
+          <div class="tool-desc">屏幕 / 鼠标 / 键盘</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MEMORY -->
+<section id="memory">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Long-Term Memory</div>
+      <h2 class="section-title">越用越懂你</h2>
+      <p class="section-desc">
+        Captain 不只执行指令，它会把每次互动中重要的信息沉淀下来。
+      </p>
+    </div>
+    <div class="memory-showcase">
+      <div class="memory-card reveal">
+        <div class="mem-icon">&#128218;</div>
+        <div>
+          <h4>事实与偏好</h4>
+          <p>你说过的称呼、偏好长期目标，都会被记住。下次见面不用重复自我介绍。</p>
+        </div>
+      </div>
+      <div class="memory-card reveal">
+        <div class="mem-icon">&#128214;</div>
+        <div>
+          <h4>上下文检索</h4>
+          <p>通过 personal_search 在你的笔记与文档中做语义检索，找到真正需要的信息。</p>
+        </div>
+      </div>
+      <div class="memory-card reveal">
+        <div class="mem-icon">&#128230;</div>
+        <div>
+          <h4>结构化记忆</h4>
+          <p>用 program.remember 存储键值对，后续可精确 recall，适合配置与状态管理。</p>
+        </div>
+      </div>
+      <div class="memory-card reveal">
+        <div class="mem-icon">&#9889;</div>
+        <div>
+          <h4>持续进化</h4>
+          <p>你的每一次使用都在帮助 Captain 更好地理解你的风格和优先级。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="cta">
+  <div class="container">
+    <div class="cta-banner reveal">
+      <h2>准备好让助理开始工作了吗？</h2>
+      <p>把任务交给 Captain，你只需要确认方向。剩下的，它会自己搞定。</p>
+      <a href="#" class="btn-primary">
+        开始使用 Captain
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    Captain - 你的自主 AI 助理 · 2025
   </div>
 </footer>
 
-<!-- ===== Scroll Reveal ===== -->
 <script>
-(function() {
+  // Scroll reveal
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -465,8 +808,19 @@
       }
     });
   }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-})();
+
+  // Smooth nav scroll
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+      const target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
 </script>
 </body>
 </html>
