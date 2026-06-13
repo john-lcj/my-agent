@@ -164,11 +164,50 @@ class Coordinator:
             max_revisions=1,
         )
         result = await orch.run(graph, original_task, captain_summary)
+
+        # Phase 3:有界重规划——若有关键节点失败/受阻,带着"已完成+失败"重规划一次补救工作。
+        bb = result["blackboard"]
+        failed = [nid for nid, b in bb.items() if b["status"] in ("failed", "blocked")]
+        if failed:
+            status_brief = self._status_brief(bb)
+            replan_text = (f"{route_text}\n\n[首轮 DAG 执行情况]\n{status_brief}\n\n"
+                           f"请只针对未完成/失败的部分,重新规划一组补救子任务(已成功的别重做)。")
+            self._emit(EventType.PLAN_UPDATE, {"type": "replan", "failed": failed})
+            graph2 = await self._graph_dispatcher.route(replan_text, workers)
+            if not graph2.is_empty():
+                result2 = await orch.run(graph2, original_task,
+                                         captain_summary + "\n" + status_brief)
+                result["results"] = result["results"] + result2["results"]
+                bb = {**bb, **result2["blackboard"]}
+
         self._emit(EventType.CAPABILITY_RESULT, {
             "ok": True, "output": f"DAG 完成 {len(result['results'])} 个子任务",
         })
+        # 结构化汇总:把每个节点(含重规划新增的)状态告诉 Captain,便于诚实汇报。
+        annotated = self._annotate_results(bb)
         return await self._captain_synthesize(
-            original_task, result["results"], graph.reason or "依赖图编排", ctx, confirm)
+            original_task, annotated, graph.reason or "依赖图编排", ctx, confirm)
+
+    @staticmethod
+    def _status_brief(bb: dict) -> str:
+        zh = {"done": "完成", "revised": "返修后完成", "failed": "失败",
+              "blocked": "上游失败被跳过", "pending": "未执行", "running": "进行中"}
+        return "\n".join(
+            f"- {nid}({b.get('agent') or 'captain'}):{zh.get(b['status'], b['status'])}"
+            + (f" — {b['output'][:100]}" if b["status"] in ("failed", "blocked") else "")
+            for nid, b in bb.items())
+
+    @staticmethod
+    def _annotate_results(bb: dict) -> list:
+        """给汇总用的结果加状态标注(含重规划新增节点),让 Captain 如实汇报。"""
+        zh = {"done": "", "revised": "(返修后完成)", "failed": "(失败)", "blocked": "(被跳过)"}
+        out = []
+        for nid, b in bb.items():
+            if b["status"] in ("pending",):
+                continue
+            tag = zh.get(b["status"], "")
+            out.append((f"{b.get('agent') or 'captain'}{tag}", b.get("output", "")))
+        return out
 
     def _graph_event_sink(self):
         """把执行器的节点级事件转发到总线(供前端渲染执行计划图)。"""
