@@ -27,3 +27,6 @@ dist/
 # eval 生成的演示产物,不入库
 personal-ai-landing.html
 personal-ai-landing/
+
+# 我的跨会话私有记忆,不入库
+CLAUDE.local.md
