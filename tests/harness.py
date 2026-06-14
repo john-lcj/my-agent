@@ -430,6 +430,164 @@ async def _delegate_check(tmp: str) -> tuple:
     return ok, f"正常={normal_ok}, 深度限制={depth_ok}, 不存在={not_found_ok}"
 
 
+class _DagTestWorker:
+    def __init__(self, name: str, *, result: str = "", fail: bool = False):
+        self.name = name
+        self.calls: list[str] = []
+        self._result = result or f"[{name}] ok"
+        self._fail = fail
+
+    async def run(self, task: str, **kwargs) -> str:
+        self.calls.append(task)
+        return "执行失败: mock" if self._fail else self._result
+
+
+async def _dag_plan_graph_check() -> tuple:
+    from agents.plan_graph import PlanGraph, PlanNode, from_dispatch_plan
+
+    class A:
+        def __init__(self, name, sub_task):
+            self.agent_name = name
+            self.sub_task = sub_task
+
+    class P:
+        parallel = True
+        assignments = [A("w1", "t1"), A("w2", "t2")]
+        reason = "p"
+
+    g = PlanGraph(nodes=[
+        PlanNode("a", "w", "ta"),
+        PlanNode("b", "w", "tb"),
+        PlanNode("c", "w", "tc", depends_on=["a", "b"]),
+    ])
+    ok1, _ = g.validate()
+    layers = g.layers()
+    ok2 = len(layers) == 2 and {n.id for n in layers[0]} == {"a", "b"}
+    g2 = PlanGraph(nodes=[
+        PlanNode("x", "w", "t", depends_on=["y"]),
+        PlanNode("y", "w", "t", depends_on=["x"]),
+    ])
+    ok3 = not g2.validate()[0]
+    g3 = from_dispatch_plan(P())
+    ok4 = g3.validate()[0] and len(g3.layers()[0]) == 2
+    ok = ok1 and ok2 and ok3 and ok4
+    return ok, f"validate={ok1}, layers={ok2}, cycle={ok3}, from_plan={ok4}"
+
+
+async def _dag_orchestrator_check() -> tuple:
+    from agents.graph_orchestrator import GraphOrchestrator
+    from agents.plan_graph import PlanGraph, PlanNode
+    from agents.registry import AgentRegistry
+
+    w1 = _DagTestWorker("a", result="上游数据")
+    w2 = _DagTestWorker("b")
+    reg = AgentRegistry()
+    reg.register(w1)
+    reg.register(w2)
+    g = PlanGraph(nodes=[
+        PlanNode("n1", "a", "step1"),
+        PlanNode("n2", "b", "step2", depends_on=["n1"]),
+    ])
+    bb = (await GraphOrchestrator(reg).run(g, "task"))["blackboard"]
+    dep_ok = bool(w2.calls) and "上游数据" in w2.calls[0]
+
+    w_fail = _DagTestWorker("x", fail=True)
+    w_blk = _DagTestWorker("y")
+    reg2 = AgentRegistry()
+    reg2.register(w_fail)
+    reg2.register(w_blk)
+    g2 = PlanGraph(nodes=[
+        PlanNode("f1", "x", "fail"),
+        PlanNode("f2", "y", "skip", depends_on=["f1"]),
+    ])
+    bb2 = (await GraphOrchestrator(reg2).run(g2, "t"))["blackboard"]
+    block_ok = bb2["f1"]["status"] == "failed" and bb2["f2"]["status"] == "blocked" and not w_blk.calls
+
+    attempts = {"n1": 0}
+
+    async def verifier(node, output):
+        attempts[node.id] += 1
+        return attempts[node.id] > 1, "retry"
+
+    w_rev = _DagTestWorker("r")
+    reg3 = AgentRegistry()
+    reg3.register(w_rev)
+    g3 = PlanGraph(nodes=[PlanNode("n1", "r", "work", acceptance="ok")])
+    bb3 = (await GraphOrchestrator(reg3, verifier=verifier, max_revisions=1).run(g3, "t"))["blackboard"]
+    rev_ok = bb3["n1"]["status"] == "revised" and len(w_rev.calls) == 2
+
+    ok = bb["n1"]["status"] == "done" and dep_ok and block_ok and rev_ok
+    return ok, f"dep={dep_ok}, block={block_ok}, revise={rev_ok}"
+
+
+async def _dag_coordinator_escalation_check() -> tuple:
+    from agents.coordinator import Coordinator
+    from agents.dispatcher import AutoDispatcher
+    from agents.plan_graph import PlanGraph, PlanNode
+    from agents.registry import AgentRegistry
+    from agents.spec import AgentSpec
+    from agents.worker import WorkerAgent
+    from config import Config
+    from core.types import CapabilityCall, EventType, Identity, Risk, Step
+    from governance.budget import BudgetGovernor
+    from llm.mock_llm import MockLLM
+
+    class StuckLLM:
+        name = "stuck"
+
+        async def next_step(self, messages, capabilities, emit_token=None):
+            return Step(call=CapabilityCall(
+                name="fs.read", args={"path": "README.md"}, intent="x", declared_risk=Risk.READ))
+
+    class FakeGraphDispatcher:
+        def __init__(self):
+            self.calls = 0
+
+        async def route(self, task, workers):
+            self.calls += 1
+            return PlanGraph(nodes=[PlanNode("n1", "code_agent", "子任务")], reason="fake")
+
+    def _worker(name):
+        spec = AgentSpec(name=name, role=name, description=name, auto_confirm=True)
+        llm = MockLLM()
+        reg = CapabilityRegistry([ReadFile()])
+        return WorkerAgent(spec=spec, agent=Agent(
+            llm=llm, registry=reg, policy=DeclarativePolicy(reg),
+            bus=EventBus(), budget=BudgetGovernor(max_steps=5)))
+
+    bus = EventBus()
+    seen: list = []
+    bus.subscribe(seen.append)
+    workers = AgentRegistry()
+    workers.register(_worker("code_agent"))
+    main = Agent(
+        llm=StuckLLM(),
+        registry=CapabilityRegistry([ReadFile()]),
+        policy=DeclarativePolicy(CapabilityRegistry([ReadFile()])),
+        bus=bus, budget=BudgetGovernor(max_steps=20),
+    )
+    coord = Coordinator(
+        main_agent=main, worker_registry=workers,
+        dispatcher=AutoDispatcher(MockLLM()),
+        graph_dispatcher=FakeGraphDispatcher(), bus=bus,
+    )
+    ctx = Context(identity=Identity())
+    ctx.add_system("t")
+    old = Config.CAPTAIN_MAX_STEPS
+    Config.CAPTAIN_MAX_STEPS = 2
+    try:
+        out = await coord.run("改代码 分析", ctx, lambda *a, **k: True)
+    finally:
+        Config.CAPTAIN_MAX_STEPS = old
+    plan = any(
+        e.type == EventType.CAPABILITY_CALL and (e.payload or {}).get("name") == "coordinator.plan"
+        for e in seen
+    )
+    pupd = any(e.type == EventType.PLAN_UPDATE for e in seen)
+    ok = plan and pupd and isinstance(out, str) and len(out) > 0
+    return ok, f"plan={plan}, plan_update={pupd}, out_len={len(out) if isinstance(out, str) else 0}"
+
+
 async def _hierarchical_check() -> tuple:
     """Hierarchical: 主管拆解任务 -> 下属执行 -> 主管汇总,结构正确。"""
     from agents.node import ChatAgent
@@ -1294,6 +1452,9 @@ async def run_all_checks(tmp: str, *, verbose: bool = False) -> tuple[int, int]:
     await _run_one("Budget token 计数 + 金额上限", _budget_check)
     await _run_one("agent 委托(深度限制+只读策略)", lambda: _delegate_check(tmp))
     await _run_one("Hierarchical 分层编排(拆解+下属+汇总)", _hierarchical_check)
+    await _run_one("DAG 计划图(校验/分层/兼容)", _dag_plan_graph_check)
+    await _run_one("DAG 执行器(依赖/阻断/返修)", _dag_orchestrator_check)
+    await _run_one("Captain 升级走 DAG(coordinator.plan)", _dag_coordinator_escalation_check)
     _run_sync("按主体鉴权(roles 白名单)", _authz_check)
     _run_sync("bootstrap GUI 注册(profile 分流)", _bootstrap_gui_registry_check)
     await _run_one("GUI 控制(截图存证)", lambda: _gui_screenshot_check(tmp))
