@@ -201,61 +201,65 @@ async def main() -> None:
         except Exception:
             pass
 
-    while True:
-        user_text = await channel.receive()
-        if user_text is None:
-            await _consolidate_journal_on_exit()
-            print("\n再见。")
-            return
-        if not user_text:
-            continue
+    # 整个交互循环包在 try/finally 里:无论是输入 exit/退出、Ctrl-D、Ctrl-C
+    # 还是中途异常,退出前都必沉淀一条协作日志(伙伴记忆不能因退出方式而丢)。
+    try:
+        while True:
+            user_text = await channel.receive()
+            if user_text is None:
+                break
+            if not user_text:
+                continue
 
-        if user_text.strip() == "/rollback":
-            if agent.last_trace_id and rollback:
+            if user_text.strip() == "/rollback":
+                if agent.last_trace_id and rollback:
+                    from channels.cli_style import print_system
+                    for note in rollback.rollback(agent.last_trace_id):
+                        print_system(f"↩ {note}")
+                else:
+                    from channels.cli_style import print_system
+                    print_system("(还没有可回滚的任务)")
+                continue
+
+            cmd = parse_slash_command(user_text, expert_names, skill_names)
+
+            if cmd.kind == "list_models":
                 from channels.cli_style import print_system
-                for note in rollback.rollback(agent.last_trace_id):
-                    print_system(f"↩ {note}")
-            else:
+                print_system(format_models_help(model_id))
+                continue
+
+            if cmd.kind == "set_model":
+                agent, coordinator, bundle, ctx, model_id = rebuild_stack(
+                    cmd.target, channel, ctx, session_store, persona, longterm, runtime,
+                )
+                rollback = bundle.rollback
+                channel.print_model_switch(model_id)
+                _push_status(0)
+                continue
+
+            if cmd.kind == "list_skills":
                 from channels.cli_style import print_system
-                print_system("(还没有可回滚的任务)")
-            continue
+                print_system(format_skills_help(_skill_manifests()))
+                continue
 
-        cmd = parse_slash_command(user_text, expert_names, skill_names)
+            if cmd.kind == "invoke_skill":
+                t0 = time.time()
+                await _invoke_skill_cli(cmd.target, cmd.task, bundle, ctx, channel)
+                _push_status(time.time() - t0)
+                continue
 
-        if cmd.kind == "list_models":
-            from channels.cli_style import print_system
-            print_system(format_models_help(model_id))
-            continue
-
-        if cmd.kind == "set_model":
-            agent, coordinator, bundle, ctx, model_id = rebuild_stack(
-                cmd.target, channel, ctx, session_store, persona, longterm, runtime,
-            )
-            rollback = bundle.rollback
-            channel.print_model_switch(model_id)
-            _push_status(0)
-            continue
-
-        if cmd.kind == "list_skills":
-            from channels.cli_style import print_system
-            print_system(format_skills_help(_skill_manifests()))
-            continue
-
-        if cmd.kind == "invoke_skill":
             t0 = time.time()
-            await _invoke_skill_cli(cmd.target, cmd.task, bundle, ctx, channel)
-            _push_status(time.time() - t0)
-            continue
-
-        t0 = time.time()
-        try:
-            await coordinator.run(user_text, ctx, channel.confirm)
-        except Exception as e:
-            from llm.errors import format_llm_error
-            from channels.cli_style import print_err
-            print_err(format_llm_error(e))
-        finally:
-            _push_status(time.time() - t0)
+            try:
+                await coordinator.run(user_text, ctx, channel.confirm)
+            except Exception as e:
+                from llm.errors import format_llm_error
+                from channels.cli_style import print_err
+                print_err(format_llm_error(e))
+            finally:
+                _push_status(time.time() - t0)
+    finally:
+        await _consolidate_journal_on_exit()
+    print("\n再见。")
 
 
 def cli() -> None:

@@ -96,26 +96,40 @@ class JournalConsolidator:
         dialogue = _format_dialogue(messages)
         if not dialogue.strip():
             return False
+        summary, decisions, next_steps = "", [], []
         try:
             from core.types import Message, Role
             step = await self._llm.next_step(
                 [Message(role=Role.USER, content=_CONSOLIDATE_PROMPT.format(dialogue=dialogue))], [])
             m = re.search(r"\{.*\}", step.text or "", re.DOTALL)
-            if not m:
-                return False
-            data = json.loads(m.group())
+            if m:
+                data = json.loads(m.group())
+                summary = str(data.get("summary", "")).strip()
+                decisions = [str(x) for x in (data.get("decisions") or []) if str(x).strip()]
+                next_steps = [str(x) for x in (data.get("next_steps") or []) if str(x).strip()]
         except Exception:
-            return False
-        summary = str(data.get("summary", "")).strip()
+            pass
+        # 优雅降级:模型调用失败/返回非 JSON 时,也别让这次会话凭空消失——
+        # 用对话本身兜出一条最简日志(首个请求当摘要),保证记忆不丢。
+        if not summary:
+            summary = self._fallback_summary(messages)
         if not summary:
             return False
-        decisions = [str(x) for x in (data.get("decisions") or []) if str(x).strip()]
-        next_steps = [str(x) for x in (data.get("next_steps") or []) if str(x).strip()]
         try:
             self._journal.append(summary, decisions, next_steps)
             return True
         except Exception:
             return False
+
+    @staticmethod
+    def _fallback_summary(messages: list) -> str:
+        from core.types import Role
+        first_user = next((m.content for m in messages
+                           if getattr(m, "role", None) == Role.USER and m.content), "")
+        if not first_user:
+            return ""
+        head = first_user.strip().splitlines()[0][:80]
+        return f"(自动记录·未及总结)本次围绕:{head}"
 
 
 def _format_dialogue(messages: list, turns: int = _DIALOGUE_TURNS) -> str:

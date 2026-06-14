@@ -72,16 +72,26 @@ def test_consolidator_writes_entry():
         assert "讨论AGI与记忆" in entry and "先做伙伴记忆" in entry
 
 
-def test_consolidator_empty_and_bad_json():
+def test_consolidator_empty_dialogue_writes_nothing():
     with tempfile.TemporaryDirectory() as d:
         j = Journal(os.path.join(d, "j.md"))
-        # 空对话不沉淀
+        # 没有任何可用对话(空 / 只有助理消息)→ 不沉淀
         assert asyncio.run(JournalConsolidator(_FakeLLM("{}"), j).consolidate([])) is False
-        # 坏 JSON / 无 summary 不沉淀
-        msgs = [Message(role=Role.USER, content="hi")]
-        assert asyncio.run(JournalConsolidator(_FakeLLM("not json"), j).consolidate(msgs)) is False
-        assert asyncio.run(JournalConsolidator(_FakeLLM('{"summary":""}'), j).consolidate(msgs)) is False
+        only_assistant = [Message(role=Role.ASSISTANT, content="在的")]
+        assert asyncio.run(JournalConsolidator(_FakeLLM("not json"), j).consolidate(only_assistant)) is False
         assert j.recent(3) == []
+
+
+def test_consolidator_fallback_on_bad_llm():
+    """模型返回非 JSON 时,仍用对话兜底写一条最简日志(记忆不丢)。"""
+    with tempfile.TemporaryDirectory() as d:
+        j = Journal(os.path.join(d, "j.md"))
+        msgs = [Message(role=Role.USER, content="帮我做项目自体检\n第二行"),
+                Message(role=Role.ASSISTANT, content="好的")]
+        assert asyncio.run(JournalConsolidator(_FakeLLM("彻底不是json"), j).consolidate(msgs)) is True
+        entry = j.recent(1)[0]
+        assert "自动记录" in entry and "项目自体检" in entry
+        assert "第二行" not in entry  # 只取首行
 
 
 def test_inject_journal_first_turn_only():
