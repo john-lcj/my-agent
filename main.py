@@ -187,9 +187,24 @@ async def main() -> None:
         parse_slash_command,
     )
 
+    async def _consolidate_journal_on_exit() -> None:
+        """退出 CLI 时写一条协作日志(失败静默,绝不挡退出)。仅真实模型有意义。"""
+        if (model_id or "").lower() == "mock":
+            return
+        try:
+            from llm.factory import build_llm
+            from memory.journal import Journal, JournalConsolidator
+            consolidator = JournalConsolidator(build_llm(model=model_id), Journal())
+            if await consolidator.consolidate(list(ctx.messages)):
+                from channels.cli_style import print_system
+                print_system("📓 已记下这次的协作进展(下次开场我会接上)")
+        except Exception:
+            pass
+
     while True:
         user_text = await channel.receive()
         if user_text is None:
+            await _consolidate_journal_on_exit()
             print("\n再见。")
             return
         if not user_text:

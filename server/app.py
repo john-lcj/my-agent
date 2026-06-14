@@ -105,6 +105,20 @@ async def _mine_preferences(messages: list) -> None:
         pass
 
 
+async def _consolidate_journal(messages: list) -> None:
+    """会话任务结束后异步写一条协作日志,失败静默(绝不影响主对话)。"""
+    try:
+        from llm.factory import build_llm
+        from memory.journal import Journal, JournalConsolidator
+
+        consolidator = JournalConsolidator(
+            build_llm(model=_runtime_cfg.get_model()), Journal())
+        if await consolidator.consolidate(messages):
+            print("[journal] 已沉淀一条协作日志")
+    except Exception:
+        pass
+
+
 def build_core(channel: WebChannel, model: Optional[str] = None):
     """为一个 web 会话装配 Coordinator + bundle。"""
     model_id = model or _runtime_cfg.get_model()
@@ -931,8 +945,9 @@ def create_app():
                     else:
                         await coord_holder[0].run(text, ctx, channel.confirm)
                         if _pref_mining_enabled():
-                            # 后台沉淀偏好,不阻塞回复
+                            # 后台沉淀偏好 + 协作日志,均不阻塞回复
                             asyncio.create_task(_mine_preferences(list(ctx.messages)))
+                            asyncio.create_task(_consolidate_journal(list(ctx.messages)))
             except asyncio.CancelledError:
                 channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={
                     "text": "已停止",

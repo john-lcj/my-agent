@@ -72,6 +72,7 @@ class Agent:
         # 自动召回:任务开始前,从长期记忆里取与本次输入相关的条目,作为一条
         # 瞬时 system 提示注入(不入库)。这让 agent 跨会话也能"想起你是谁"。
         self._inject_memories(user_text, ctx)
+        self._inject_journal(ctx)
         await self._prefetch_skills(user_text, ctx)
 
         if record_user:
@@ -312,3 +313,19 @@ class Agent:
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[关于主人的已知记忆"))]
         ctx.add_system(block)
+
+    def _inject_journal(self, ctx: Context) -> None:
+        """会话首轮注入"上次到哪了"协作简报(只在本会话第一轮注入一次)。"""
+        # 已有用户消息说明不是首轮;已注入过简报也跳过,避免重复堆叠。
+        for m in ctx.messages:
+            if m.role == Role.USER:
+                return
+            if m.role == Role.SYSTEM and m.content.startswith("[我们的协作进展"):
+                return
+        try:
+            from memory.journal import Journal
+            briefing = Journal().render_briefing(2)
+        except Exception:
+            return
+        if briefing:
+            ctx.add_system(briefing)
