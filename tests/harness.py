@@ -1037,14 +1037,14 @@ def _briefing_task_check(tmp: str) -> tuple:
     from scheduler.store import TaskStore
 
     store = TaskStore(db_path=os.path.join(tmp, "tasks_briefing.db"))
-    created1 = ensure_briefing_task(store, at_hhmm="08:00", channel="qq", to="group:123")
+    created1 = ensure_briefing_task(store, at_hhmm="08:00", channel="email", to="me@x.com")
     created2 = ensure_briefing_task(store, at_hhmm="09:30", channel="email")  # 不应覆盖
     tasks = [t for t in store.list() if t.name == BRIEFING_TASK_NAME]
     t = tasks[0] if tasks else None
     ok = (
         created1 and not created2 and len(tasks) == 1
         and t is not None and t.schedule_type == "daily"
-        and t.at_hhmm == "08:00" and t.deliver == "qq" and t.deliver_to == "group:123"
+        and t.at_hhmm == "08:00" and t.deliver == "email" and t.deliver_to == "me@x.com"
     )
     return ok, f"首次={created1}, 二次={created2}, 条数={len(tasks)}, at={getattr(t, 'at_hhmm', '?')}"
 
