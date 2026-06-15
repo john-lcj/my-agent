@@ -115,6 +115,31 @@ class DeclarativePolicy:
             (self.config.get("confirm") or {}).get("shell_patterns", [])
             or _DEFAULT_POLICY["confirm"]["shell_patterns"]
         )
+        # 工作区根:设了 AGENT_WORKSPACE_ROOT 就把 fs.* 限制在根内,区外访问升级为确认
+        # (AGENT_WORKSPACE_STRICT=1 则直接拒绝)。未设=不限制(个人机零配置,向后兼容)。
+        import os as _os
+        root = _os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
+        self._ws_root = _os.path.realpath(_os.path.expanduser(root)) if root else ""
+        self._ws_strict = _os.environ.get("AGENT_WORKSPACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _workspace_review(self, call: CapabilityCall):
+        """fs.* 的 path 若落在工作区根之外:strict→BLOCK,否则→ASK。未配置则不干预。"""
+        if not self._ws_root:
+            return None
+        if not call.name.startswith("fs."):
+            return None
+        import os as _os
+        raw = str(call.args.get("path", "")).strip()
+        if not raw:
+            return None
+        target = _os.path.realpath(_os.path.expanduser(raw))
+        inside = target == self._ws_root or target.startswith(self._ws_root + _os.sep)
+        if inside:
+            return None
+        reason = f"目标路径在工作区({self._ws_root})之外:{raw}"
+        if self._ws_strict:
+            return GovReview(Decision.BLOCK, reason=reason + ",已按严格模式拒绝。", rule="workspace:block")
+        return GovReview(Decision.ASK, reason=reason + ",需你确认。", rule="workspace:ask")
 
     def _active_mode(self) -> str:
         return (
@@ -195,6 +220,12 @@ class DeclarativePolicy:
                     return GovReview(Decision.BLOCK,
                                      reason=reason or "命中敏感路径硬边界,已拒绝。",
                                      rule=f"forbidden_path:{regex.pattern}")
+
+        # 2.4) 工作区范围:fs.* 越界(读/写/列)优先于"本任务已授权",
+        # 防止提示注入在自动放行的任务里把工作区外的机密读出去。
+        ws = self._workspace_review(call)
+        if ws is not None:
+            return ws
 
         # 2.5) 本任务已点过「允许」→ 不再重复询问(一次弹窗管一整轮)
         if getattr(ctx, "task_auto_approve", False):

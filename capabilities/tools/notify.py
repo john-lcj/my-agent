@@ -51,6 +51,15 @@ class SendEmail:
         if not smtp_host or not user:
             return CapabilityResult(ok=False, error="EMAIL_SMTP_HOST / EMAIL_USER 未配置")
 
+        # 防提示注入外发:收件人必须在白名单内(默认只允许发给自己)。
+        # 即便模型被外部内容诱导,也只能把信息发回主人,发不出去。
+        if not _recipient_allowed(to, user):
+            return CapabilityResult(
+                ok=False,
+                error=f"收件人 {to} 不在外发白名单内,已拒绝。"
+                      f"如确需外发,请把地址加入 EMAIL_ALLOWED_RECIPIENTS。",
+            )
+
         try:
             import asyncio
             await asyncio.get_event_loop().run_in_executor(
@@ -59,6 +68,15 @@ class SendEmail:
             return CapabilityResult(ok=True, output=f"邮件已发送至 {to}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
+
+
+def _recipient_allowed(to: str, user: str) -> bool:
+    """外发白名单:EMAIL_ALLOWED_RECIPIENTS(逗号分隔);未配置则只允许发给自己。"""
+    raw = os.environ.get("EMAIL_ALLOWED_RECIPIENTS", "").strip()
+    allowed = {a.strip().lower() for a in raw.split(",") if a.strip()}
+    if not allowed:
+        allowed = {user.strip().lower()} if user else set()
+    return to.strip().lower() in allowed
 
 
 def _smtp_send(host, port, user, password, to, subject, body):
