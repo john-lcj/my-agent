@@ -194,17 +194,37 @@ class EmailChannel:
                     )
             imap.logout()
 
-    async def _send_email(self, to: str, subject: str, body: str) -> None:
+    async def _send_email(self, to: str, subject: str, body: str,
+                          attachments: list[str] | None = None) -> None:
         # 永不让发信异常冒泡(否则 asyncio 报 "Task exception was never retrieved" 刷屏)
         try:
             await asyncio.get_event_loop().run_in_executor(
-                None, self._send_sync, to, subject, body
+                None, self._send_sync, to, subject, body, attachments or []
             )
         except Exception as e:
             print(f"[email] 回信失败(已忽略,不重试):{e}")
 
-    def _send_sync(self, to: str, subject: str, body: str) -> None:
-        msg = MIMEText(body, "plain", "utf-8")
+    def _send_sync(self, to: str, subject: str, body: str,
+                   attachments: list[str] | None = None) -> None:
+        attachments = [p for p in (attachments or []) if os.path.isfile(p)][:5]
+        if attachments:
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.application import MIMEApplication
+            msg = MIMEMultipart()
+            msg.attach(MIMEText(body, "plain", "utf-8"))
+            for path in attachments:
+                try:
+                    if os.path.getsize(path) > 10 * 1024 * 1024:  # 单附件上限 10MB
+                        continue
+                    with open(path, "rb") as f:
+                        part = MIMEApplication(f.read())
+                    part.add_header("Content-Disposition", "attachment",
+                                    filename=os.path.basename(path))
+                    msg.attach(part)
+                except Exception:
+                    continue
+        else:
+            msg = MIMEText(body, "plain", "utf-8")
         msg["From"] = self.user
         msg["To"] = to
         msg["Subject"] = subject

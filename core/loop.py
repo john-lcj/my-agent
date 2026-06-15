@@ -187,6 +187,7 @@ class Agent:
             if decision == Decision.BLOCK:
                 note = f"能力 [{call.name}] 被策略拒绝:{review.reason}"
                 emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note})
+                self._audit(ctx, call, "block", False, review.rule or review.reason)
                 ctx.add_tool_result(note, call.call_id, name=call.name)
                 continue
             if decision == Decision.ASK:
@@ -195,6 +196,7 @@ class Agent:
                 if not approved:
                     note = f"用户拒绝了能力 [{call.name}]。"
                     emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note})
+                    self._audit(ctx, call, "ask-denied", False, review.rule)
                     ctx.add_tool_result(note, call.call_id, name=call.name)
                     continue
 
@@ -233,6 +235,8 @@ class Agent:
                 result = CapabilityResult(ok=False, error=str(exc))
             emit(EventType.CAPABILITY_RESULT,
                  {"ok": result.ok, "output": result.output, "error": result.error})
+            self._audit(ctx, call, decision.value, result.ok,
+                        "" if result.ok else (result.error or "")[:200])
             body = result.output if result.ok else f"[失败] {result.error}"
             ctx.add_tool_result(body, call.call_id, name=call.name)
 
@@ -313,6 +317,19 @@ class Agent:
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[关于主人的已知记忆"))]
         ctx.add_system(block)
+
+    def _audit(self, ctx: Context, call, decision: str, ok: bool, detail: str = "") -> None:
+        """写一条审计记录(append-only),失败静默。只记安全相关字段,不记内容。"""
+        try:
+            from observability.audit import audit
+            audit(
+                trace_id=getattr(self, "last_trace_id", "") or "",
+                agent=getattr(getattr(ctx, "identity", None), "agent_name", "") or "",
+                capability=call.name, args=call.args,
+                decision=decision, ok=ok, detail=detail,
+            )
+        except Exception:
+            pass
 
     def _inject_journal(self, ctx: Context) -> None:
         """会话首轮注入"上次到哪了"协作简报(只在本会话第一轮注入一次)。"""

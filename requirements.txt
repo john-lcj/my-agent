@@ -19,12 +19,10 @@ tiktoken>=0.7.0
 # macOS: 零额外依赖(screencapture + osascript 系统内置)
 # 如需 Windows/Linux 可选装 pyautogui>=0.9.54
 
-# 外部渠道:
-aiohttp>=3.9.0          # 企业微信 / QQ Bot REST API
-aiosmtplib>=3.0.0       # 异步 SMTP 发信
-aioimaplib>=1.1.0       # 异步 IMAP 收信(轮询)
-cryptography>=42.0.0      # QQ Bot webhook URL 验证(Ed25519 签名)
-# pycryptodome>=3.20.0  # 企业微信消息加密 AES(可选,pip install pycryptodome)
+# 联网与邮件:
+aiohttp>=3.9.0          # web.search / web.fetch
+aiosmtplib>=3.0.0       # 异步 SMTP(可选;邮件渠道默认用 stdlib smtplib)
+aioimaplib>=1.1.0       # 异步 IMAP(可选;邮件渠道默认用 stdlib imaplib)
 
 # CLI 交互(斜杠补全菜单):
 prompt_toolkit>=3.0.0
@@ -36,3 +34,6 @@ websockets>=12.0
 
 # 回归测试:
 pytest>=8.0.0
+
+# 想要可复现的精确锁定:在跑通的环境里执行
+#   .venv/bin/pip freeze > requirements.lock.txt

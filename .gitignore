@@ -30,3 +30,8 @@ personal-ai-landing/
 
 # 我的跨会话私有记忆,不入库
 CLAUDE.local.md
+
+# eval/演示产物目录
+site/
+web/
+ai-assistant-landing/

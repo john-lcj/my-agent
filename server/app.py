@@ -52,6 +52,11 @@ _session_locks: dict[str, asyncio.Lock] = {}
 def _session_lock(session_id: str) -> asyncio.Lock:
     lock = _session_locks.get(session_id)
     if lock is None:
+        # 防止长期运行时无限增长:超过上限时回收未被持有的锁。
+        if len(_session_locks) > 1000:
+            for k in [k for k, v in list(_session_locks.items())
+                      if not v.locked() and k != session_id]:
+                _session_locks.pop(k, None)
         lock = asyncio.Lock()
         _session_locks[session_id] = lock
     return lock
@@ -180,7 +185,21 @@ async def _deliver_result(channel: str, to: str, subject: str, body: str) -> Non
         return
     if channel == "email":
         target = to or ch.user
-        await ch._send_email(target, subject, body)
+        await ch._send_email(target, subject, body, attachments=_extract_artifacts(body))
+
+
+def _extract_artifacts(text: str) -> list:
+    """从任务结果文本里提取它产出的文件路径(报告/网页等),作为邮件附件。"""
+    import re as _re
+    paths: list[str] = []
+    # 匹配常见产物路径:logs/reports/*.md、site/*.html、*.xlsx/.pdf/.csv/.docx 等
+    for m in _re.findall(r"[\w./~-]+\.(?:md|html|xlsx|xls|pdf|csv|docx|txt|json)", text or ""):
+        p = os.path.expanduser(m)
+        if not os.path.isabs(p):
+            p = os.path.join(os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(), p)
+        if os.path.isfile(p) and p not in paths:
+            paths.append(p)
+    return paths[:5]
 
 
 def _enable_channel(name: str) -> bool:
@@ -445,6 +464,26 @@ def create_app():
             )
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
+
+    @app.get("/healthz")
+    async def healthz() -> JSONResponse:
+        # 不在 /api/* 下,无需鉴权,供外部监控探活。
+        return JSONResponse({
+            "ok": True,
+            "channels": list(_ext_channels.keys()),
+            "tasks": len(_task_store.list()),
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    @app.get("/manifest.json")
+    async def manifest() -> JSONResponse:
+        # PWA:手机「添加到主屏」后像原生 App
+        return JSONResponse({
+            "name": "Captain", "short_name": "Captain",
+            "start_url": "/", "display": "standalone",
+            "background_color": "#0d0d0d", "theme_color": "#0d0d0d",
+            "description": "你的私人多智能体助理",
+        })
 
     @app.get("/api/sessions")
     async def list_sessions() -> JSONResponse:
