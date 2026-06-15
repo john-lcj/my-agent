@@ -156,6 +156,11 @@ class EmailChannel:
                 raw = data[0][1] if data and data[0] else b""
                 msg = _email_lib.message_from_bytes(raw)
 
+                # 跳过本 agent 自己发出的回信(防自问自答死循环)
+                if msg.get("X-Agent-Autoreply"):
+                    print("[email] 跳过自己的回信(防循环)")
+                    continue
+
                 sender = _parse_addr(msg.get("From", ""))
                 subject = _decode_header(msg.get("Subject", ""))
                 body = _extract_body(msg)
@@ -193,6 +198,8 @@ class EmailChannel:
         msg["From"] = self.user
         msg["To"] = to
         msg["Subject"] = subject
+        # 自动回信打标记:收信端见到此头就跳过,避免"自己回信→自己又读到→再回"的死循环。
+        msg["X-Agent-Autoreply"] = "1"
         ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx) as smtp:
             smtp.login(self.user, self.password)
