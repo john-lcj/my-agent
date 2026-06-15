@@ -48,6 +48,21 @@ _INBOUND_EVENTS = frozenset({
     "MESSAGE_CREATE",
 })
 
+# WebSocket 网关 opcode(与 Discord 风格一致)
+_OP_DISPATCH = 0
+_OP_HEARTBEAT = 1
+_OP_IDENTIFY = 2
+_OP_RESUME = 6
+_OP_RECONNECT = 7
+_OP_INVALID_SESSION = 9
+_OP_HELLO = 10
+_OP_HEARTBEAT_ACK = 11
+
+# intents 位:群和单聊消息(1<<25) | 公域频道@消息(1<<30)。可用 QQ_BOT_INTENTS 覆盖。
+_INTENT_GROUP_AND_C2C = 1 << 25
+_INTENT_PUBLIC_GUILD_MESSAGES = 1 << 30
+_DEFAULT_INTENTS = _INTENT_GROUP_AND_C2C | _INTENT_PUBLIC_GUILD_MESSAGES
+
 
 class _AccessTokenCache:
     def __init__(self) -> None:
@@ -105,6 +120,10 @@ class QQChannel:
         self._pending_confirm: dict[str, asyncio.Future] = {}
         self._current_ctx: dict = {}
         self._reply_buf = ""
+        # WS 网关状态
+        self._gw_seq: Optional[int] = None
+        self._gw_ws = None
+        self._gw_closed = False
 
     # ── Channel 协议 ───────────────────────────────────────────────────────────
 
@@ -197,11 +216,13 @@ class QQChannel:
             return {"plain_token": plain_token, "signature": ""}
 
     async def _dispatch(self, payload: dict) -> None:
-        t = payload.get("t", "")
+        """webhook 模式入口:payload 形如 {"t":..., "d":...}。"""
+        await self._handle_dispatch_event(payload.get("t", ""), payload.get("d", {}))
+
+    async def _handle_dispatch_event(self, t: str, d: dict) -> None:
+        """解析一条分发事件并入队;webhook 与 WS 网关共用。"""
         if t and t not in _INBOUND_EVENTS:
             return
-
-        d = payload.get("d", {})
         parsed = _parse_inbound_event(t, d)
         if not parsed:
             return
@@ -307,6 +328,116 @@ class QQChannel:
                         print(f"[qq] 发送失败 HTTP {resp.status}: {detail[:300]}")
         except Exception as e:
             print(f"[qq] 发送失败: {e}")
+
+    # ── WebSocket 网关模式(免公网:机器人主动连腾讯网关,像 Discord)──────────────
+
+    def _intents(self) -> int:
+        raw = os.environ.get("QQ_BOT_INTENTS", "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return _DEFAULT_INTENTS
+
+    def _build_identify(self, access_token: str) -> dict:
+        """op2 鉴权帧。QQ 官方:token 形如 'QQBot <access_token>'。"""
+        return {
+            "op": _OP_IDENTIFY,
+            "d": {
+                "token": f"QQBot {access_token}",
+                "intents": self._intents(),
+                "shard": [0, 1],
+                "properties": {"$os": "linux", "$browser": "my-agent", "$device": "my-agent"},
+            },
+        }
+
+    async def _on_gateway_frame(self, frame: dict) -> Optional[tuple]:
+        """处理一帧网关消息;返回 (tag, payload) 供连接循环决策。可单测。"""
+        op = frame.get("op")
+        if frame.get("s") is not None:
+            self._gw_seq = frame.get("s")
+        if op == _OP_HELLO:
+            interval = (frame.get("d") or {}).get("heartbeat_interval", 30000)
+            return ("hello", interval)
+        if op == _OP_DISPATCH:
+            t = frame.get("t", "")
+            if t == "READY":
+                return ("ready", (frame.get("d") or {}))
+            await self._handle_dispatch_event(t, frame.get("d", {}))
+            return ("dispatch", t)
+        if op == _OP_HEARTBEAT_ACK:
+            return ("ack", None)
+        if op in (_OP_RECONNECT, _OP_INVALID_SESSION):
+            return ("reconnect", op)
+        return ("ignore", op)
+
+    async def _get_gateway_url(self) -> str:
+        access = await self._access.get(self.app_id, self._client_secret)
+        import aiohttp
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"{self._api_base}/gateway",
+                             headers={"Authorization": f"QQBot {access}"}, timeout=15) as r:
+                data = await r.json()
+                return data.get("url", "")
+
+    async def connect_gateway(self) -> None:
+        """连腾讯 WS 网关,断线自动重连。由 server 后台 task 调用。"""
+        try:
+            import aiohttp
+        except ImportError:
+            print("[qq] 缺少 aiohttp,无法连接网关")
+            return
+        if not self.app_id or not self._client_secret:
+            print("[qq] 缺少 AppID/AppSecret,网关未启动")
+            return
+        self._gw_seq = None
+        self._gw_closed = False
+        backoff = 2
+        while not getattr(self, "_gw_closed", False):
+            hb_task = None
+            try:
+                url = await self._get_gateway_url()
+                if not url:
+                    raise RuntimeError("拿不到 gateway url")
+                access = await self._access.get(self.app_id, self._client_secret)
+                async with aiohttp.ClientSession() as s:
+                    async with s.ws_connect(url, heartbeat=None, timeout=20) as ws:
+                        self._gw_ws = ws
+                        backoff = 2
+                        print(f"[qq] 已连上腾讯网关:{url}")
+                        async for msg in ws:
+                            if msg.type != aiohttp.WSMsgType.TEXT:
+                                if msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                                    break
+                                continue
+                            frame = json.loads(msg.data)
+                            tag, payload = await self._on_gateway_frame(frame) or ("ignore", None)
+                            if tag == "hello":
+                                await ws.send_str(json.dumps(self._build_identify(access)))
+                                hb_task = asyncio.create_task(self._heartbeat_loop(ws, payload))
+                            elif tag == "ready":
+                                print("[qq] 网关握手完成,开始收消息")
+                            elif tag == "reconnect":
+                                break
+            except Exception as e:
+                print(f"[qq] 网关断开,{backoff}s 后重连: {e}")
+            finally:
+                if hb_task:
+                    hb_task.cancel()
+                self._gw_ws = None
+            if getattr(self, "_gw_closed", False):
+                break
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+    async def _heartbeat_loop(self, ws, interval_ms: int) -> None:
+        try:
+            while True:
+                await asyncio.sleep(max(interval_ms, 5000) / 1000.0)
+                await ws.send_str(json.dumps({"op": _OP_HEARTBEAT, "d": self._gw_seq}))
+        except (asyncio.CancelledError, Exception):
+            return
+
+    async def close_gateway(self) -> None:
+        self._gw_closed = True
 
 
 def _parse_inbound_event(event_type: str, d: dict) -> Optional[tuple[str, dict]]:

@@ -36,10 +36,12 @@ _AT_SELF_RE = re.compile(r"\[CQ:at,qq=(\d+)\]")
 class OneBotChannel:
     name = "onebot"
 
-    def __init__(self, ws_url: str = "", access_token: str = "", master_uin: str = "") -> None:
-        self.ws_url = ws_url or os.environ.get("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
-        self.access_token = access_token or os.environ.get("ONEBOT_ACCESS_TOKEN", "")
-        self.master_uin = str(master_uin or os.environ.get("QQ_MASTER_UIN", "")).strip()
+    def __init__(self, ws_url: Optional[str] = None, access_token: Optional[str] = None,
+                 master_uin: Optional[str] = None) -> None:
+        # 显式传入(含空串)优先于环境变量;只有未传(None)才回退到 env。
+        self.ws_url = ws_url if ws_url is not None else os.environ.get("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+        self.access_token = access_token if access_token is not None else os.environ.get("ONEBOT_ACCESS_TOKEN", "")
+        self.master_uin = str(master_uin if master_uin is not None else os.environ.get("QQ_MASTER_UIN", "")).strip()
 
         self._inbox: asyncio.Queue[Optional[tuple[dict, str]]] = asyncio.Queue()
         self._pending_confirm: dict[str, asyncio.Future] = {}

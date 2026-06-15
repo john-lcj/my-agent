@@ -241,8 +241,13 @@ def _enable_channel(name: str) -> bool:
         _ext_coordinators["qq"] = coordinator
         _ext_templates["qq"] = bundle.ctx
         asyncio.create_task(_run_ext_channel("qq"))
-        info = qq_channel_info()
-        print(f"[server] QQ webhook → {info['webhook_url']} (沙箱={info['sandbox']})")
+        # 默认走 WS 网关(免公网,机器人主动连腾讯);仅当显式 QQ_BOT_MODE=webhook 才用回调。
+        if os.environ.get("QQ_BOT_MODE", "gateway").strip().lower() != "webhook":
+            asyncio.create_task(ch.connect_gateway())
+            print("[server] QQ(官方机器人·WS 网关)启动中,无需公网回调")
+        else:
+            info = qq_channel_info()
+            print(f"[server] QQ webhook → {info['webhook_url']} (沙箱={info['sandbox']})")
         return True
     if name == "slack" and os.environ.get("SLACK_BOT_TOKEN"):
         from channels.slack_channel import SlackChannel
