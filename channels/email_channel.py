@@ -173,6 +173,7 @@ class EmailChannel:
                     continue
 
                 # 普通消息
+                print(f"[email] 收到来信 ← {sender}:{subject[:40]}")
                 if self._loop is not None:
                     self._loop.call_soon_threadsafe(
                         self._inbox.put_nowait, (sender, f"[邮件主题:{subject}]\n{body}")
