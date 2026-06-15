@@ -61,6 +61,7 @@ class EmailChannel:
         self._inbox: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue()
         self._pending_confirm: dict[str, asyncio.Future] = {}
         self._current_sender: str = ""
+        self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主线程事件循环句柄(供轮询子线程跨线程投递)
 
     # ── Channel 协议 ───────────────────────────────────────────────────────────
 
@@ -128,12 +129,14 @@ class EmailChannel:
 
     async def start_polling(self) -> None:
         """启动后台 IMAP 轮询任务(在 server 启动时调用)。"""
-        asyncio.get_event_loop().create_task(self._poll_loop())
+        self._loop = asyncio.get_running_loop()  # 存主线程循环,供子线程 call_soon_threadsafe
+        self._loop.create_task(self._poll_loop())
 
     async def _poll_loop(self) -> None:
+        loop = asyncio.get_running_loop()
         while True:
             try:
-                await asyncio.get_event_loop().run_in_executor(None, self._fetch_new)
+                await loop.run_in_executor(None, self._fetch_new)
             except Exception as e:
                 print(f"[email] 轮询异常: {e}")
             await asyncio.sleep(self.poll_sec)
@@ -165,14 +168,15 @@ class EmailChannel:
                     answer = confirm_match.group(1).upper() == "Y"
                     cid = confirm_match.group(2).upper()
                     fut = self._pending_confirm.get(cid)
-                    if fut and not fut.done():
-                        asyncio.get_event_loop().call_soon_threadsafe(fut.set_result, answer)
+                    if fut and not fut.done() and self._loop is not None:
+                        self._loop.call_soon_threadsafe(fut.set_result, answer)
                     continue
 
                 # 普通消息
-                asyncio.get_event_loop().call_soon_threadsafe(
-                    self._inbox.put_nowait, (sender, f"[邮件主题:{subject}]\n{body}")
-                )
+                if self._loop is not None:
+                    self._loop.call_soon_threadsafe(
+                        self._inbox.put_nowait, (sender, f"[邮件主题:{subject}]\n{body}")
+                    )
             imap.logout()
 
     async def _send_email(self, to: str, subject: str, body: str) -> None:
