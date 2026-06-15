@@ -72,8 +72,8 @@ def build_registry(
         from capabilities.gui import GUIControl
         caps.append(GUIControl())
     if profile == "external":
-        from capabilities.tools.notify import SendEmail, SendWeChat, SendQQ
-        caps.extend([SendEmail(), SendWeChat(), SendQQ()])
+        from capabilities.tools.notify import SendEmail
+        caps.append(SendEmail())
     if worker_registry is not None and profile in ("cli", "interactive"):
         from capabilities.delegate import DelegateToAgent
         caps.append(DelegateToAgent(worker_registry, max_depth=3))

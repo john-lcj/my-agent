@@ -10,13 +10,12 @@ SCHEMA = {
     "properties": {
         "channel": {
             "type": "string",
-            "description": "email | wechat | qq",
-            "enum": ["email", "wechat", "qq"],
+            "description": "email(目前仅支持邮件)",
+            "enum": ["email"],
         },
-        "to": {"type": "string", "description": "收件人/UserId/channel_id"},
+        "to": {"type": "string", "description": "收件人邮箱"},
         "subject": {"type": "string", "description": "邮件主题"},
         "body": {"type": "string", "description": "正文"},
-        "group_openid": {"type": "string", "description": "QQ 群 openid"},
     },
     "required": ["channel", "to", "body"],
 }
@@ -25,8 +24,6 @@ SCHEMA = {
 def _missing_config_hint(channel: str) -> str:
     hints = {
         "email": "EMAIL_SMTP_HOST, EMAIL_USER, EMAIL_PASS",
-        "wechat": "WECHAT_CORP_ID, WECHAT_AGENT_SECRET, WECHAT_AGENT_ID",
-        "qq": "QQ_BOT_APP_ID, QQ_BOT_SECRET",
     }
     return hints.get(channel, "对应渠道环境变量")
 
@@ -53,40 +50,22 @@ async def run(args: dict, ctx) -> CapabilityResult:
     subject = str(args.get("subject", "")).strip()
     group_openid = str(args.get("group_openid", "")).strip()
 
-    if channel not in ("email", "wechat", "qq"):
-        return CapabilityResult(ok=False, error="channel 须为 email/wechat/qq")
+    if channel not in ("email",):
+        return CapabilityResult(ok=False, error="channel 仅支持 email(其余 IM 渠道已移除)")
     if not to or not body:
         return CapabilityResult(ok=False, error="缺少 to 或 body")
 
-    from capabilities.tools.notify import SendEmail, SendQQ, SendWeChat
+    from capabilities.tools.notify import SendEmail
 
     try:
-        if channel == "email":
-            if not os.environ.get("EMAIL_SMTP_HOST") or not os.environ.get("EMAIL_USER"):
-                return CapabilityResult(
-                    ok=True,
-                    output=_format_manual_draft(channel, to, subject, body),
-                )
-            result = await SendEmail().invoke(
-                {"to": to, "subject": subject or "(无主题)", "body": body}, ctx
+        if not os.environ.get("EMAIL_SMTP_HOST") or not os.environ.get("EMAIL_USER"):
+            return CapabilityResult(
+                ok=True,
+                output=_format_manual_draft(channel, to, subject, body),
             )
-        elif channel == "wechat":
-            if not os.environ.get("WECHAT_CORP_ID") or not os.environ.get("WECHAT_AGENT_SECRET"):
-                return CapabilityResult(
-                    ok=True,
-                    output=_format_manual_draft(channel, to, subject, body),
-                )
-            result = await SendWeChat().invoke({"to_user": to, "content": body}, ctx)
-        else:
-            if not os.environ.get("QQ_BOT_APP_ID"):
-                return CapabilityResult(
-                    ok=True,
-                    output=_format_manual_draft(channel, to, subject, body),
-                )
-            payload = {"content": body, "channel_id": to}
-            if group_openid:
-                payload = {"content": body, "group_openid": group_openid}
-            result = await SendQQ().invoke(payload, ctx)
+        result = await SendEmail().invoke(
+            {"to": to, "subject": subject or "(无主题)", "body": body}, ctx
+        )
 
         if result.ok:
             return result

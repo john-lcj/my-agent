@@ -1,17 +1,12 @@
-"""FastAPI 服务 —— /ws 流式聊天 + 外部渠道 webhook。
+"""FastAPI 服务 —— /ws 流式聊天 + 邮件渠道。
 
 端点一览:
   GET  /           Web 前端(index.html)
   WS   /ws         WebSocket 聊天(流式 + 确认卡片)
-  POST /webhook/wechat   企业微信消息接收
-  GET  /webhook/wechat   企业微信 URL 验证
-  POST /webhook/qq       QQ 机器人消息接收
-  POST /api/email/send   手动触发邮件发送(调试用)
 
-外部渠道按 .env 配置自动启用:
-  EMAIL_USER      非空 => 启用邮件 Channel(后台轮询)
-  WECHAT_CORP_ID  非空 => 启用企业微信 Channel
-  QQ_BOT_APP_ID   非空 => 启用 QQ Channel
+外部渠道:仅保留邮件(EMAIL_USER 非空 => 启用,后台 IMAP 轮询)。
+其余 IM 渠道(QQ/微信/Slack/Telegram)已移除——日常使用走「手机经 Tailscale
+直连本机 Web UI」,定时任务产物通过邮件投递。
 
 注意:不使用 `from __future__ import annotations`,且在模块顶层导入 FastAPI 的
 WebSocket 等类型,否则 FastAPI 把参数误判为查询参数(握手 403)。
@@ -76,12 +71,6 @@ _scheduler: "Scheduler | None" = None
 _ext_channels: dict[str, object] = {}
 _ext_coordinators: dict[str, object] = {}
 _ext_templates: dict[str, object] = {}
-
-
-def _qq_env_ready() -> bool:
-    app_id = os.environ.get("QQ_BOT_APP_ID", "")
-    secret = os.environ.get("QQ_BOT_SECRET", "") or os.environ.get("QQ_BOT_TOKEN", "")
-    return bool(app_id and secret)
 
 
 def _pref_mining_enabled() -> bool:
@@ -192,26 +181,6 @@ async def _deliver_result(channel: str, to: str, subject: str, body: str) -> Non
     if channel == "email":
         target = to or ch.user
         await ch._send_email(target, subject, body)
-    elif channel == "wechat":
-        target = to or "@all"
-        await ch._send_text(target, f"{subject}\n\n{body}")
-    elif channel == "qq":
-        if not to:
-            raise ValueError("QQ 投递需 deliver_to,格式 group:<id> / user:<id> / channel:<id>")
-        await ch.send_proactive(to, subject, body)
-    elif channel == "slack":
-        await ch.send_proactive(to, f"{subject}\n\n{body}")
-    elif channel == "telegram":
-        await ch.send_proactive(to, f"{subject}\n\n{body}")
-    elif channel == "onebot":
-        # to 格式:user:<qq号> 或 group:<群号>;缺省投给主人私聊
-        target = to or (f"user:{ch.master_uin}" if ch.master_uin else "")
-        if not target or ":" not in target:
-            raise ValueError("QQ(OneBot)投递需 deliver_to,格式 user:<qq号> / group:<群号>")
-        kind, _, ident = target.partition(":")
-        ctx = ({"message_type": "group", "group_id": int(ident)} if kind == "group"
-               else {"message_type": "private", "user_id": int(ident)})
-        await ch._reply(ctx, f"{subject}\n\n{body}")
 
 
 def _enable_channel(name: str) -> bool:
@@ -223,61 +192,6 @@ def _enable_channel(name: str) -> bool:
         _ext_channels["email"] = ch
         _ext_coordinators["email"] = coordinator
         _ext_templates["email"] = bundle.ctx
-        return True
-    if name == "wechat" and os.environ.get("WECHAT_CORP_ID"):
-        from channels.wechat_channel import WeChatChannel
-        ch = WeChatChannel()
-        coordinator, bundle = _build_ext_stack(ch)
-        _ext_channels["wechat"] = ch
-        _ext_coordinators["wechat"] = coordinator
-        _ext_templates["wechat"] = bundle.ctx
-        asyncio.create_task(_run_ext_channel("wechat"))
-        return True
-    if name == "qq" and _qq_env_ready():
-        from channels.qq_channel import QQChannel, qq_channel_info
-        ch = QQChannel()
-        coordinator, bundle = _build_ext_stack(ch)
-        _ext_channels["qq"] = ch
-        _ext_coordinators["qq"] = coordinator
-        _ext_templates["qq"] = bundle.ctx
-        asyncio.create_task(_run_ext_channel("qq"))
-        # 默认走 WS 网关(免公网,机器人主动连腾讯);仅当显式 QQ_BOT_MODE=webhook 才用回调。
-        if os.environ.get("QQ_BOT_MODE", "gateway").strip().lower() != "webhook":
-            asyncio.create_task(ch.connect_gateway())
-            print("[server] QQ(官方机器人·WS 网关)启动中,无需公网回调")
-        else:
-            info = qq_channel_info()
-            print(f"[server] QQ webhook → {info['webhook_url']} (沙箱={info['sandbox']})")
-        return True
-    if name == "slack" and os.environ.get("SLACK_BOT_TOKEN"):
-        from channels.slack_channel import SlackChannel
-        ch = SlackChannel()
-        coordinator, bundle = _build_ext_stack(ch)
-        _ext_channels["slack"] = ch
-        _ext_coordinators["slack"] = coordinator
-        _ext_templates["slack"] = bundle.ctx
-        asyncio.create_task(_run_ext_channel("slack"))
-        return True
-    if name == "telegram" and os.environ.get("TELEGRAM_BOT_TOKEN"):
-        from channels.telegram_channel import TelegramChannel
-        ch = TelegramChannel()
-        coordinator, bundle = _build_ext_stack(ch)
-        _ext_channels["telegram"] = ch
-        _ext_coordinators["telegram"] = coordinator
-        _ext_templates["telegram"] = bundle.ctx
-        asyncio.create_task(_run_ext_channel("telegram"))
-        return True
-    if name == "onebot" and os.environ.get("ONEBOT_ENABLE", "").strip().lower() in {"1", "true", "yes", "on"}:
-        from channels.onebot_channel import OneBotChannel, onebot_channel_info
-        ch = OneBotChannel()
-        coordinator, bundle = _build_ext_stack(ch)
-        _ext_channels["onebot"] = ch
-        _ext_coordinators["onebot"] = coordinator
-        _ext_templates["onebot"] = bundle.ctx
-        asyncio.create_task(ch.connect())            # 后台连 NapCat 的正向 WS
-        asyncio.create_task(_run_ext_channel("onebot"))  # 处理循环
-        info = onebot_channel_info()
-        print(f"[server] QQ(OneBot/NapCat)→ {info['ws_url']} · 主人={info['master_uin']}")
         return True
     return False
 
@@ -362,7 +276,7 @@ def create_app():
     # ── 生命周期:启动时初始化外部渠道 + 定时任务调度器,关闭时停掉调度器 ──
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        for name in ("email", "wechat", "qq", "slack", "telegram", "onebot"):
+        for name in ("email",):
             try:
                 ok = await _enable_channel_async(name) if name == "email" else _enable_channel(name)
                 if ok:
@@ -435,60 +349,11 @@ def create_app():
                     )
         return await call_next(request)
 
-    # ── 企业微信 webhook ─────────────────────────────────────────────────────
-    @app.get("/webhook/wechat")
-    async def wechat_verify(request: Request) -> HTMLResponse:
-        ch = _ext_channels.get("wechat")
-        if ch is None:
-            return HTMLResponse("wechat channel not enabled", status_code=404)
-        params = dict(request.query_params)
-        echostr = await ch.handle_verification(params)
-        return HTMLResponse(echostr)
-
-    @app.post("/webhook/wechat")
-    async def wechat_message(request: Request) -> HTMLResponse:
-        ch = _ext_channels.get("wechat")
-        if ch is None:
-            return HTMLResponse("wechat channel not enabled", status_code=404)
-        body = await request.body()
-        params = dict(request.query_params)
-        result = await ch.handle_message(body, params)
-        return HTMLResponse(result)
-
-    # ── QQ 机器人 webhook ─────────────────────────────────────────────────────
-    @app.post("/webhook/qq")
-    async def qq_callback(request: Request) -> JSONResponse:
-        ch = _ext_channels.get("qq")
-        if ch is None:
-            return JSONResponse({"error": "qq channel not enabled"}, status_code=404)
-        body = await request.body()
-        headers = dict(request.headers)
-        result = await ch.handle_callback(body, headers)
-        return JSONResponse(result)
-
-    @app.post("/webhook/slack")
-    async def slack_events(request: Request) -> JSONResponse:
-        ch = _ext_channels.get("slack")
-        if ch is None:
-            return JSONResponse({"error": "slack channel not enabled"}, status_code=404)
-        body = await request.body()
-        result = await ch.handle_webhook(body, dict(request.headers))
-        return JSONResponse(result)
-
-    @app.post("/webhook/telegram")
-    async def telegram_webhook(request: Request) -> JSONResponse:
-        ch = _ext_channels.get("telegram")
-        if ch is None:
-            return JSONResponse({"error": "telegram channel not enabled"}, status_code=404)
-        body = await request.body()
-        result = await ch.handle_webhook(body, dict(request.headers))
-        return JSONResponse(result)
-
-    # ── 频道配置 API ─────────────────────────────────────────────────────────
+    # ── 频道配置 API(仅邮件)─────────────────────────────────────────────────
     @app.get("/api/channels")
     async def get_channels() -> JSONResponse:
         cfg = _channel_cfg.get_masked()
-        enabled = {n: (n in _ext_channels) for n in ("email", "wechat", "qq", "slack", "telegram")}
+        enabled = {"email": "email" in _ext_channels}
         return JSONResponse({"config": cfg, "enabled": enabled})
 
     @app.post("/api/channels")
@@ -505,20 +370,6 @@ def create_app():
         ch = EmailChannel()  # 从已应用的 env 读取配置
         result = await asyncio.get_event_loop().run_in_executor(None, ch.test_connection)
         return JSONResponse(result)
-
-    @app.get("/api/channels/qq/info")
-    async def qq_info(request: Request) -> JSONResponse:
-        from channels.qq_channel import qq_channel_info
-        base = str(request.base_url).rstrip("/")
-        info = qq_channel_info(public_base_url=base)
-        info["enabled"] = "qq" in _ext_channels
-        return JSONResponse(info)
-
-    @app.post("/api/channels/qq/test")
-    async def test_qq(request: Request) -> JSONResponse:
-        from channels.qq_channel import QQChannel
-        ch = QQChannel()
-        return JSONResponse(await ch.test_connection())
 
     @app.post("/api/channels/{name}/restart")
     async def restart_channel(name: str) -> JSONResponse:

@@ -88,8 +88,8 @@ class Config:
         if p.strip()
     ]
 
-    # 每日简报:daily HH:MM 推送渠道(qq/email/wechat/none)
+    # 每日简报:daily HH:MM 推送渠道(email/none)
     BRIEFING_AT = os.environ.get("AGENT_BRIEFING_AT", "08:00")
-    BRIEFING_CHANNEL = os.environ.get("AGENT_BRIEFING_CHANNEL", "qq")
-    # QQ 投递目标,格式 group:<id> / user:<id> / channel:<id>(邮件渠道可留空用默认)
+    BRIEFING_CHANNEL = os.environ.get("AGENT_BRIEFING_CHANNEL", "email")
+    # 投递目标:邮件渠道留空则发给 EMAIL_USER 自己
     BRIEFING_TO = os.environ.get("AGENT_BRIEFING_TO", "")
