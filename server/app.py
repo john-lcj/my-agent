@@ -203,6 +203,15 @@ async def _deliver_result(channel: str, to: str, subject: str, body: str) -> Non
         await ch.send_proactive(to, f"{subject}\n\n{body}")
     elif channel == "telegram":
         await ch.send_proactive(to, f"{subject}\n\n{body}")
+    elif channel == "onebot":
+        # to 格式:user:<qq号> 或 group:<群号>;缺省投给主人私聊
+        target = to or (f"user:{ch.master_uin}" if ch.master_uin else "")
+        if not target or ":" not in target:
+            raise ValueError("QQ(OneBot)投递需 deliver_to,格式 user:<qq号> / group:<群号>")
+        kind, _, ident = target.partition(":")
+        ctx = ({"message_type": "group", "group_id": int(ident)} if kind == "group"
+               else {"message_type": "private", "user_id": int(ident)})
+        await ch._reply(ctx, f"{subject}\n\n{body}")
 
 
 def _enable_channel(name: str) -> bool:
@@ -252,6 +261,18 @@ def _enable_channel(name: str) -> bool:
         _ext_coordinators["telegram"] = coordinator
         _ext_templates["telegram"] = bundle.ctx
         asyncio.create_task(_run_ext_channel("telegram"))
+        return True
+    if name == "onebot" and os.environ.get("ONEBOT_ENABLE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        from channels.onebot_channel import OneBotChannel, onebot_channel_info
+        ch = OneBotChannel()
+        coordinator, bundle = _build_ext_stack(ch)
+        _ext_channels["onebot"] = ch
+        _ext_coordinators["onebot"] = coordinator
+        _ext_templates["onebot"] = bundle.ctx
+        asyncio.create_task(ch.connect())            # 后台连 NapCat 的正向 WS
+        asyncio.create_task(_run_ext_channel("onebot"))  # 处理循环
+        info = onebot_channel_info()
+        print(f"[server] QQ(OneBot/NapCat)→ {info['ws_url']} · 主人={info['master_uin']}")
         return True
     return False
 
@@ -336,7 +357,7 @@ def create_app():
     # ── 生命周期:启动时初始化外部渠道 + 定时任务调度器,关闭时停掉调度器 ──
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        for name in ("email", "wechat", "qq", "slack", "telegram"):
+        for name in ("email", "wechat", "qq", "slack", "telegram", "onebot"):
             try:
                 ok = await _enable_channel_async(name) if name == "email" else _enable_channel(name)
                 if ok:
