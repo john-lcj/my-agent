@@ -156,6 +156,12 @@ class EmailChannel:
                 raw = data[0][1] if data and data[0] else b""
                 msg = _email_lib.message_from_bytes(raw)
 
+                # 立刻标记已读:确保每封只处理一次,即便后续回信失败也不会反复重跑(省额度、防风暴)
+                try:
+                    imap.store(mid, "+FLAGS", "\\Seen")
+                except Exception:
+                    pass
+
                 # 跳过本 agent 自己发出的回信(防自问自答死循环)
                 if msg.get("X-Agent-Autoreply"):
                     print("[email] 跳过自己的回信(防循环)")
@@ -189,9 +195,13 @@ class EmailChannel:
             imap.logout()
 
     async def _send_email(self, to: str, subject: str, body: str) -> None:
-        await asyncio.get_event_loop().run_in_executor(
-            None, self._send_sync, to, subject, body
-        )
+        # 永不让发信异常冒泡(否则 asyncio 报 "Task exception was never retrieved" 刷屏)
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._send_sync, to, subject, body
+            )
+        except Exception as e:
+            print(f"[email] 回信失败(已忽略,不重试):{e}")
 
     def _send_sync(self, to: str, subject: str, body: str) -> None:
         msg = MIMEText(body, "plain", "utf-8")
@@ -201,9 +211,19 @@ class EmailChannel:
         # 自动回信打标记:收信端见到此头就跳过,避免"自己回信→自己又读到→再回"的死循环。
         msg["X-Agent-Autoreply"] = "1"
         ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx) as smtp:
-            smtp.login(self.user, self.password)
-            smtp.send_message(msg)
+        # QQ SMTP 偶发断连(尤其被限流后),重试一次;仍失败则抛给上层安静记录。
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
+                    smtp.login(self.user, self.password)
+                    smtp.send_message(msg)
+                return
+            except Exception as e:
+                last_err = e
+                time.sleep(2)
+        if last_err:
+            raise last_err
 
     def test_connection(self) -> dict:
         """同步验证 IMAP + SMTP 登录,返回 {ok, imap, smtp, error}。供"连通测试"用。"""
