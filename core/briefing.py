@@ -19,10 +19,19 @@ BRIEFING_PROMPT = """请为主人生成今天的每日简报。你只有只读�
 要求:总长 300 字以内,口吻亲切自然,条目化,可直接作为消息推送;不要暴露工具调用细节。"""
 
 
+# 已移除的旧渠道:历史任务若仍投递到这些渠道,自动迁移为邮件,避免投递失败。
+_REMOVED_CHANNELS = {"qq", "wechat", "slack", "telegram", "onebot"}
+
+
 def ensure_briefing_task(store, *, at_hhmm: str, channel: str, to: str = "") -> bool:
     """幂等注册每日简报任务。已存在同名任务则跳过(返回 False),新建返回 True。"""
     for t in store.list():
         if t.name == BRIEFING_TASK_NAME:
+            # 迁移:旧任务投递到已删除渠道 → 改为邮件(发给自己)
+            if getattr(t, "deliver", "") in _REMOVED_CHANNELS:
+                t.deliver = "email"
+                t.deliver_to = ""
+                store.save(t)
             return False
     if not channel or channel == "none":
         deliver = "none"

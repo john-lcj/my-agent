@@ -817,7 +817,7 @@ option{background:var(--card)}
         </div>
         <div class="settings-section" id="settings-channels">
           <h2 id="settings-channels-title">连接器</h2>
-          <p class="settings-desc" id="settings-channels-desc">邮件、企微、QQ、Slack、Telegram</p>
+          <p class="settings-desc" id="settings-channels-desc">手机直连(Tailscale)+ 邮件</p>
           
         <!-- 邮件 -->
         <div class="channel-card">
@@ -831,8 +831,18 @@ option{background:var(--card)}
               <input class="field-input" id="email-imap" placeholder="imap.qq.com"/>
             </div>
             <div class="field-group">
+              <div class="field-label">IMAP 端口</div>
+              <input class="field-input" id="email-imap-port" placeholder="993"/>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
               <div class="field-label">SMTP 服务器</div>
               <input class="field-input" id="email-smtp" placeholder="smtp.qq.com"/>
+            </div>
+            <div class="field-group">
+              <div class="field-label">SMTP 端口</div>
+              <input class="field-input" id="email-smtp-port" placeholder="465"/>
             </div>
           </div>
           <div class="field-row">
@@ -845,6 +855,10 @@ option{background:var(--card)}
               <input class="field-input" id="email-pass" type="password" placeholder="邮箱授权码"/>
             </div>
           </div>
+          <div class="field-group">
+            <div class="field-label">白名单发件人(留空=只听自己)</div>
+            <input class="field-input" id="email-allowed" placeholder="多个用逗号分隔,留空只响应账号本人"/>
+          </div>
           <div class="field-hint">QQ/163 邮箱请使用授权码(非登录密码)。保存后点「测试连接」验证,再点「启用渠道」。</div>
           <div class="channel-actions">
             <button class="btn-sm" onclick="testEmail()">测试连接</button>
@@ -853,103 +867,14 @@ option{background:var(--card)}
           <div id="email-test-result" class="field-hint" style="margin-top:6px"></div>
         </div>
 
-        <!-- 企业微信 -->
+        <!-- 手机直连说明 -->
         <div class="channel-card">
           <div class="channel-card-head">
-            <div class="channel-card-title"><span class="channel-icon">💬</span>企业微信</div>
-            <span class="channel-status" id="wechat-status">未连接</span>
+            <div class="channel-card-title"><span class="channel-icon">📱</span>手机直连(主力)</div>
           </div>
-          <div class="field-row">
-            <div class="field-group">
-              <div class="field-label">企业 ID</div>
-              <input class="field-input" id="wechat-corp" placeholder="wx..."/>
-            </div>
-            <div class="field-group">
-              <div class="field-label">应用 AgentId</div>
-              <input class="field-input" id="wechat-agent" placeholder="1000000"/>
-            </div>
-          </div>
-          <div class="field-group">
-            <div class="field-label">应用 Secret</div>
-            <input class="field-input" id="wechat-secret" type="password" placeholder="应用 Secret"/>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <div class="field-label">Token</div>
-              <input class="field-input" id="wechat-token" placeholder="消息接收 Token"/>
-            </div>
-            <div class="field-group">
-              <div class="field-label">AES Key</div>
-              <input class="field-input" id="wechat-aes" placeholder="43位加密密钥(可选)"/>
-            </div>
-          </div>
-          <div class="field-hint">Webhook 地址: <code>https://你的域名/webhook/wechat</code></div>
-          <div class="channel-actions">
-            <button class="btn-sm primary" onclick="restartChannel('wechat')">启用渠道</button>
-          </div>
+          <div class="field-hint">手机和电脑都装 <strong>Tailscale</strong> 并登录同一账号,手机浏览器打开 <code>http://&lt;本机Tailscale地址&gt;:8000</code>,在上面「访问令牌」里填服务端 <code>AGENT_API_TOKEN</code> 即可。无第三方、不封号、实时。详见 <code>CONNECT_PHONE.md</code>。</div>
         </div>
 
-        <!-- QQ -->
-        <div class="channel-card">
-          <div class="channel-card-head">
-            <div class="channel-card-title"><span class="channel-icon">🐧</span>QQ 机器人</div>
-            <span class="channel-status" id="qq-status">未连接</span>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <div class="field-label">AppID</div>
-              <input class="field-input" id="qq-appid" placeholder="QQ 开放平台 → 机器人 AppID"/>
-            </div>
-            <div class="field-group">
-              <div class="field-label">AppSecret</div>
-              <input class="field-input" id="qq-app-secret" type="password" placeholder="客户端密钥（仅填这一项）"/>
-            </div>
-          </div>
-          <label class="field-hint" style="display:flex;align-items:center;gap:8px;margin:8px 0">
-            <input type="checkbox" id="qq-sandbox"/> 沙箱环境（测试用）
-          </label>
-          <div class="field-hint">内置 Webhook: <code id="qq-webhook-url">/webhook/qq</code>（QQ 平台需填<strong>公网 HTTPS</strong>完整地址；内网穿透示例 <code>https://你的域名/webhook/qq</code>）</div>
-          <div class="channel-actions">
-            <button class="btn-sm" onclick="testQQChannel()">测试凭证</button>
-            <button class="btn-sm primary" onclick="restartChannel('qq')">启用渠道</button>
-          </div>
-          <div id="qq-test-result" class="field-hint" style="margin-top:8px"></div>
-        </div>
-
-        <div class="channel-card">
-          <div class="channel-card-head">
-            <div class="channel-card-title"><span class="channel-icon">💼</span>Slack</div>
-            <span class="channel-status" id="slack-status">未连接</span>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Bot Token (xoxb-...)</div>
-            <input class="field-input" id="slack-token" type="password" placeholder="SLACK_BOT_TOKEN"/>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Signing Secret</div>
-            <input class="field-input" id="slack-secret" type="password" placeholder="SLACK_SIGNING_SECRET"/>
-          </div>
-          <div class="field-hint">Events 订阅 URL: <code>https://你的域名/webhook/slack</code></div>
-          <div class="channel-actions">
-            <button class="btn-sm primary" onclick="restartChannel('slack')">启用渠道</button>
-          </div>
-        </div>
-
-        <div class="channel-card">
-          <div class="channel-card-head">
-            <div class="channel-card-title"><span class="channel-icon">✈️</span>Telegram</div>
-            <span class="channel-status" id="telegram-status">未连接</span>
-          </div>
-          <div class="field-group">
-            <div class="field-label">Bot Token</div>
-            <input class="field-input" id="telegram-token" type="password" placeholder="TELEGRAM_BOT_TOKEN"/>
-          </div>
-          <div class="field-hint">Webhook: <code>https://你的域名/webhook/telegram</code></div>
-          <div class="channel-actions">
-            <button class="btn-sm primary" onclick="restartChannel('telegram')">启用渠道</button>
-          </div>
-        </div>
-      
         </div>
         <div class="settings-section" id="settings-tasks">
           <h2 id="settings-tasks-title">定时任务</h2>
@@ -999,13 +924,11 @@ option{background:var(--card)}
               <select id="task-deliver">
                 <option value="none">不投递</option>
                 <option value="email">邮件</option>
-                <option value="wechat">企业微信</option>
-                <option value="qq">QQ</option>
               </select>
             </div>
             <div class="field-group">
-              <div class="field-label">投递目标(邮箱/用户ID)</div>
-              <input class="field-input" id="task-deliver-to" placeholder="邮箱/微信;QQ 填 group:xxx 或 channel:xxx"/>
+              <div class="field-label">投递邮箱(留空=发给自己)</div>
+              <input class="field-input" id="task-deliver-to" placeholder="收件邮箱,留空发给 EMAIL_USER 自己"/>
             </div>
           </div>
           <div class="channel-actions" style="margin-top:8px">
@@ -2832,37 +2755,26 @@ async function loadSettingsUI() {
       document.getElementById('email-imap').value = c.email.imap || '';
       document.getElementById('email-smtp').value = c.email.smtp || '';
       document.getElementById('email-user').value = c.email.user || '';
+      const ip = document.getElementById('email-imap-port'); if (ip) ip.value = c.email.imap_port || '';
+      const sp = document.getElementById('email-smtp-port'); if (sp) sp.value = c.email.smtp_port || '';
+      const al = document.getElementById('email-allowed'); if (al) al.value = c.email.allowed || '';
       if (c.email.password) document.getElementById('email-pass').placeholder = '已配置(留空不改动)';
     }
-    if (c.wechat) {
-      document.getElementById('wechat-corp').value = c.wechat.corp_id || '';
-      document.getElementById('wechat-agent').value = c.wechat.agent_id || '';
-      if (c.wechat.secret) document.getElementById('wechat-secret').placeholder = '已配置(留空不改动)';
-      document.getElementById('wechat-token').value = c.wechat.token || '';
-      document.getElementById('wechat-aes').value = c.wechat.aes_key || '';
-    }
-    if (c.qq) {
-      document.getElementById('qq-appid').value = c.qq.app_id || '';
-      if (c.qq.app_secret) {
-        document.getElementById('qq-app-secret').placeholder = '已配置(留空不改动)';
-      }
-      const sb = document.getElementById('qq-sandbox');
-      if (sb) sb.checked = String(c.qq.sandbox || '0') === '1';
-    }
-    await loadQQInfo();
-    if (c.slack) {
-      if (c.slack.bot_token) document.getElementById('slack-token').placeholder = '已配置(留空不改动)';
-      if (c.slack.signing_secret) document.getElementById('slack-secret').placeholder = '已配置(留空不改动)';
-    }
-    if (c.telegram && c.telegram.bot_token) {
-      document.getElementById('telegram-token').placeholder = '已配置(留空不改动)';
-    }
     setChannelStatus('email', en.email);
-    setChannelStatus('wechat', en.wechat);
-    setChannelStatus('qq', en.qq);
-    setChannelStatus('slack', en.slack);
-    setChannelStatus('telegram', en.telegram);
   } catch { /* 离线 */ }
+}
+
+function emailChannelValues() {
+  const v = {
+    imap: document.getElementById('email-imap').value,
+    smtp: document.getElementById('email-smtp').value,
+    user: document.getElementById('email-user').value,
+    password: document.getElementById('email-pass').value,
+  };
+  const ip = document.getElementById('email-imap-port'); if (ip && ip.value) v.imap_port = ip.value;
+  const sp = document.getElementById('email-smtp-port'); if (sp && sp.value) v.smtp_port = sp.value;
+  const al = document.getElementById('email-allowed'); if (al) v.allowed = al.value;
+  return v;
 }
 
 function setChannelStatus(name, enabled) {
@@ -2890,28 +2802,8 @@ async function saveSettings() {
     });
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(wsInitPayload()));
   } catch { /* ignore */ }
-  // 保存三个频道配置到服务端
-  await saveChannel('email', {
-    imap: document.getElementById('email-imap').value,
-    smtp: document.getElementById('email-smtp').value,
-    user: document.getElementById('email-user').value,
-    password: document.getElementById('email-pass').value,
-  });
-  await saveChannel('wechat', {
-    corp_id: document.getElementById('wechat-corp').value,
-    agent_id: document.getElementById('wechat-agent').value,
-    secret: document.getElementById('wechat-secret').value,
-    token: document.getElementById('wechat-token').value,
-    aes_key: document.getElementById('wechat-aes').value,
-  });
-  await saveQQChannel();
-  await saveChannel('slack', {
-    bot_token: document.getElementById('slack-token').value,
-    signing_secret: document.getElementById('slack-secret').value,
-  });
-  await saveChannel('telegram', {
-    bot_token: document.getElementById('telegram-token').value,
-  });
+  // 保存邮件渠道配置到服务端
+  await saveChannel('email', emailChannelValues());
   closeSettings();
 }
 
@@ -2928,12 +2820,7 @@ async function testEmail() {
   const el = document.getElementById('email-test-result');
   el.textContent = '测试中…';
   // 先保存当前填写的配置再测
-  await saveChannel('email', {
-    imap: document.getElementById('email-imap').value,
-    smtp: document.getElementById('email-smtp').value,
-    user: document.getElementById('email-user').value,
-    password: document.getElementById('email-pass').value,
-  });
+  await saveChannel('email', emailChannelValues());
   try {
     const res = await fetch('/api/channels/email/test', { method: 'POST' });
     const r = await res.json();
@@ -2944,58 +2831,10 @@ async function testEmail() {
   }
 }
 
-function qqChannelValues() {
-  return {
-    app_id: document.getElementById('qq-appid').value,
-    app_secret: document.getElementById('qq-app-secret').value,
-    sandbox: document.getElementById('qq-sandbox')?.checked ? '1' : '0',
-  };
-}
-
-async function saveQQChannel() {
-  await saveChannel('qq', qqChannelValues());
-}
-
-async function loadQQInfo() {
-  try {
-    const res = await fetch('/api/channels/qq/info');
-    const info = await res.json();
-    const el = document.getElementById('qq-webhook-url');
-    if (el && info.webhook_url) el.textContent = info.webhook_url;
-    if (info.enabled) setChannelStatus('qq', true);
-  } catch { /* 离线 */ }
-}
-
-async function testQQChannel() {
-  const el = document.getElementById('qq-test-result');
-  el.textContent = '测试中…';
-  await saveQQChannel();
-  try {
-    const res = await fetch('/api/channels/qq/test', { method: 'POST' });
-    const r = await res.json();
-    if (r.ok) el.innerHTML = `<span style="color:var(--green)">✓ ${escHtml(r.detail||'凭证有效')}</span>`;
-    else el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(r.error||'失败')}</span>`;
-  } catch (e) {
-    el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(String(e))}</span>`;
-  }
-}
 
 async function restartChannel(name) {
   // 先落盘当前表单,再热启用
-  if (name === 'email') await saveChannel('email', {
-    imap: document.getElementById('email-imap').value,
-    smtp: document.getElementById('email-smtp').value,
-    user: document.getElementById('email-user').value,
-    password: document.getElementById('email-pass').value,
-  });
-  else if (name === 'wechat') await saveChannel('wechat', {
-    corp_id: document.getElementById('wechat-corp').value,
-    agent_id: document.getElementById('wechat-agent').value,
-    secret: document.getElementById('wechat-secret').value,
-    token: document.getElementById('wechat-token').value,
-    aes_key: document.getElementById('wechat-aes').value,
-  });
-  else if (name === 'qq') await saveQQChannel();
+  if (name === 'email') await saveChannel('email', emailChannelValues());
   try {
     const res = await fetch(`/api/channels/${name}/restart`, { method: 'POST' });
     const r = await res.json();
@@ -3696,7 +3535,7 @@ const I18N = {
     govAggressive: '激进(写操作自动放行)',
     lblMaxCost: '金额上限(USD,留空不限)',
     lblMaxSteps: '最大步数',
-    settingsChannelsDesc: '邮件、企微、QQ、Slack、Telegram',
+    settingsChannelsDesc: '手机直连(Tailscale)+ 邮件',
     settingsTasks: '定时任务',
     settingsTasksDesc: '到点自动执行，无人值守时默认只读',
     settingsGovernance: '治理',
@@ -3830,7 +3669,7 @@ const I18N = {
     govAggressive: 'Aggressive (auto-approve writes)',
     lblMaxCost: 'Cost cap (USD, empty = unlimited)',
     lblMaxSteps: 'Max steps',
-    settingsChannelsDesc: 'Email, WeChat Work, QQ, Slack, Telegram',
+    settingsChannelsDesc: 'Phone direct (Tailscale) + Email',
     settingsTasks: 'Scheduled tasks',
     settingsTasksDesc: 'Run prompts on schedule (unattended, read-only by default)',
     settingsGovernance: 'Governance',
