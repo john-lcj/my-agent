@@ -148,7 +148,10 @@ class EmailChannel:
             imap.login(self.user, self.password)
             imap.select("INBOX")
             _, msg_ids = imap.search(None, "UNSEEN")
-            for mid in (msg_ids[0].split() if msg_ids[0] else []):
+            ids = msg_ids[0].split() if msg_ids and msg_ids[0] else []
+            if ids:
+                print(f"[email] 本轮发现 {len(ids)} 封未读")
+            for mid in ids:
                 _, data = imap.fetch(mid, "(RFC822)")
                 raw = data[0][1] if data and data[0] else b""
                 msg = _email_lib.message_from_bytes(raw)
