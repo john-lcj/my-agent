@@ -53,6 +53,10 @@ class EmailChannel:
         self.user = user or os.environ.get("EMAIL_USER", "")
         self.password = password or os.environ.get("EMAIL_PASS", "")
         self.poll_sec = poll_sec or float(os.environ.get("EMAIL_POLL_SEC", "30"))
+        # 白名单:只响应这些发件人的邮件(逗号分隔)。默认只听自己,防陌生人驱使 agent。
+        raw_allow = os.environ.get("EMAIL_ALLOWED_SENDERS", "").strip()
+        self.allowed = {a.strip().lower() for a in raw_allow.split(",") if a.strip()} or (
+            {self.user.lower()} if self.user else set())
 
         self._inbox: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue()
         self._pending_confirm: dict[str, asyncio.Future] = {}
@@ -149,6 +153,11 @@ class EmailChannel:
                 sender = _parse_addr(msg.get("From", ""))
                 subject = _decode_header(msg.get("Subject", ""))
                 body = _extract_body(msg)
+
+                # 白名单过滤:非许可发件人直接忽略(防陌生人驱使 agent / 烧额度)
+                if self.allowed and sender.strip().lower() not in self.allowed:
+                    print(f"[email] 忽略非白名单发件人: {sender}")
+                    continue
 
                 # 处理确认回复(格式: "Y ABC123" 或 "N ABC123")
                 confirm_match = re.search(r"^([YNyn])\s+([A-F0-9]{6})", body.strip())

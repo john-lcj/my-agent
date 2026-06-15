@@ -222,11 +222,14 @@ class QQChannel:
     async def _handle_dispatch_event(self, t: str, d: dict) -> None:
         """解析一条分发事件并入队;webhook 与 WS 网关共用。"""
         if t and t not in _INBOUND_EVENTS:
+            print(f"[qq] 忽略非消息事件 t={t}")
             return
         parsed = _parse_inbound_event(t, d)
         if not parsed:
+            print(f"[qq] 事件无可用文本(已丢弃)t={t} d={json.dumps(d, ensure_ascii=False)[:200]}")
             return
         text, msg_ctx = parsed
+        print(f"[qq] 入队消息:{text[:50]!r} 场景={'群' if msg_ctx.get('group_openid') else '频道' if msg_ctx.get('channel_id') else '私聊'}")
 
         import re
         m = re.match(r"^([yYnN])\s+([A-F0-9]{6})$", text)
@@ -326,6 +329,8 @@ class QQChannel:
                     if resp.status >= 400:
                         detail = await resp.text()
                         print(f"[qq] 发送失败 HTTP {resp.status}: {detail[:300]}")
+                    else:
+                        print(f"[qq] 已回复({resp.status})→ {url.rsplit('/', 2)[-2:]}")
         except Exception as e:
             print(f"[qq] 发送失败: {e}")
 
@@ -361,6 +366,7 @@ class QQChannel:
             t = frame.get("t", "")
             if t == "READY":
                 return ("ready", (frame.get("d") or {}))
+            print(f"[qq] 收到事件 t={t}")  # 诊断:看 @机器人 是否真到了服务端
             await self._handle_dispatch_event(t, frame.get("d", {}))
             return ("dispatch", t)
         if op == _OP_HEARTBEAT_ACK:
