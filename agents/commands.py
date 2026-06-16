@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-from llm.model_registry import format_models_help, list_model_ids, normalize_model_id
+from llm.model_registry import format_models_help, normalize_model_id
 
 _CMD = re.compile(r"^/([a-zA-Z][\w-]*)(?:\s+(.*))?$", re.S)
 

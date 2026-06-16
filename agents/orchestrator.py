@@ -34,7 +34,6 @@ class Hierarchical:
 
         # 1. 主管拆解任务
         breakdown_prompt = f"你是主管,请把以下任务拆分成 {len(workers)} 个子任务(每行一个,不要编号):\n{task}"
-        from core.types import Message as _Msg, Role as _Role
         breakdown_msg = await manager.step(breakdown_prompt, [])
         transcript.append(breakdown_msg)
 
