@@ -64,6 +64,10 @@ confirm:
     - payment.
     - skill.file_edit      # 改文件,等同 fs.write,需确认
     - skill.file_append    # 追加写文件,需确认
+    - skill.docx_writer    # 生成 Word 文件,需确认
+    - skill.xlsx_writer    # 生成 Excel 文件,需确认
+    - skill.pptx_writer    # 生成 PPT 文件,需确认
+    - skill.http_request   # 调外部接口(可能外发/写远端),需确认
   shell_patterns:
     - pattern: '\brm\b'
       reason: '删除文件或目录,需确认。'
