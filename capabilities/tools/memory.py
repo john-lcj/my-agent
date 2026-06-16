@@ -28,7 +28,7 @@ class RememberMemory(Tool):
             "kind": {"type": "string",
                      "description": "类型: fact / preference / episode,默认 fact"},
             "importance": {"type": "number",
-                           "description": "重要性 0~1,越高越不易被遗忘,默认 0.6"},
+                           "description": "重要性 0~1,越高越不易被遗忘。称呼/偏好/长期目标/重要事实等身份信息默认 0.8"},
             "source": {"type": "string",
                        "description": "来源: user(用户明说) 或 agent(推断),默认 agent"},
         },
@@ -46,10 +46,11 @@ class RememberMemory(Tool):
         source = str(args.get("source", "agent")).strip().lower()
         if source not in ("user", "agent"):
             source = "agent"
+        # 身份类信息(称呼/偏好/长期目标/重要事实)最值得记牢,默认重要度高(0.8)。
         try:
-            importance = float(args.get("importance", 0.6))
+            importance = float(args.get("importance", 0.8))
         except (TypeError, ValueError):
-            importance = 0.6
+            importance = 0.8
         try:
             mem.store(MemoryItem(kind=kind, content=content, source=source,
                                  importance=max(0.0, min(1.0, importance))))
