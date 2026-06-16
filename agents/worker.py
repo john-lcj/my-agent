@@ -33,6 +33,15 @@ _HIGH_RISK_SHELL = re.compile(
 )
 
 
+def resolve_worker_model(name: str, spec_llm: str, default_model: str) -> str:
+    """按权限档分模型:优先级 环境变量 AGENT_<NAME>_MODEL > YAML 的 llm > 全局默认。
+    例:AGENT_EXECUTOR_MODEL=deepseek-v4-pro 让可写档用强模型,researcher 仍用便宜的。
+    返回"原始模型串",由调用方再 normalize。"""
+    import os
+    env_model = os.environ.get(f"AGENT_{name.upper()}_MODEL", "").strip()
+    return env_model or (spec_llm or "").strip() or (default_model or "").strip()
+
+
 def _is_high_risk_unattended(call: CapabilityCall) -> bool:
     """该调用是否属于"无人值守也不应自动放行"的高危子集。"""
     if call.name.startswith("gui.") or call.name.startswith("payment."):
@@ -146,11 +155,9 @@ class WorkerFactory:
         registry = CapabilityRegistry(filtered)
         from llm.model_registry import default_model_id, get_model, normalize_model_id
 
-        model_id = (
-            normalize_model_id(spec.llm or "")
-            or normalize_model_id(self._default_model or "")
-            or default_model_id()
-        )
+        # 按权限档分模型:AGENT_<NAME>_MODEL > YAML llm > 全局默认
+        chosen = resolve_worker_model(spec.name, spec.llm, self._default_model or "")
+        model_id = normalize_model_id(chosen or "") or default_model_id()
         spec_meta = get_model(model_id)
         llm = self._llm_factory(model=model_id)
         policy = self._policy_cls(registry)
