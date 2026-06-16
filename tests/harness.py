@@ -840,10 +840,7 @@ async def _coordinator_check(tmp: str) -> tuple:
     from agents.spec import load_specs_from_roster
     roster_dir = os.path.join(ROOT, "agents", "roster")
     specs = load_specs_from_roster(roster_dir)
-    expected = {
-        "code_agent", "data_analyst_agent", "web_agent",
-        "ops_notify_agent", "adler_counselor_agent",
-    }
+    expected = {"researcher", "executor", "adler_counselor_agent"}
     names = {s.name for s in specs}
     roster_ok = expected.issubset(names)
 
@@ -1457,11 +1454,9 @@ def _roster_five_experts_check() -> tuple:
     roster_dir = os.path.join(ROOT, "agents", "roster")
     specs = load_specs_from_roster(roster_dir)
     names = {s.name for s in specs}
-    required = {
-        "code_agent", "data_analyst_agent", "web_agent",
-        "ops_notify_agent", "adler_counselor_agent",
-    }
+    required = {"researcher", "executor", "adler_counselor_agent"}
     archived = {
+        "code_agent", "data_analyst_agent", "web_agent", "ops_notify_agent",
         "market_research_agent", "ppt_agent", "marketing_agent", "copywriting_agent",
         "report_agent", "risk_assessment_agent", "philosophy_mentor_agent",
     }

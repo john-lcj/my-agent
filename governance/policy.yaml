@@ -100,8 +100,7 @@ capability_whitelist:
   delegate:  ["fs.read", "fs.list", "web.search", "web.fetch"]
   scheduler: ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."]
 
-  code_agent:          ["fs.read", "fs.list", "fs.write", "shell.run", "skill."]
-  data_analyst_agent:  ["fs.read", "fs.list", "fs.write", "shell.run", "skill."]
-  web_agent:           ["fs.read", "fs.list", "fs.write", "web.search", "web.fetch", "skill."]
-  ops_notify_agent:    ["fs.read", "fs.write", "notify.", "skill.notify_dispatch"]
+  # 动态子代理:两个权限档(领域专长由子任务动态决定,不再按领域预设人设)
+  researcher:          ["fs.read", "fs.list", "web.search", "web.fetch", "skill."]
+  executor:            ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch"]
   adler_counselor_agent: ["memory.remember", "memory.recall"]

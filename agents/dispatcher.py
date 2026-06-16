@@ -66,14 +66,12 @@ class LLMDispatcher:
 - 简单解释、商量、无需工具的单轮问答
 - 让 Captain 自己总结已有对话、不做新执行
 
-【应派给 worker 的典型场景】
-- code_agent: 读写代码、跑 shell、调试与工程操作
-- data_analyst_agent: CSV/JSON/日志统计分析与数据简报(产物在 logs/reports/)
-- web_agent: 一键生成可打开的单页 HTML 落地页(可联网查素材)
-- ops_notify_agent: 报告摘要推送至邮件/企微/QQ(唯一有真实推送权限)
-- adler_counselor_agent: 阿德勒取向心理支持与长期记忆纪要(非医疗)
+【按"权限档"派发,而非领域人设】
+- 只读类任务(查资料、搜索、读文件、统计分析、汇总)→ 派给只读档 worker
+- 动手类任务(写/改文件、生成产物、跑命令、部署)→ 派给可写档 worker
+- 子任务的"专长"靠你在 sub_task 里写清楚,而不是靠预设人设。
 
-可用 worker:
+可用 worker(从中按上面权限档挑选):
 {roster_desc}
 
 用户任务:

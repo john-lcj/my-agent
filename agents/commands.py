@@ -116,7 +116,7 @@ def format_experts_help(workers: list) -> str:
             lines.append(f"      {desc.strip()[:80]}")
     lines += [
         "",
-        "示例: /code_agent 运行 pytest",
+        "示例: /executor 运行 pytest",
         "不带 / 的消息由 Captain 理解目标后自行拆解并执行。",
     ]
     return "\n".join(lines)
