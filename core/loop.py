@@ -73,6 +73,7 @@ class Agent:
         # 瞬时 system 提示注入(不入库)。这让 agent 跨会话也能"想起你是谁"。
         self._inject_memories(user_text, ctx)
         self._inject_experience(user_text, ctx)
+        self._inject_skill_suggestion(user_text, ctx)
         self._inject_journal(ctx)
         await self._prefetch_skills(user_text, ctx)
 
@@ -331,6 +332,19 @@ class Agent:
             )
         except Exception:
             pass
+
+    def _inject_skill_suggestion(self, user_text: str, ctx: Context) -> None:
+        """若当前任务属于反复出现且未固化的类,注入"建议固化为 skill"的提示(自我改进闭环)。"""
+        try:
+            from memory.pattern_tracker import PatternTracker
+            tip = PatternTracker().suggestion_for(user_text)
+        except Exception:
+            return
+        if not tip:
+            return
+        ctx.messages = [m for m in ctx.messages
+                        if not (m.role == Role.SYSTEM and m.content.startswith("[自我改进提示]"))]
+        ctx.add_system(tip)
 
     def _inject_experience(self, user_text: str, ctx: Context) -> None:
         """注入与当前任务相关的"做法经验"(主动记忆),让 agent 复用有效做法、绕开坑。"""

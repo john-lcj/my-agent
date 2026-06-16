@@ -257,6 +257,11 @@ async def main() -> None:
             t0 = time.time()
             try:
                 await coordinator.run(user_text, ctx, channel.confirm)
+                try:  # 记录任务模式(自我改进闭环的复现检测,无 LLM)
+                    from memory.pattern_tracker import PatternTracker
+                    PatternTracker().record(user_text)
+                except Exception:
+                    pass
             except Exception as e:
                 from llm.errors import format_llm_error
                 from channels.cli_style import print_err

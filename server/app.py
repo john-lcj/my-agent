@@ -879,6 +879,11 @@ def create_app():
                             asyncio.create_task(_mine_preferences(list(ctx.messages)))
                             asyncio.create_task(_mine_experience(list(ctx.messages)))
                             asyncio.create_task(_consolidate_journal(list(ctx.messages)))
+                        try:  # 记录任务模式(无 LLM,用于自我改进闭环的复现检测)
+                            from memory.pattern_tracker import PatternTracker
+                            PatternTracker().record(text)
+                        except Exception:
+                            pass
             except asyncio.CancelledError:
                 channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={
                     "text": "已停止",
