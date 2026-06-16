@@ -274,8 +274,10 @@ class Agent:
             if cap is None:
                 continue
             try:
+                # 预取只为"提速开场",本身不能拖慢开场:超 1.5s 就放弃,
+                # 让 agent 该调时自己再调,不阻塞首轮响应。
                 result = await asyncio.wait_for(
-                    cap.invoke(route.args, ctx), timeout=3.0,
+                    cap.invoke(route.args, ctx), timeout=1.5,
                 )
             except Exception:
                 continue

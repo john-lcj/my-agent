@@ -40,8 +40,9 @@ def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
     has_memory = any(c.get("name", "").startswith("memory.") for c in capability_specs)
     if has_memory:
         lines.append(
-            "- 当主人透露了值得长期记住的事(称呼、偏好、长期目标、重要事实),"
-            "用 memory.remember 记下来;需要回忆过往时用 memory.recall。"
+            "- 当主人透露了值得长期记住的事(称呼、偏好、长期目标、重要事实),用 memory.remember 记下来。"
+            "- 相关记忆/经验在每轮开场**已自动检索并注入上下文**,通常直接用即可,**不必再调用 memory.recall**"
+            "(那会多走一轮模型、变慢);只有当你需要上下文里没有、且明确的旧信息时,才调用 memory.recall。"
         )
     has_web = any(c.get("name", "").startswith("web.") for c in capability_specs)
     if has_web:
