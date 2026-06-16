@@ -72,6 +72,7 @@ class Agent:
         # 自动召回:任务开始前,从长期记忆里取与本次输入相关的条目,作为一条
         # 瞬时 system 提示注入(不入库)。这让 agent 跨会话也能"想起你是谁"。
         self._inject_memories(user_text, ctx)
+        self._inject_experience(user_text, ctx)
         self._inject_journal(ctx)
         await self._prefetch_skills(user_text, ctx)
 
@@ -330,6 +331,22 @@ class Agent:
             )
         except Exception:
             pass
+
+    def _inject_experience(self, user_text: str, ctx: Context) -> None:
+        """注入与当前任务相关的"做法经验"(主动记忆),让 agent 复用有效做法、绕开坑。"""
+        mem = getattr(ctx, "longterm", None)
+        if mem is None:
+            return
+        try:
+            from memory.experience_miner import format_experience_block
+            block = format_experience_block(mem, user_text, k=3)
+        except Exception:
+            return
+        if not block:
+            return
+        ctx.messages = [m for m in ctx.messages
+                        if not (m.role == Role.SYSTEM and m.content.startswith("[过往经验"))]
+        ctx.add_system(block)
 
     def _inject_journal(self, ctx: Context) -> None:
         """会话首轮注入"上次到哪了"协作简报(只在本会话第一轮注入一次)。"""

@@ -99,6 +99,20 @@ async def _mine_preferences(messages: list) -> None:
         pass
 
 
+async def _mine_experience(messages: list) -> None:
+    """会话结束后异步提炼"做法经验"写入长期记忆,失败静默。"""
+    try:
+        from llm.factory import build_llm
+        from memory.experience_miner import ExperienceMiner
+
+        miner = ExperienceMiner(build_llm(model=_runtime_cfg.get_model()), _longterm)
+        stored = await miner.mine(messages)
+        if stored:
+            print(f"[exp] 沉淀经验 {len(stored)} 条: {stored}")
+    except Exception:
+        pass
+
+
 async def _consolidate_journal(messages: list) -> None:
     """会话任务结束后异步写一条协作日志,失败静默(绝不影响主对话)。"""
     try:
@@ -861,8 +875,9 @@ def create_app():
                     else:
                         await coord_holder[0].run(text, ctx, channel.confirm)
                         if _pref_mining_enabled():
-                            # 后台沉淀偏好 + 协作日志,均不阻塞回复
+                            # 后台沉淀偏好 + 经验 + 协作日志,均不阻塞回复
                             asyncio.create_task(_mine_preferences(list(ctx.messages)))
+                            asyncio.create_task(_mine_experience(list(ctx.messages)))
                             asyncio.create_task(_consolidate_journal(list(ctx.messages)))
             except asyncio.CancelledError:
                 channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={

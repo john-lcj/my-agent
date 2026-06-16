@@ -198,6 +198,12 @@ async def main() -> None:
             if await consolidator.consolidate(list(ctx.messages)):
                 from channels.cli_style import print_system
                 print_system("📓 已记下这次的协作进展(下次开场我会接上)")
+            # 主动记忆:提炼"做法经验"写入长期记忆
+            from memory.experience_miner import ExperienceMiner
+            exp = await ExperienceMiner(build_llm(model=model_id), longterm).mine(list(ctx.messages))
+            if exp:
+                from channels.cli_style import print_system
+                print_system(f"🧠 沉淀经验 {len(exp)} 条,下次类似任务会用上")
         except Exception:
             pass
 
