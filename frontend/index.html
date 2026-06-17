@@ -628,6 +628,13 @@ option{background:var(--card)}
       <button class="btn-new" id="btn-new-chat" onclick="newChat()">+ 新对话</button>
     </div>
     <div class="sb-history">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <select id="project-select" onchange="onProjectChange(this.value)"
+                style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
+          <option value="">全部对话</option>
+        </select>
+        <button class="sb-foot-btn" title="新建项目" onclick="createProjectPrompt()" style="padding:4px 8px">+项目</button>
+      </div>
       <input type="search" class="history-search" id="history-search" autocomplete="off"
              oninput="onHistorySearch(this.value)" aria-label="搜索对话"/>
       <div id="history-list"></div>
@@ -683,6 +690,9 @@ option{background:var(--card)}
           </div>
           <div class="composer-wrap">
             <div class="composer">
+              <button class="btn-send" id="btn-attach" type="button" onclick="triggerUpload()"
+                      style="background:transparent;color:var(--muted);font-size:18px" title="上传文件给 Captain" aria-label="上传文件">📎</button>
+              <input type="file" id="file-inp" style="display:none" onchange="onFilePicked(this)"/>
               <div class="chat-input-box">
                 <div id="slash-menu" role="listbox" aria-label="斜杠命令"></div>
                 <textarea id="chat-inp" rows="1" placeholder="发消息给 Captain… 输入 / 选命令后可继续写内容" autocomplete="off"></textarea>
@@ -4080,6 +4090,151 @@ loadSlashCommands();
 loadSkillLabels();
 loadSettingsUI();
 connect();
+</script>
+
+<!-- ══ 产物预览模态框 ════════════════════════════════════════════ -->
+<div class="overlay" id="artifact-overlay" onclick="if(event.target===this)closeArtifact()" style="display:none">
+  <div class="modal" style="width:min(900px,95vw);height:min(85vh,900px);display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span class="modal-title" id="artifact-title">产物预览</span>
+      <button class="modal-close" onclick="closeArtifact()">✕</button>
+    </div>
+    <div class="modal-body" id="artifact-body" style="flex:1;overflow:auto;padding:0"></div>
+  </div>
+</div>
+
+<script>
+/* ══ Projects / Artifacts / 上传 / 模式  —— 借鉴 Claude 设计的增量功能 ══ */
+
+/* —— 项目空间 —— */
+let _currentProject = "";
+async function loadProjects() {
+  try {
+    const r = await fetch('/api/projects'); const d = await r.json();
+    const sel = document.getElementById('project-select');
+    if (!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">全部对话</option>'
+      + (d.projects || []).map(p => `<option value="${p.id}">📁 ${escHtml(p.name)}</option>`).join('');
+    sel.value = keep;
+  } catch {}
+}
+function onProjectChange(pid) {
+  _currentProject = pid || "";
+  // 客户端按 project_id 过滤已加载会话(list_sessions 已返回 project_id)
+  const list = _currentProject
+    ? (allSessions || []).filter(s => s.project_id === _currentProject)
+    : (allSessions || []);
+  renderSessions(list);
+}
+async function createProjectPrompt() {
+  const name = prompt('新建项目名称(比如:梯子搭建 / 周报):');
+  if (!name) return;
+  const instructions = prompt('项目专属指令(可选,每条对话都会带上;留空跳过):') || '';
+  try {
+    await fetch('/api/projects', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name, instructions }),
+    });
+    await loadProjects();
+  } catch (e) { alert('创建失败:' + e); }
+}
+
+/* —— 文件上传 —— */
+function triggerUpload() { const i = document.getElementById('file-inp'); if (i) i.click(); }
+function onFilePicked(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) { alert('文件超过 20MB'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const b64 = String(reader.result).split(',')[1] || '';
+    try {
+      const r = await fetch('/api/upload', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: file.name, content_b64: b64 }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        const inp = document.getElementById('chat-inp');
+        const ref = `[已上传文件: ${d.path}] `;
+        inp.value = ref + inp.value;
+        inp.focus();
+      } else { alert('上传失败:' + (d.error || '')); }
+    } catch (e) { alert('上传失败:' + e); }
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+/* —— 产物内联预览 —— */
+async function openArtifact(path) {
+  const body = document.getElementById('artifact-body');
+  const title = document.getElementById('artifact-title');
+  document.getElementById('artifact-overlay').style.display = 'flex';
+  body.innerHTML = '<div style="padding:20px;color:var(--muted)">加载中…</div>';
+  try {
+    const r = await fetch('/api/artifact?path=' + encodeURIComponent(path));
+    const d = await r.json();
+    if (!d.ok) { body.innerHTML = `<div style="padding:20px;color:var(--red)">${escHtml(d.error||'读取失败')}</div>`; return; }
+    title.textContent = d.name || '产物预览';
+    if (d.kind === 'html') {
+      const ifr = document.createElement('iframe');
+      ifr.setAttribute('sandbox', 'allow-scripts');
+      ifr.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
+      ifr.srcdoc = d.content;
+      body.innerHTML = ''; body.appendChild(ifr);
+    } else if (d.kind === 'markdown') {
+      body.innerHTML = '<div class="md" style="padding:18px">' + renderMD(d.content) + '</div>';
+    } else {
+      body.innerHTML = '<pre style="padding:18px;white-space:pre-wrap;word-break:break-word;margin:0">'
+        + escHtml(d.content) + '</pre>';
+    }
+  } catch (e) {
+    body.innerHTML = `<div style="padding:20px;color:var(--red)">${escHtml(String(e))}</div>`;
+  }
+}
+function closeArtifact() { document.getElementById('artifact-overlay').style.display = 'none'; }
+
+/* 把助理消息里的产物路径变成可点预览链接 */
+const _ARTIFACT_RE = /([\w./~-]+\.(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json))/g;
+function _linkifyArtifacts(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('.msg-body:not(.user-body)').forEach(el => {
+    if (el.dataset.linkified) return;
+    el.dataset.linkified = '1';
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const targets = [];
+    let n; while ((n = walker.nextNode())) { if (_ARTIFACT_RE.test(n.nodeValue)) targets.push(n); }
+    targets.forEach(node => {
+      const frag = document.createDocumentFragment();
+      let last = 0; const s = node.nodeValue; _ARTIFACT_RE.lastIndex = 0; let m;
+      while ((m = _ARTIFACT_RE.exec(s))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+        const a = document.createElement('a');
+        a.textContent = m[1]; a.className = 'artifact-link'; a.dataset.path = m[1];
+        a.style.cssText = 'color:var(--accent);cursor:pointer;text-decoration:underline';
+        frag.appendChild(a); last = m.index + m[1].length;
+      }
+      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+  });
+}
+(function () {
+  const area = document.getElementById('chat-messages');
+  if (!area) return;
+  area.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('.artifact-link');
+    if (a) { e.preventDefault(); openArtifact(a.dataset.path); }
+  });
+  new MutationObserver(muts => {
+    muts.forEach(mu => mu.addedNodes && mu.addedNodes.forEach(node => _linkifyArtifacts(node.parentNode || area)));
+    _linkifyArtifacts(area);
+  }).observe(area, { childList: true, subtree: true });
+})();
+
+loadProjects();
 </script>
 </body>
 </html>
