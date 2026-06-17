@@ -663,6 +663,9 @@ option{background:var(--card)}
               <button class="mode-tab active" type="button" role="tab" data-mode="chat"
                       onclick="setWorkMode('chat')" aria-selected="true"
                       title="日常问答、写作、调研">Chat</button>
+              <button class="mode-tab" type="button" role="tab" data-mode="coworker"
+                      onclick="setWorkMode('coworker')" aria-selected="false"
+                      title="交办任务、自动拆解执行、看进度与产物">Coworker</button>
               <button class="mode-tab" type="button" role="tab" data-mode="code"
                       onclick="setWorkMode('code')" aria-selected="false"
                       title="读代码、改 bug、跑命令">Code</button>
@@ -1534,6 +1537,7 @@ function sendMsg() {
   closeSlashMenu();
   showThinking();
   setTaskRunning(true);
+  if (typeof _currentProject !== 'undefined' && _currentProject) _assignCurrentSessionToProject();
 }
 
 function chatMsg(type, text, opts = {}) {
@@ -3466,6 +3470,7 @@ const I18N = {
     noModelsConfigured: '暂无已配置的模型。请在 .env 中配置 API Key 后刷新。',
     placeholder_chat: '发消息给 Captain… 输入 / 查看命令',
     placeholder_code: '描述代码任务或粘贴报错…',
+    placeholder_coworker: '交办一个任务给 Captain… 它会自动拆解执行,右侧看进度与产物',
     renameChat: '重命名',
     pinChat: '置顶',
     historySearch: '搜索对话…',
@@ -3533,6 +3538,7 @@ const I18N = {
     scCodeTestP: '为这个功能补测试并说明如何验证：',
     welcome_chat: '听懂目标，自己拆解执行，只给你结果',
     welcome_code: '写代码、改 bug、读仓库。Captain 会调用工具并展示过程',
+    welcome_coworker: '把任务交给我:调研、做网页、写报告、跑脚本——自动拆解执行,右侧工作台看进度与产物',
     navUsage: '用量',
     settingsUsage: '用量',
     settingsUsageDesc: '近 30 天 tokens 消耗与费用估算',
@@ -3600,6 +3606,7 @@ const I18N = {
     noModelsConfigured: 'No configured models. Add API keys in .env and refresh.',
     placeholder_chat: 'Message Captain… type / for commands',
     placeholder_code: 'Describe a coding task or paste an error…',
+    placeholder_coworker: 'Hand Captain a task… it plans, executes, shows progress on the right',
     renameChat: 'Rename',
     pinChat: 'Pin',
     historySearch: 'Search chats…',
@@ -3667,6 +3674,7 @@ const I18N = {
     scCodeTestP: 'Add tests for this feature and how to verify:',
     welcome_chat: 'Understand goals, execute autonomously, report results only',
     welcome_code: 'Write code, fix bugs, explore the repo. Tools and steps stay visible',
+    welcome_coworker: 'Delegate a task: research, build, report, run scripts — auto-planned; watch progress & artifacts on the right',
     navUsage: 'Usage',
     settingsUsage: 'Usage',
     settingsUsageDesc: 'Token consumption and estimated cost (last 30 days)',
@@ -3858,9 +3866,14 @@ function initSidebarState() {
 
 function setWorkMode(mode, opts = {}) {
   const prev = workMode;
-  workMode = ['chat', 'code'].includes(mode) ? mode : 'chat';
+  workMode = ['chat', 'code', 'coworker'].includes(mode) ? mode : 'chat';
   localStorage.setItem('captain-work-mode', workMode);
   conciseChat = workMode !== 'code';
+  // Coworker = 干活视图:自动开右侧工作台(进度+产物);离开则收起
+  try {
+    const wb = document.getElementById('workbench');
+    if (wb) wb.classList.toggle('open', workMode === 'coworker');
+  } catch {}
 
   document.querySelectorAll('.mode-tab').forEach(tab => {
     const on = tab.dataset.mode === workMode;
@@ -4166,12 +4179,39 @@ async function createProjectPrompt() {
   if (!name) return;
   const instructions = prompt('项目专属指令(可选,每条对话都会带上;留空跳过):') || '';
   try {
-    await fetch('/api/projects', {
+    const r = await fetch('/api/projects', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ name, instructions }),
     });
+    const d = await r.json();
     await loadProjects();
+    if (d.ok && d.project) {
+      const sel = document.getElementById('project-select');
+      if (sel) sel.value = d.project.id;
+      onProjectChange(d.project.id);
+      alert(`已创建项目「${d.project.name}」并切换过去。\n在此项目下点「+新对话」开始的对话,会自动归到这个项目;开场也会自动带上项目专属指令。`);
+    } else { alert('创建失败:' + (d.error || '未知')); }
   } catch (e) { alert('创建失败:' + e); }
+}
+
+const _assignedSessions = new Set();
+async function _assignCurrentSessionToProject() {
+  const sid = (typeof sessionId !== 'undefined') ? sessionId : '';
+  const pid = _currentProject;
+  if (!sid || !pid) return;
+  const key = sid + '|' + pid;
+  if (_assignedSessions.has(key)) return;
+  _assignedSessions.add(key);
+  // 等服务端在首条消息时建好会话行,再归属
+  setTimeout(async () => {
+    try {
+      await fetch('/api/sessions/' + encodeURIComponent(sid) + '/project', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ project_id: pid }),
+      });
+      if (typeof refreshSessions === 'function') refreshSessions();
+    } catch {}
+  }, 1500);
 }
 
 /* —— 文件上传 —— */
