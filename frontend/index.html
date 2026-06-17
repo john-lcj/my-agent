@@ -61,6 +61,11 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
          background:var(--panel);color:var(--txt);font-size:13px;font-weight:500;
          border:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:6px}
 .btn-new:hover{border-color:rgba(217,119,87,.4);background:var(--accent-soft)}
+.sb-new-row{display:flex;gap:8px}
+.sb-new-row .btn-new{flex:1;min-width:0;width:auto;padding:9px 6px;font-size:12.5px;white-space:nowrap}
+.proj-filter{width:calc(100% - 8px);margin:4px 4px 8px;padding:8px 10px;border-radius:var(--r-sm);
+  background:var(--panel);color:var(--txt);border:1px solid var(--border);font-size:12.5px;cursor:pointer}
+.proj-filter:focus{border-color:rgba(217,119,87,.4);outline:none}
 
 .sb-history{flex:1;overflow-y:auto;padding:4px 8px 8px;min-height:0}
 .history-item-wrap{display:flex;align-items:center;gap:2px;border-radius:var(--r-sm)}
@@ -628,16 +633,15 @@ option{background:var(--card)}
         <div class="logo-icon">C</div>
         <span>Captain</span>
       </div>
-      <button class="btn-new" id="btn-new-chat" onclick="newChat()">+ 新对话</button>
+      <div class="sb-new-row">
+        <button class="btn-new" id="btn-new-chat" onclick="newChat()">＋ 新对话</button>
+        <button class="btn-new" id="btn-new-project" onclick="createProjectPrompt()">＋ 新项目</button>
+      </div>
     </div>
     <div class="sb-history">
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-        <select id="project-select" onchange="onProjectChange(this.value)"
-                style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px">
-          <option value="">全部对话</option>
-        </select>
-        <button class="sb-foot-btn" title="新建项目" onclick="createProjectPrompt()" style="padding:4px 8px">+项目</button>
-      </div>
+      <select id="project-select" class="proj-filter" onchange="onProjectChange(this.value)" aria-label="按项目筛选">
+        <option value="">全部对话</option>
+      </select>
       <input type="search" class="history-search" id="history-search" autocomplete="off"
              oninput="onHistorySearch(this.value)" aria-label="搜索对话"/>
       <div id="history-list"></div>
