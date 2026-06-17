@@ -207,15 +207,18 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .msg-agent .md hr.md-hr{border:none;border-top:1px solid var(--border);margin:1em 0}
 .msg-agent .md a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .msg-agent .md a:hover{color:var(--accent2)}
-.msg-agent .md code.md-inline{font-family:ui-monospace,Menlo,monospace;font-size:.88em;
-          background:var(--bg);border:1px solid var(--border);padding:1px 5px;border-radius:5px}
-.msg-agent .md pre.md-pre{margin:.75em 0;background:var(--bg);border:1px solid var(--border);
-          border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.5}
+.msg-agent .md code.md-inline{font-family:ui-monospace,Menlo,monospace;font-size:.86em;
+          background:var(--sb);border:none;padding:2px 6px;border-radius:5px;color:var(--txt)}
+.msg-agent .md pre.md-pre{margin:.85em 0;background:var(--bg);border:1px solid var(--border);
+          border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:13px;line-height:1.55}
 .msg-agent .md pre.md-pre code{font-family:ui-monospace,Menlo,monospace;color:var(--txt);
           background:transparent;border:none;padding:0;white-space:pre}
-.msg-agent .md table.md-table{width:100%;border-collapse:collapse;margin:.75em 0;font-size:13px}
+/* 表格:仅横向分隔 + 圆角外框,贴近 Claude 的清爽风 */
+.msg-agent .md table.md-table{width:100%;border-collapse:separate;border-spacing:0;margin:1em 0;
+          font-size:13.5px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .msg-agent .md table.md-table th,.msg-agent .md table.md-table td{
-  border:1px solid var(--border);padding:6px 10px;text-align:left;vertical-align:top}
+  padding:9px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+.msg-agent .md table.md-table tr:last-child td{border-bottom:none}
 .msg-agent .md table.md-table th{background:var(--sb);font-weight:600}
 .msg-agent .md h3.md-cn-h{font-size:1.05em;font-weight:600;margin:.85em 0 .35em;color:var(--txt)}
 .msg-agent.streaming-md{opacity:.98}
@@ -666,6 +669,8 @@ option{background:var(--card)}
             </div>
           </div>
           <div class="chat-topbar-right">
+            <button class="icon-btn" type="button" id="btn-workbench" onclick="toggleWorkbench()"
+                    title="工作台:进度与产物文件">▤</button>
             <div class="status-dot" id="dot" title="连接状态"></div>
             <div class="model-picker-wrap" id="model-picker-wrap">
               <button class="model-pill" type="button" onclick="toggleModelPicker(event)" id="model-pill-label">模型</button>
@@ -4092,6 +4097,35 @@ loadSettingsUI();
 connect();
 </script>
 
+<!-- ══ 右侧工作台:进度 + 产物文件 ════════════════════════════════ -->
+<style>
+#workbench{position:fixed;top:0;right:0;width:300px;height:100vh;z-index:40;
+  background:var(--panel);border-left:1px solid var(--border);display:none;
+  flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.18)}
+#workbench.open{display:flex}
+#workbench .wb-head{display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600}
+#workbench .wb-sec{padding:14px 16px;border-bottom:1px solid var(--border)}
+#workbench .wb-sec h4{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.03em}
+#wb-progress{font-size:13px;color:var(--txt);display:flex;align-items:center;gap:8px}
+#wb-progress .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+#wb-progress.running .dot{background:var(--accent);animation:wbpulse 1s infinite}
+@keyframes wbpulse{0%,100%{opacity:1}50%{opacity:.3}}
+#wb-artifacts{display:flex;flex-direction:column;gap:4px;max-height:60vh;overflow:auto}
+#wb-artifacts .wb-file{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;
+  cursor:pointer;font-size:13px;color:var(--txt);background:var(--bg)}
+#wb-artifacts .wb-file:hover{background:var(--sb)}
+#wb-artifacts .wb-empty{color:var(--dim);font-size:12px;padding:4px 0}
+</style>
+<aside id="workbench">
+  <div class="wb-head"><span>🛠 工作台</span><button class="modal-close" onclick="toggleWorkbench()">✕</button></div>
+  <div class="wb-sec"><h4>进度</h4><div id="wb-progress"><span class="dot"></span><span id="wb-progress-text">空闲</span></div></div>
+  <div class="wb-sec" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <h4>产物文件(本次会话)</h4>
+    <div id="wb-artifacts"><div class="wb-empty">暂无产物——让 Captain 生成报告/网页/表格后会出现在这里</div></div>
+  </div>
+</aside>
+
 <!-- ══ 产物预览模态框 ════════════════════════════════════════════ -->
 <div class="overlay" id="artifact-overlay" onclick="if(event.target===this)closeArtifact()" style="display:none">
   <div class="modal" style="width:min(900px,95vw);height:min(85vh,900px);display:flex;flex-direction:column">
@@ -4215,6 +4249,7 @@ function _linkifyArtifacts(root) {
         a.textContent = m[1]; a.className = 'artifact-link'; a.dataset.path = m[1];
         a.style.cssText = 'color:var(--accent);cursor:pointer;text-decoration:underline';
         frag.appendChild(a); last = m.index + m[1].length;
+        _addArtifact(m[1]);
       }
       if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
       node.parentNode.replaceChild(frag, node);
@@ -4233,6 +4268,41 @@ function _linkifyArtifacts(root) {
     _linkifyArtifacts(area);
   }).observe(area, { childList: true, subtree: true });
 })();
+
+/* —— 右侧工作台:进度 + 产物文件 —— */
+const _artifacts = new Set();
+function _addArtifact(path) {
+  if (_artifacts.has(path)) return;
+  _artifacts.add(path);
+  renderWorkbench();
+}
+function renderWorkbench() {
+  const box = document.getElementById('wb-artifacts');
+  if (!box) return;
+  const items = Array.from(_artifacts);
+  box.innerHTML = items.length
+    ? items.map(p => {
+        const name = p.split('/').pop();
+        return `<div class="wb-file" onclick="openArtifact('${p.replace(/'/g, "\\'")}')"><span>📄</span><span>${escHtml(name)}</span></div>`;
+      }).join('')
+    : '<div class="wb-empty">暂无产物——让 Captain 生成报告/网页/表格后会出现在这里</div>';
+}
+function toggleWorkbench() {
+  const wb = document.getElementById('workbench');
+  if (wb) wb.classList.toggle('open');
+}
+function _wbProgress(running) {
+  const p = document.getElementById('wb-progress');
+  const txt = document.getElementById('wb-progress-text');
+  if (!p || !txt) return;
+  p.classList.toggle('running', !!running);
+  txt.textContent = running ? '运行中…' : '空闲';
+}
+/* 包裹 setTaskRunning,让进度同步到工作台(非侵入式) */
+if (typeof setTaskRunning === 'function') {
+  const _origSetTaskRunning = setTaskRunning;
+  setTaskRunning = function (running) { _origSetTaskRunning(running); _wbProgress(running); };
+}
 
 loadProjects();
 </script>
