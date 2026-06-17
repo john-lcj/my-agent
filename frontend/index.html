@@ -72,6 +72,8 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .sb-nav-item:hover{background:var(--panel)}
 .sb-nav-item .ic{width:18px;text-align:center;font-size:14px;opacity:.85}
 .sb-recents-label{font-size:11px;color:var(--dim);font-weight:600;letter-spacing:.04em;padding:8px 8px 4px}
+.sb-mode{width:100%;margin:0 0 12px;display:flex}
+.sb-mode .mode-tab{flex:1;text-align:center}
 
 .sb-history{flex:1;overflow-y:auto;padding:4px 8px 8px;min-height:0}
 .history-item-wrap{display:flex;align-items:center;gap:2px;border-radius:var(--r-sm)}
@@ -639,6 +641,14 @@ option{background:var(--card)}
         <div class="logo-icon">C</div>
         <span>Captain</span>
       </div>
+      <div class="mode-switch sb-mode" role="tablist" aria-label="工作模式">
+        <button class="mode-tab active" type="button" role="tab" data-mode="chat"
+                onclick="setWorkMode('chat')" aria-selected="true" title="日常问答、写作、调研">Chat</button>
+        <button class="mode-tab" type="button" role="tab" data-mode="coworker"
+                onclick="setWorkMode('coworker')" aria-selected="false" title="交办任务、自动拆解执行">Coworker</button>
+        <button class="mode-tab" type="button" role="tab" data-mode="code"
+                onclick="setWorkMode('code')" aria-selected="false" title="读代码、改 bug、跑命令">Code</button>
+      </div>
       <nav class="sb-nav">
         <button class="sb-nav-item" id="btn-new-chat" onclick="newChat()"><span class="ic">＋</span>新对话</button>
         <button class="sb-nav-item" onclick="createProjectPrompt()"><span class="ic">📁</span>新项目</button>
@@ -673,17 +683,6 @@ option{background:var(--card)}
           <div class="chat-topbar-left">
             <button class="icon-btn sb-toggle" type="button" id="btn-sb-toggle"
                     onclick="toggleSidebar()" aria-label="折叠侧栏" title="折叠侧栏">‹</button>
-            <div class="mode-switch" role="tablist" aria-label="工作模式" title="">
-              <button class="mode-tab active" type="button" role="tab" data-mode="chat"
-                      onclick="setWorkMode('chat')" aria-selected="true"
-                      title="日常问答、写作、调研">Chat</button>
-              <button class="mode-tab" type="button" role="tab" data-mode="coworker"
-                      onclick="setWorkMode('coworker')" aria-selected="false"
-                      title="交办任务、自动拆解执行、看进度与产物">Coworker</button>
-              <button class="mode-tab" type="button" role="tab" data-mode="code"
-                      onclick="setWorkMode('code')" aria-selected="false"
-                      title="读代码、改 bug、跑命令">Code</button>
-            </div>
           </div>
           <div class="chat-topbar-right">
             <button class="icon-btn" type="button" id="btn-workbench" onclick="toggleWorkbench()"
@@ -1928,6 +1927,7 @@ const PLAN_STATUS = {
 };
 function handlePlanUpdate(p) {
   if (!p) return;
+  try { if (typeof wbHandlePlan === 'function') wbHandlePlan(p); } catch {}
   if (p.type === 'plan') return renderPlanCard(p);
   if (p.type === 'node') return updatePlanNode(p);
   if (p.type === 'replan') return planReplanNote(p);
@@ -4150,10 +4150,21 @@ connect();
 #wb-files .wb-row:hover{background:var(--sb)}
 #wb-files .wb-row .ic{width:15px;text-align:center;opacity:.85}
 #wb-files .wb-empty{color:var(--dim);font-size:12px;padding:4px 0}
+#wb-plan{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+#wb-plan .wbn{display:flex;align-items:flex-start;gap:7px;font-size:12.5px;color:var(--txt);line-height:1.35}
+#wb-plan .wbn .st{flex-shrink:0;width:16px;text-align:center}
+#wb-plan .wbn.done{color:var(--muted)}
+#wb-plan .wbn.done .tx{text-decoration:line-through;opacity:.7}
+#wb-plan .wbn .st.ok{color:#3b82f6}
+#wb-plan .wbn .st.run{color:var(--accent);animation:wbpulse 1s infinite}
+#wb-plan .wbn .st.bad{color:var(--red)}
 </style>
 <aside id="workbench">
   <div class="wb-head"><span>🛠 工作台</span><button class="modal-close" onclick="toggleWorkbench()">✕</button></div>
-  <div class="wb-sec"><h4>进度</h4><div id="wb-progress"><span class="dot"></span><span id="wb-progress-text">空闲</span></div></div>
+  <div class="wb-sec"><h4>进度</h4>
+    <div id="wb-progress"><span class="dot"></span><span id="wb-progress-text">空闲</span></div>
+    <div id="wb-plan"></div>
+  </div>
   <div class="wb-sec" id="wb-artifacts-sec">
     <h4>本次产物</h4>
     <div id="wb-artifacts"><div class="wb-empty">暂无——让 Captain 生成报告/网页/表格后出现在这里</div></div>
@@ -4393,6 +4404,32 @@ function filesUp() {
   const parts = _filesDir.split('/').filter(Boolean);
   parts.pop();
   loadFiles(parts.join('/'));
+}
+
+/* —— Progress 打勾清单(把 DAG 执行计划画进工作台)—— */
+const _WB_ST = {
+  pending: {ic:'○', cls:''}, running: {ic:'◔', cls:'run'},
+  done: {ic:'✔', cls:'ok'}, ok: {ic:'✔', cls:'ok'}, success: {ic:'✔', cls:'ok'},
+  failed: {ic:'✘', cls:'bad'}, blocked: {ic:'⊘', cls:'bad'}, revising: {ic:'↻', cls:'run'},
+};
+function wbHandlePlan(p) {
+  if (p.type === 'plan') {
+    const wb = document.getElementById('workbench');
+    if (wb && !wb.classList.contains('open')) { wb.classList.add('open'); loadFiles(_filesDir); }
+    const box = document.getElementById('wb-plan');
+    if (!box) return;
+    box.innerHTML = (p.nodes || []).map(n =>
+      `<div class="wbn" data-wbnode="${escHtml(n.id)}"><span class="st">○</span>` +
+      `<span class="tx">${escHtml((n.sub_task || '').slice(0, 60))}</span></div>`
+    ).join('');
+  } else if (p.type === 'node') {
+    const row = document.querySelector(`#wb-plan .wbn[data-wbnode="${(window.CSS&&CSS.escape)?CSS.escape(p.id||''):p.id}"]`);
+    if (!row) return;
+    const st = _WB_ST[p.status] || _WB_ST.pending;
+    const stEl = row.querySelector('.st');
+    if (stEl) { stEl.textContent = st.ic; stEl.className = 'st ' + st.cls; }
+    row.classList.toggle('done', st.cls === 'ok');
+  }
 }
 function _wbProgress(running) {
   const p = document.getElementById('wb-progress');
