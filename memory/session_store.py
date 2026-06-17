@@ -70,6 +70,8 @@ class SessionStore:
             )
         if "meta" not in cols:
             self._conn.execute("ALTER TABLE sessions ADD COLUMN meta TEXT")
+        if "project_id" not in cols:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN project_id TEXT")
         self._conn.commit()
 
     # ── 会话级 ────────────────────────────────────────────────────────────────
@@ -82,11 +84,45 @@ class SessionStore:
         )
         self._conn.commit()
 
-    def list_sessions(self, limit: int = 50) -> list[dict]:
+    def list_sessions(self, limit: int = 50, project_id: Optional[str] = None) -> list[dict]:
+        if project_id:
+            rows = self._conn.execute(
+                "SELECT id, title, created_at, updated_at, kind, project_id FROM sessions "
+                "WHERE project_id = ? ORDER BY updated_at DESC LIMIT ?",
+                (project_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, title, created_at, updated_at, kind, project_id FROM sessions "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_project_id(self, session_id: str) -> Optional[str]:
+        row = self._conn.execute(
+            "SELECT project_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        return (row["project_id"] if row else None) or None
+
+    def set_project(self, session_id: str, project_id: Optional[str]) -> bool:
+        """把会话归到某项目(project_id=None 表示移出项目)。"""
+        cur = self._conn.execute(
+            "UPDATE sessions SET project_id = ? WHERE id = ?", (project_id, session_id))
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def search_sessions(self, query: str, limit: int = 30) -> list[dict]:
+        """跨会话标题与消息内容搜索,返回去重的会话列表。"""
+        q = (query or "").strip()
+        if not q:
+            return []
+        like = f"%{q}%"
         rows = self._conn.execute(
-            "SELECT id, title, created_at, updated_at, kind FROM sessions "
-            "ORDER BY updated_at DESC LIMIT ?",
-            (limit,),
+            "SELECT DISTINCT s.id, s.title, s.updated_at, s.kind, s.project_id "
+            "FROM sessions s LEFT JOIN messages m ON m.session_id = s.id "
+            "WHERE s.title LIKE ? OR m.content LIKE ? "
+            "ORDER BY s.updated_at DESC LIMIT ?",
+            (like, like, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

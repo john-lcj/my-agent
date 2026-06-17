@@ -70,12 +70,32 @@ _channel_cfg = ChannelConfigStore(path=f"{Config.LOG_DIR}/channels.json")
 # 这样网页里填的 key 在后续构建 LLM / 查询 /api/models 时即刻生效。
 _model_keys = ModelKeyStore(path=f"{Config.LOG_DIR}/model_keys.json")
 _task_store = TaskStore(db_path=f"{Config.LOG_DIR}/tasks.db")
+from memory.project_store import ProjectStore
+_project_store = ProjectStore(path=f"{Config.LOG_DIR}/projects.json")
 _scheduler: "Scheduler | None" = None
 
 # ── 外部渠道注册表(启动时按 .env 填充)───────────────────────────────────────
 _ext_channels: dict[str, object] = {}
 _ext_coordinators: dict[str, object] = {}
 _ext_templates: dict[str, object] = {}
+
+
+def _resolve_in_workspace(path: str) -> tuple:
+    """把路径解析到工作区内并做安全校验:返回 (ok, realpath, reason)。
+    设了 AGENT_WORKSPACE_ROOT 则限制在其内;另拦截 .env/.ssh 等敏感路径。"""
+    raw = (path or "").strip()
+    if not raw:
+        return False, "", "缺少 path"
+    real = os.path.realpath(os.path.expanduser(raw))
+    low = real.lower()
+    if any(s in low for s in (".env", ".ssh", "id_rsa", "credentials", "model_keys.json")):
+        return False, "", "敏感路径,拒绝读取"
+    root = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
+    if root:
+        root = os.path.realpath(os.path.expanduser(root))
+        if real != root and not real.startswith(root + os.sep):
+            return False, "", "路径在工作区之外"
+    return True, real, ""
 
 
 def _pref_mining_enabled() -> bool:
@@ -500,8 +520,8 @@ def create_app():
         })
 
     @app.get("/api/sessions")
-    async def list_sessions() -> JSONResponse:
-        return JSONResponse({"sessions": _session_store.list_sessions()})
+    async def list_sessions(project_id: str = "") -> JSONResponse:
+        return JSONResponse({"sessions": _session_store.list_sessions(project_id=project_id or None)})
 
     async def _rename_session(session_id: str, title: str) -> JSONResponse:
         if not _session_store.update_title(session_id, title):
@@ -633,6 +653,85 @@ def create_app():
     async def list_preferences() -> JSONResponse:
         rows = _longterm.list_by_kind("preference", limit=100)
         return JSONResponse({"preferences": rows})
+
+    # ── 项目空间 API ──────────────────────────────────────────────────────────
+    @app.get("/api/projects")
+    async def list_projects() -> JSONResponse:
+        return JSONResponse({"projects": _project_store.list()})
+
+    @app.post("/api/projects")
+    async def create_project(request: Request) -> JSONResponse:
+        b = await request.json()
+        proj = _project_store.create(
+            name=b.get("name", ""), instructions=b.get("instructions", ""),
+            knowledge=b.get("knowledge") or [])
+        return JSONResponse({"ok": True, "project": proj})
+
+    @app.patch("/api/projects/{pid}")
+    async def update_project(pid: str, request: Request) -> JSONResponse:
+        b = await request.json()
+        proj = _project_store.update(pid, name=b.get("name"),
+                                     instructions=b.get("instructions"),
+                                     knowledge=b.get("knowledge"))
+        if proj is None:
+            return JSONResponse({"ok": False, "error": "项目不存在"}, status_code=404)
+        return JSONResponse({"ok": True, "project": proj})
+
+    @app.delete("/api/projects/{pid}")
+    async def delete_project(pid: str) -> JSONResponse:
+        return JSONResponse({"ok": _project_store.delete(pid)})
+
+    @app.post("/api/sessions/{sid}/project")
+    async def assign_session_project(sid: str, request: Request) -> JSONResponse:
+        b = await request.json()
+        ok = _session_store.set_project(sid, b.get("project_id") or None)
+        return JSONResponse({"ok": ok})
+
+    @app.get("/api/sessions/search")
+    async def search_sessions(q: str = "") -> JSONResponse:
+        return JSONResponse({"sessions": _session_store.search_sessions(q)})
+
+    # ── 产物预览 / 文件上传 ────────────────────────────────────────────────────
+    @app.get("/api/artifact")
+    async def read_artifact(path: str = "") -> JSONResponse:
+        ok, real, reason = _resolve_in_workspace(path)
+        if not ok:
+            return JSONResponse({"ok": False, "error": reason}, status_code=400)
+        if not os.path.isfile(real) or os.path.getsize(real) > 2 * 1024 * 1024:
+            return JSONResponse({"ok": False, "error": "文件不存在或过大(>2MB)"}, status_code=400)
+        ext = os.path.splitext(real)[1].lower().lstrip(".")
+        kind = ("html" if ext in ("html", "htm") else "markdown" if ext == "md"
+                else "code" if ext in ("py", "js", "ts", "css", "json", "sh", "yaml", "yml") else "text")
+        try:
+            with open(real, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        return JSONResponse({"ok": True, "kind": kind, "ext": ext,
+                             "name": os.path.basename(real), "content": content})
+
+    @app.post("/api/upload")
+    async def upload_file(request: Request) -> JSONResponse:
+        # JSON 上传(避免依赖 python-multipart):{name, content_b64}
+        import base64
+        b = await request.json()
+        name = os.path.basename(str(b.get("name", "upload.bin"))).replace("..", "_") or "upload.bin"
+        try:
+            data = base64.b64decode(b.get("content_b64", ""))
+        except Exception:
+            return JSONResponse({"ok": False, "error": "content_b64 解码失败"}, status_code=400)
+        if len(data) > 20 * 1024 * 1024:
+            return JSONResponse({"ok": False, "error": "文件超过 20MB"}, status_code=400)
+        base_dir = (os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd())
+        updir = os.path.join(base_dir, "uploads")
+        os.makedirs(updir, exist_ok=True)
+        dest = os.path.join(updir, name)
+        try:
+            with open(dest, "wb") as f:
+                f.write(data)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        return JSONResponse({"ok": True, "path": dest, "name": name})
 
     @app.delete("/api/memory/preferences/{pref_id}")
     async def delete_preference(pref_id: int) -> JSONResponse:
@@ -870,6 +969,16 @@ def create_app():
                     if ctx.session_id:
                         ctx.messages = list(header_msgs)
                         ctx.bind_session(_session_store, ctx.session_id)
+                        # 项目空间:本会话归属某项目时,注入项目专属指令 + 知识库
+                        pid = _session_store.get_project_id(ctx.session_id)
+                        if pid:
+                            block = _project_store.context_block(pid)
+                            if block and not any(
+                                m.role == Role.SYSTEM and m.content.startswith("[项目")
+                                for m in ctx.messages
+                            ):
+                                from core.types import Message as _M
+                                ctx.messages.insert(0, _M(role=Role.SYSTEM, content=block))
                     if await _handle_slash(text):
                         pass
                     else:
