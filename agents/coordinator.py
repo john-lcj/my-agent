@@ -20,6 +20,36 @@ _CHAT_ONLY = re.compile(
     re.I,
 )
 
+# 多步/执行型项目的"执行动词"——出现得多、或配合步骤标记,即视为该提前派子代理。
+_BUILD_VERBS = (
+    "搭建", "部署", "生成", "制作", "编写", "写一个", "写个", "做一个", "做个",
+    "批量", "抓取", "爬取", "调研", "汇总成", "整理成", "报告", "落地页", "网页",
+    "脚本", "数据集", "流水线", "重构", "迁移", "配置好", "实现一个", "开发",
+)
+_STEP_MARKERS = ("步骤", "然后", "接着", "依次", "分步", "最后")
+
+
+def looks_like_project(task: str) -> bool:
+    """零成本启发式:判断任务是否"一眼是多步/执行型项目"(该提前派,不让 Captain 空跑)。
+    保守:宁可漏判(退回 Captain 自治)也别误判(把聊天/单步问答派出去变慢)。"""
+    t = (task or "").strip()
+    if len(t) < 8:
+        return False
+    if "先" in t and "再" in t:
+        return True
+    if any(m in t for m in _STEP_MARKERS):
+        return True
+    if len(re.findall(r"(?m)^\s*\d+[\.、)]", t)) >= 2:      # 编号步骤 ≥2
+        return True
+    if len(re.findall(r"(?m)^\s*[-*]\s+", t)) >= 3:          # 列表项 ≥3
+        return True
+    hits = sum(1 for v in _BUILD_VERBS if v in t)
+    if hits >= 2:                                            # 多个执行动词
+        return True
+    if len(t) >= 60 and hits >= 1:                           # 长任务 + 至少一个执行动词
+        return True
+    return False
+
 
 class Coordinator:
     """Captain 入口：默认 Captain 在 CAPTAIN_MAX_STEPS 内自治；用尽后路由专家。"""
@@ -78,6 +108,11 @@ class Coordinator:
         return await self._run_captain_then_maybe_escalate(task, ctx, confirm)
 
     async def _run_captain_then_maybe_escalate(self, task: str, ctx: Context, confirm) -> str:
+        # 复杂任务提前派:一眼是多步/执行型项目就直接派子代理,不让 Captain 空跑 8 步;
+        # 简单任务(聊天/单步问答)仍由 Captain 自己快速完成。
+        if (self._dispatcher is not None or self._graph_dispatcher is not None) \
+                and looks_like_project(task):
+            return await self._escalate_to_expert(task, ctx, confirm, "", direct=True)
         limit = max(1, Config.CAPTAIN_MAX_STEPS)
         try:
             return await self._main.run(
@@ -89,12 +124,11 @@ class Coordinator:
             )
 
     async def _escalate_to_expert(
-        self, task: str, ctx: Context, confirm, captain_summary: str,
+        self, task: str, ctx: Context, confirm, captain_summary: str, direct: bool = False,
     ) -> str:
         self._emit(EventType.ASSISTANT_MESSAGE, {
-            "text": (
-                f"Captain 在 {Config.CAPTAIN_MAX_STEPS} 步内未能完成，正在请专家接手…"
-            ),
+            "text": ("识别为多步任务,直接派专家分工执行…" if direct
+                     else f"Captain 在 {Config.CAPTAIN_MAX_STEPS} 步内未能完成，正在请专家接手…"),
             "source": "coordinator",
         })
 
@@ -106,9 +140,8 @@ class Coordinator:
 
         workers = [self._workers.get(n) for n in self._workers.names()]
         workers = [w for w in workers if w is not None]
-        route_text = (
-            f"{task.strip()}\n\n"
-            f"[Captain 已尝试但未完成]\n{captain_summary}"
+        route_text = task.strip() if direct else (
+            f"{task.strip()}\n\n[Captain 已尝试但未完成]\n{captain_summary}"
         )
 
         # 优先走 DAG 编排:依赖感知 + 共享黑板 + 验证返修。
