@@ -710,6 +710,34 @@ def create_app():
         return JSONResponse({"ok": True, "kind": kind, "ext": ext,
                              "name": os.path.basename(real), "content": content})
 
+    @app.get("/api/files")
+    async def list_files(dir: str = "") -> JSONResponse:
+        # 列出工作区(或其子目录)的文件树一层,供右侧"项目文件"浏览。
+        base = (os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd())
+        base = os.path.realpath(os.path.expanduser(base))
+        target = base if not dir else os.path.realpath(os.path.join(base, dir))
+        if target != base and not target.startswith(base + os.sep):
+            return JSONResponse({"ok": False, "error": "越界"}, status_code=400)
+        if not os.path.isdir(target):
+            return JSONResponse({"ok": False, "error": "目录不存在"}, status_code=400)
+        _SKIP = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache",
+                 ".DS_Store", "my_agent.egg-info", ".cursor"}
+        items = []
+        try:
+            for name in sorted(os.listdir(target)):
+                if name in _SKIP or name.startswith("."):
+                    continue
+                full = os.path.join(target, name)
+                rel = os.path.relpath(full, base)
+                isdir = os.path.isdir(full)
+                items.append({"name": name, "rel": rel, "type": "dir" if isdir else "file",
+                              "ext": "" if isdir else os.path.splitext(name)[1].lstrip(".").lower()})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        # 目录在前,文件在后
+        items.sort(key=lambda x: (x["type"] != "dir", x["name"].lower()))
+        return JSONResponse({"ok": True, "root": os.path.basename(base), "dir": dir, "items": items})
+
     @app.post("/api/upload")
     async def upload_file(request: Request) -> JSONResponse:
         # JSON 上传(避免依赖 python-multipart):{name, content_b64}
