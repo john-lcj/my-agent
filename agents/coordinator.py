@@ -105,6 +105,12 @@ class Coordinator:
         if self._is_casual_chat(task):
             return await self._main.run(task, ctx, confirm)
 
+        # Coworker 引擎:极致工作模式 —— 凡是真任务,直接强制走 DAG 编排分工,
+        # 不让 Captain 先单干、不看任务大小,激进派子代理。
+        if getattr(ctx, "coworker", False) and (
+                self._dispatcher is not None or self._graph_dispatcher is not None):
+            return await self._escalate_to_expert(task, ctx, confirm, "", direct=True)
+
         return await self._run_captain_then_maybe_escalate(task, ctx, confirm)
 
     async def _run_captain_then_maybe_escalate(self, task: str, ctx: Context, confirm) -> str:

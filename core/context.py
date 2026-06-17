@@ -22,6 +22,8 @@ class Context:
     task_auto_approve: bool = False
     # Captain 汇总轮(显式 /专家名 后):避免 Coordinator 二次路由
     captain_only: bool = False
+    # Coworker 引擎:极致工作模式 —— 非闲聊任务一律强制走 DAG 编排、激进派子代理
+    coworker: bool = False
     working: WorkingMemory = field(default_factory=WorkingMemory)
     log: ConversationLog = field(default_factory=ConversationLog)
     session: SessionAttachment = field(default_factory=SessionAttachment)

@@ -1494,7 +1494,8 @@ function updateStatusBar(p) {
 /* ══ 聊天功能 ════════════════════════════════════════════════════ */
 function wsInitPayload() {
   const cfg = loadConfig();
-  return { type:'init', session_id: sessionId, model: cfg.model || 'deepseek-v4-flash' };
+  return { type:'init', session_id: sessionId, model: cfg.model || 'deepseek-v4-flash',
+           mode: (typeof workMode !== 'undefined' ? workMode : 'chat') };
 }
 
 function onSendClick() {
@@ -4176,22 +4177,26 @@ function onProjectChange(pid) {
 }
 async function createProjectPrompt() {
   const name = prompt('新建项目名称(比如:梯子搭建 / 周报):');
-  if (!name) return;
+  if (name === null || !name.trim()) return;
   const instructions = prompt('项目专属指令(可选,每条对话都会带上;留空跳过):') || '';
+  let r, d;
   try {
-    const r = await fetch('/api/projects', {
+    r = await fetch('/api/projects', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name, instructions }),
+      body: JSON.stringify({ name: name.trim(), instructions }),
     });
-    const d = await r.json();
+  } catch (e) { alert('创建失败(网络/请求):' + e); return; }
+  if (!r.ok) { alert('创建失败:HTTP ' + r.status + (r.status === 401 ? '(需在设置里填访问令牌)' : '')); return; }
+  try { d = await r.json(); } catch (e) { alert('创建失败(返回解析):' + e); return; }
+  if (!d || !d.ok || !d.project) { alert('创建失败:' + ((d && d.error) || '未知')); return; }
+  // 创建成功——UI 更新即便出错也不影响"已创建"这个事实
+  try {
     await loadProjects();
-    if (d.ok && d.project) {
-      const sel = document.getElementById('project-select');
-      if (sel) sel.value = d.project.id;
-      onProjectChange(d.project.id);
-      alert(`已创建项目「${d.project.name}」并切换过去。\n在此项目下点「+新对话」开始的对话,会自动归到这个项目;开场也会自动带上项目专属指令。`);
-    } else { alert('创建失败:' + (d.error || '未知')); }
-  } catch (e) { alert('创建失败:' + e); }
+    const sel = document.getElementById('project-select');
+    if (sel) sel.value = d.project.id;
+    onProjectChange(d.project.id);
+  } catch (e) { console.error('项目 UI 刷新出错(项目已创建):', e); }
+  alert(`已创建项目「${d.project.name}」并切换过去。\n在此项目下点「+新对话」开始聊,首条消息后会自动归到该项目;开场也会带上项目专属指令。`);
 }
 
 const _assignedSessions = new Set();

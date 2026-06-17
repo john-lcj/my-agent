@@ -827,6 +827,7 @@ def create_app():
         await ws.accept()
         channel = WebChannel()
         ws_model: List[Optional[str]] = [None]
+        ws_mode: list = [""]   # 前端工作模式:coworker=极致工作引擎(强制 DAG/激进派子代理)
         coord_holder: list = []
         rollback_holder: list = []
         bundle_holder: list = []
@@ -966,6 +967,8 @@ def create_app():
             t0 = time.time()
             try:
                 async with _session_lock(sid):
+                    # Coworker 引擎:极致工作模式(强制 DAG 编排、激进派子代理)
+                    ctx.coworker = (ws_mode[0] == "coworker")
                     if ctx.session_id:
                         ctx.messages = list(header_msgs)
                         ctx.bind_session(_session_store, ctx.session_id)
@@ -1167,6 +1170,7 @@ def create_app():
                 if msg.get("type") == "init":
                     from llm.model_registry import normalize_model_id
 
+                    ws_mode[0] = str(msg.get("mode", "") or "")
                     if "model" in msg:
                         ws_model[0] = normalize_model_id(str(msg.get("model")))
                     elif "provider" in msg:
