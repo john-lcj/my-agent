@@ -62,3 +62,14 @@ class RuntimeConfigStore:
 
     def get_governance_mode(self, fallback: str | None = None) -> str:
         return self.load().get("governance_mode") or fallback or Config.GOVERNANCE_MODE
+
+    def get_max_steps(self) -> int:
+        """返回最大步数;0 表示无限制。未设置则用 Config.MAX_STEPS。"""
+        raw = self.load().get("max_steps")
+        if raw is None or raw == "":
+            return Config.MAX_STEPS
+        try:
+            v = int(raw)
+            return v if v > 0 else 0   # 0 = 无限制
+        except (TypeError, ValueError):
+            return Config.MAX_STEPS

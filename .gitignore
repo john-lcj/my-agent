@@ -35,3 +35,9 @@ CLAUDE.local.md
 site/
 web/
 ai-assistant-landing/
+
+# ── 生成的产物/输出(非源码,不入库)────────────────────────
+产物/
+data/
+report/
+/票据市场行情报告_*.md

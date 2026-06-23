@@ -37,13 +37,15 @@ class ProjectStore:
         except Exception:
             pass
 
-    def create(self, name: str, instructions: str = "", knowledge: list | None = None) -> dict:
+    def create(self, name: str, instructions: str = "", knowledge: list | None = None,
+               workspace: str = "") -> dict:
         pid = "p_" + uuid.uuid4().hex[:10]
         now = time.time()
         proj = {
             "id": pid, "name": (name or "未命名项目").strip()[:60],
             "instructions": (instructions or "").strip(),
             "knowledge": [str(p) for p in (knowledge or [])],
+            "workspace": (workspace or "").strip(),
             "created_at": now, "updated_at": now,
         }
         self._data[pid] = proj
@@ -60,7 +62,7 @@ class ProjectStore:
         proj = self._data.get(pid)
         if proj is None:
             return None
-        for k in ("name", "instructions", "knowledge"):
+        for k in ("name", "instructions", "knowledge", "workspace"):
             if k in fields and fields[k] is not None:
                 proj[k] = fields[k]
         proj["updated_at"] = time.time()
@@ -81,8 +83,11 @@ class ProjectStore:
             return ""
         parts: list[str] = []
         instr = (proj.get("instructions") or "").strip()
+        ws = (proj.get("workspace") or "").strip()
+        if ws:
+            parts.append(f"[工作区目录]\n{ws}")
         if instr:
-            parts.append(f"[项目「{proj.get('name','')}」专属指令]\n{instr}")
+            parts.append(f"[工作区「{proj.get('name','')}」专属指令]\n{instr}")
         budget = max_chars
         known: list[str] = []
         for path in proj.get("knowledge", []):
@@ -97,5 +102,5 @@ class ProjectStore:
             known.append(f"— {os.path.basename(p)} —\n{txt}")
             budget -= len(txt)
         if known:
-            parts.append("[项目知识库(供参考)]\n" + "\n\n".join(known))
+            parts.append("[工作区知识库(供参考)]\n" + "\n\n".join(known))
         return "\n\n".join(parts)

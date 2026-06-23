@@ -1,0 +1,38 @@
+[
+  {
+    "name": "格式-只回JSON",
+    "category": "format",
+    "prompt": "把『姓名张三、年龄28、城市北京』表示成 JSON 对象。只返回 JSON,不要任何解释、不要代码块标记。",
+    "mode": "chat",
+    "expect": {"regex": ["\\{[\\s\\S]*\\}"], "contains": ["28", "北京", "张三"],
+               "not_contains": ["以下是", "如下", "```"]}
+  },
+  {
+    "name": "格式-用英文回答",
+    "category": "format",
+    "prompt": "Explain what photosynthesis is in one sentence. Answer in English only.",
+    "mode": "chat",
+    "expect": {"min_length": 15, "not_regex": ["[\\u4e00-\\u9fff]"]}
+  },
+  {
+    "name": "格式-Markdown表格",
+    "category": "format",
+    "prompt": "用一个 Markdown 表格列出三种常见水果及其主要维生素,两列:水果、维生素。",
+    "mode": "chat",
+    "expect": {"regex": ["\\|.*\\|.*\\|", "[-:]\\|[-:]"]}
+  },
+  {
+    "name": "格式-指定开头",
+    "category": "format",
+    "prompt": "请以『结论先行:』这四个字开头,告诉我每天喝八杯水这个说法是否有科学依据。",
+    "mode": "chat",
+    "expect": {"regex": ["^[\\s*#>]*结论先行"]}
+  },
+  {
+    "name": "格式-纯数字列表",
+    "category": "format",
+    "prompt": "列出前 5 个质数,用英文逗号分隔成一行,不要别的文字。",
+    "mode": "chat",
+    "expect": {"contains": ["2", "3", "5", "7", "11"], "not_contains": ["##", "质数是"]}
+  }
+]

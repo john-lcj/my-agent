@@ -53,6 +53,17 @@ class Agent:
         self.last_trace_id: Optional[str] = None
         # 写文件资源锁等待上限(秒);超时按"资源被占用"失败,防止整个 agent 卡死。
         self.write_lock_timeout: float = 15.0
+        # 单步工具超时(秒):防止某次工具调用(浏览器/网络)挂死拖垮整轮。
+        import os as _os
+        self.step_timeout: float = float(_os.environ.get("AGENT_STEP_TIMEOUT", "300"))
+        # 卡死/打转检测:连续 N 次完全相同的工具调用 → 先劝一次,再多就强制收尾。
+        self._stall_nudge_at = int(_os.environ.get("AGENT_STALL_NUDGE_AT", "3"))
+        self._stall_stop_at = int(_os.environ.get("AGENT_STALL_STOP_AT", "5"))
+        # 防 thrash:同一能力反复失败(哪怕换参数)→ 多半不可用,先劝换路、再多就收尾。
+        # 比"同名同参"更宽:抓的是"换着花样试同一个用不了的能力"那种空转(如缺 key 的文生图)。
+        self._cap_fail_nudge_at = int(_os.environ.get("AGENT_CAP_FAIL_NUDGE_AT", "2"))
+        self._cap_fail_stop_at = int(_os.environ.get("AGENT_CAP_FAIL_STOP_AT", "4"))
+        self._delivery_nudged = False
 
     async def run(
         self,
@@ -61,38 +72,34 @@ class Agent:
         confirm: ConfirmFn,
         *,
         record_user: bool = True,
-        captain_phase_limit: int | None = None,
     ) -> str:
         trace_id = uuid.uuid4().hex
         self.last_trace_id = trace_id
+        self._session_id = getattr(ctx, "session_id", "") or ""
+        self._delivery_nudged = False   # 交付校验门:每轮 run 只拦一次,防死循环
+        self._model_ms_total = 0.0      # 本轮模型累计耗时(诊断"慢在哪")
 
         def emit(etype: EventType, payload: dict) -> None:
             self.bus.publish(Event(type=etype, payload=payload, trace_id=trace_id))
 
-        # 自动召回:任务开始前,从长期记忆里取与本次输入相关的条目,作为一条
-        # 瞬时 system 提示注入(不入库)。这让 agent 跨会话也能"想起你是谁"。
         self._inject_memories(user_text, ctx)
         self._inject_experience(user_text, ctx)
         self._inject_skill_suggestion(user_text, ctx)
+        self._inject_anti_sycophancy(user_text, ctx)
         self._inject_journal(ctx)
         await self._prefetch_skills(user_text, ctx)
 
         if record_user:
             ctx.add_user(user_text)
             emit(EventType.USER_MESSAGE, {"text": user_text})
-        ctx.task_auto_approve = False
+            ctx.task_auto_approve = False
         self.budget.reset()
 
-        saved_max_steps: int | None = None
-        if captain_phase_limit is not None and captain_phase_limit > 0:
-            saved_max_steps = self.budget.max_steps
-            self.budget.max_steps = min(saved_max_steps, captain_phase_limit)
-
+        ctx.confirm_fn = confirm
         try:
-            return await self._run_loop(user_text, ctx, confirm, record_user, captain_phase_limit)
+            return await self._run_loop(user_text, ctx, confirm, record_user)
         finally:
-            if saved_max_steps is not None:
-                self.budget.max_steps = saved_max_steps
+            ctx.confirm_fn = None
 
     async def _run_loop(
         self,
@@ -100,7 +107,6 @@ class Agent:
         ctx: Context,
         confirm: ConfirmFn,
         record_user: bool,
-        captain_phase_limit: int | None,
     ) -> str:
         trace_id = self.last_trace_id or uuid.uuid4().hex
         self.last_trace_id = trace_id
@@ -108,17 +114,33 @@ class Agent:
         def emit(etype: EventType, payload: dict) -> None:
             self.bus.publish(Event(type=etype, payload=payload, trace_id=trace_id))
 
+        # 可读 transcript:把这轮全过程写成 Markdown,供"读 transcript 迭代"诊断。
+        try:
+            from observability.transcript import Transcript
+            tr = Transcript(trace_id)
+            tr.start(user_text, getattr(ctx, "coworker", False))
+        except Exception:
+            tr = None
+        recent_sigs: list[str] = []   # 卡死检测:近期工具调用签名
+        stall_nudged = False
+        cap_fail_counts: dict[str, int] = {}   # 防 thrash:每个能力的连续失败次数
+        cap_fail_nudged: set[str] = set()      # 已就某能力劝过换路,避免反复刷提示
+
         while True:
             if self.budget.exceeded():
-                if captain_phase_limit is not None:
-                    from core.captain_phase import CaptainPhaseExhausted, build_attempt_summary
-                    raise CaptainPhaseExhausted(
-                        build_attempt_summary(ctx, user_text),
-                        user_text=user_text,
-                    )
-                msg = f"已停止:{self.budget.reason()}"
-                emit(EventType.ERROR, {"message": msg})
-                ctx.add_system(msg)
+                reason = self.budget.reason()
+                # 部分成果抢救:步数/预算用尽时,别只返回"已停止"把已收集的数据丢掉,
+                # 而是把最近的工具产出(搜索/抓取/读到的真实数据)打包标为「部分完成」,
+                # 让下游节点或 Captain 能接着用,而不是从零重来。
+                partial = self._salvage_partial(ctx)
+                if partial:
+                    msg = ("【执行摘要】步数用尽,提交已收集的阶段性成果(未全部完成)\n"
+                           f"【产物/数据】\n{partial}\n"
+                           f"【状态】部分完成（{reason}）")
+                else:
+                    msg = f"已停止:{reason}"
+                emit(EventType.ERROR, {"message": f"已停止:{reason}"})
+                ctx.add_system(f"已停止:{reason}")
                 return msg
             self.budget.charge_step()
 
@@ -136,9 +158,15 @@ class Agent:
             self._charge_input(ctx)
 
             try:
+                import time as _t
+                _mt0 = _t.time()
                 step = await self.llm.next_step(
                     ctx.llm_view(), self.registry.specs(), emit_token=emit_token,
                 )
+                _mdt = _t.time() - _mt0
+                self._model_ms_total = getattr(self, "_model_ms_total", 0.0) + _mdt
+                if tr is not None and _mdt > 2.0:
+                    tr.note(f"模型这一步耗时 {_mdt:.1f}s(模型/网络慢,非本地处理)")
             except Exception as e:
                 from llm.errors import format_llm_error
                 text = format_llm_error(e)
@@ -149,7 +177,27 @@ class Agent:
 
             if step.is_final:
                 text = step.text or ""
+                # ── 交付校验门(仅 Cowork):声称完成前,先查文件在不在 + 结构,再让模型质检内容 ──
+                if getattr(ctx, "coworker", False) and not self._delivery_nudged:
+                    gate = self._completion_gate(user_text, text)
+                    if not gate:
+                        try:
+                            gate = await self._content_judge(user_text, text)
+                        except Exception:
+                            gate = ""
+                    if gate:
+                        self._delivery_nudged = True
+                        if tr is not None:
+                            tr.note("交付校验未过:" + gate[:120])
+                        ctx.add_assistant(text)  # 记下这次(被打回的)回复,保持对话合法
+                        ctx.add_system(gate)
+                        self.budget.charge(text, getattr(self.llm, "name", ""))
+                        continue  # 不收尾,逼模型落实产物或如实说明
                 self.budget.charge(text, getattr(self.llm, "name", ""))
+                if tr is not None:
+                    tr.note(f"本轮模型累计耗时 ~{getattr(self, '_model_ms_total', 0.0):.1f}s"
+                            f"(若偏大,瓶颈在模型/网络,不是本地处理)")
+                    tr.final(text)
                 ctx.add_assistant(text)
                 emit(EventType.ASSISTANT_MESSAGE, {
                     "text": text,
@@ -164,10 +212,48 @@ class Agent:
             call = step.call
             if not call.call_id:
                 call.call_id = uuid.uuid4().hex
+
+            # ── 卡死/打转检测:连续相同的工具调用(同名同参)说明模型在原地打转 ──
+            try:
+                _sig = call.name + "|" + json.dumps(call.args, ensure_ascii=False, sort_keys=True)
+            except Exception:
+                _sig = call.name + "|" + str(call.args)
+            recent_sigs.append(_sig)
+            _streak = 0
+            for s in reversed(recent_sigs):
+                if s == _sig:
+                    _streak += 1
+                else:
+                    break
+            if _streak >= self._stall_stop_at:
+                # 反复同一动作仍无进展 → 强制收尾,交回已收集的阶段性成果,别再烧步数。
+                if tr is not None:
+                    tr.note(f"连续 {_streak} 次重复调用 {call.name},判定卡死,强制收尾。")
+                partial = self._salvage_partial(ctx)
+                msg = (f"已停止:检测到反复执行同一动作({call.name})且无进展。\n"
+                       + (f"【已收集的阶段性成果】\n{partial}" if partial else "未能取得有效进展。"))
+                emit(EventType.ERROR, {"message": f"卡死保护:反复调用 {call.name}"})
+                ctx.add_assistant(msg)
+                emit(EventType.ASSISTANT_MESSAGE, {"text": msg})
+                return msg
+            if _streak == self._stall_nudge_at and not stall_nudged:
+                stall_nudged = True
+                if tr is not None:
+                    tr.note(f"连续 {_streak} 次重复 {call.name},注入换路提示。")
+                ctx.add_system(
+                    f"[卡死提醒] 你已连续多次执行同一动作「{call.name}」且参数相同、没有进展。"
+                    "停止重复——换个方法/工具/参数,或如果确实无更优解,就直接收尾给出结论或如实说明卡点。")
+                continue  # 跳过这次重复,让模型带着提示重新决策
+
             # intent 也计入 token(它是模型输出的一部分)
             self.budget.charge(call.intent or call.name, getattr(self.llm, "name", ""))
             emit(EventType.CAPABILITY_CALL,
                  {"name": call.name, "args": call.args, "intent": call.intent})
+            if tr is not None:
+                tr.call(call.name, call.intent or "", call.args)
+            # 待办清单:把 plan.update 调用翻译成 Progress 面板要的 plan_update 事件。
+            if call.name == "plan.update":
+                self._emit_plan(emit, call.args)
             # 记录 assistant 的工具调用轮次。无论后续放行/拒绝/禁止,都必须补一条
             # 配对的 tool 结果消息,否则对话记录不合法(provider 会报错)。
             ctx.add_tool_call(
@@ -186,6 +272,8 @@ class Agent:
                 "name": call.name, "decision": decision.value,
                 "reason": review.reason, "rule": review.rule,
             })
+            if tr is not None:
+                tr.decision(decision.value, review.reason or "")
             if decision == Decision.BLOCK:
                 note = f"能力 [{call.name}] 被策略拒绝:{review.reason}"
                 emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note})
@@ -228,19 +316,216 @@ class Agent:
                         )
                     else:
                         try:
-                            result = await self.registry.invoke(call.name, call.args, ctx)
+                            result = await asyncio.wait_for(
+                                self.registry.invoke(call.name, call.args, ctx),
+                                timeout=self.step_timeout)
                         finally:
                             guard.release()
                 else:
-                    result = await self.registry.invoke(call.name, call.args, ctx)
+                    result = await asyncio.wait_for(
+                        self.registry.invoke(call.name, call.args, ctx),
+                        timeout=self.step_timeout)
+            except (asyncio.TimeoutError, TimeoutError):
+                result = CapabilityResult(
+                    ok=False,
+                    error=f"工具 {call.name} 执行超过 {self.step_timeout:.0f}s 超时(可能卡住),已中断该步。")
             except Exception as exc:
                 result = CapabilityResult(ok=False, error=str(exc))
             emit(EventType.CAPABILITY_RESULT,
                  {"ok": result.ok, "output": result.output, "error": result.error})
+            if tr is not None:
+                tr.result(result.ok, result.output or "", result.error or "")
             self._audit(ctx, call, decision.value, result.ok,
                         "" if result.ok else (result.error or "")[:200])
             body = result.output if result.ok else f"[失败] {result.error}"
             ctx.add_tool_result(body, call.call_id, name=call.name)
+
+            # ── 防 thrash:同一能力反复失败(换参数也算)→ 多半不可用,劝换路/强制收尾 ──
+            if result.ok:
+                cap_fail_counts[call.name] = 0          # 有进展,清零
+            else:
+                cap_fail_counts[call.name] = cap_fail_counts.get(call.name, 0) + 1
+                _fc = cap_fail_counts[call.name]
+                if _fc >= self._cap_fail_stop_at:
+                    if tr is not None:
+                        tr.note(f"能力 {call.name} 已失败 {_fc} 次,判定不可用,强制收尾。")
+                    partial = self._salvage_partial(ctx)
+                    msg = (f"已停止:能力「{call.name}」反复失败 {_fc} 次(最近:{(result.error or '')[:120]}),"
+                           "判定为当前不可用,停止空转。\n"
+                           + (f"【已收集的阶段性成果】\n{partial}" if partial
+                              else "请补齐该能力所需配置(如缺 key),或改用其它方案。"))
+                    emit(EventType.ERROR, {"message": f"thrash 保护:{call.name} 反复失败"})
+                    ctx.add_assistant(msg)
+                    emit(EventType.ASSISTANT_MESSAGE, {"text": msg})
+                    return msg
+                if _fc >= self._cap_fail_nudge_at and call.name not in cap_fail_nudged:
+                    cap_fail_nudged.add(call.name)
+                    if tr is not None:
+                        tr.note(f"能力 {call.name} 失败 {_fc} 次,注入换路提示。")
+                    ctx.add_system(
+                        f"[能力失败提醒]「{call.name}」已失败 {_fc} 次(最近原因:{(result.error or '')[:120]})。"
+                        "这往往意味着它当前不可用或缺配置(如缺 key/权限)。别再换着参数反复试同一能力——"
+                        "要么换一个完全不同的工具/方案,要么如实说明缺口、给出替代后收尾。")
+
+    def _referenced_files(self, text: str) -> list:
+        """从回复里抽出引用的文件,返回 [(原始写法, 存在的绝对路径 或 None)]。"""
+        import os
+        import re
+        ws = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
+        out: list = []
+        seen = set()
+        for c in re.findall(
+                r"[\w一-鿿./_-]+\.(?:md|html|htm|pdf|docx|xlsx|xls|csv|pptx|png|jpg|jpeg|json|txt)",
+                text or ""):
+            c = c.strip().lstrip("./")
+            if not c or " " in c or c in seen:
+                continue
+            seen.add(c)
+            cands = [c if os.path.isabs(c) else os.path.join(ws, c),
+                     os.path.join(ws, "产物", os.path.basename(c))]
+            full = next((p for p in cands if os.path.exists(p)), None)
+            out.append((c, full))
+        return out
+
+    def _completion_gate(self, task: str, text: str) -> str:
+        """第一层(确定性):引用的文件在不在 + 基本结构(空文件 / 公众号却给纯 md)。
+
+        只拦明确、客观的问题,近乎零误伤;返回非空=拦下。
+        """
+        import os
+        if not text:
+            return ""
+        refs = self._referenced_files(text)
+        missing = [c for c, f in refs if f is None]
+        if missing:
+            return ("[交付校验] 你声称已交付,但这些文件在工作区里并不存在:"
+                    + "、".join(missing[:5])
+                    + "。请真正写到 产物/ 目录(fs.write/对应技能),写完回读确认;做不到就如实说缺口,绝不谎报完成。")
+        problems: list[str] = []
+        is_wechat = any(k in (task or "") for k in ("公众号", "推文", "微信文章"))
+        for c, f in refs:
+            try:
+                size = os.path.getsize(f)
+            except OSError:
+                continue
+            if size < 20 and not f.lower().endswith((".png", ".jpg", ".jpeg")):
+                problems.append(f"{c} 几乎是空的({size} 字节),不像真交付了内容")
+                continue
+            if is_wechat and f.lower().endswith(".md"):
+                try:
+                    head = open(f, encoding="utf-8", errors="ignore").read(3000)
+                except OSError:
+                    head = ""
+                if "<section" not in head and "style=" not in head and "<p" not in head:
+                    problems.append(f"{c} 还是纯 Markdown;公众号需要内联样式 HTML,请用 wechat.format 生成后再交付")
+        if problems:
+            return "[交付校验] " + ";".join(problems[:5]) + "。请补正后再给结论。"
+        return ""
+
+    def _get_judge_llm(self):
+        """质检用的"判断脑":优先角色模型(AGENT_JUDGE_MODEL,默认 reasoner 档),否则用主模型。"""
+        if getattr(self, "_judge_llm_cached", "unset") == "unset":
+            try:
+                from llm.factory import build_role_llm
+                self._judge_llm_cached = build_role_llm("judge")
+            except Exception:
+                self._judge_llm_cached = None
+        return self._judge_llm_cached or self.llm
+
+    async def _content_judge(self, task: str, text: str) -> str:
+        """第二层(语义):让模型读一遍产物,判断是否真的完成了任务,没完成就指出缺什么。
+
+        判断默认用更会想的"判断脑"(AGENT_JUDGE_MODEL,默认 deepseek-v4-pro/reasoner),
+        执行仍用便宜的主模型。最佳努力:未配模型/无产物/调用失败都安静放行。AGENT_CONTENT_JUDGE=0 可关。
+        """
+        import os
+        if os.environ.get("AGENT_CONTENT_JUDGE", "1").strip() == "0" or self.llm is None:
+            return ""
+        judge_llm = self._get_judge_llm()
+        files = [f for _, f in self._referenced_files(text) if f]
+        if not files:
+            return ""
+        blob: list[str] = []
+        total = 0
+        for f in files[:3]:
+            if f.lower().endswith((".png", ".jpg", ".jpeg", ".pdf", ".xlsx", ".docx", ".pptx")):
+                blob.append(f"[{os.path.basename(f)}:二进制产物,已生成]")
+                continue
+            try:
+                c = open(f, encoding="utf-8", errors="ignore").read(4000)
+            except OSError:
+                continue
+            blob.append(f"=== {os.path.basename(f)} ===\n{c}")
+            total += len(c)
+            if total >= 8000:
+                break
+        if not blob:
+            return ""
+        from core.types import Message, Role
+        prompt = (
+            f"任务:{task}\n\n已交付的产物内容:\n" + "\n\n".join(blob)
+            + "\n\n请严格判断:这份产物是否真正完成了上述任务?完成就**只回复 OK** 两个字母;"
+            "没完成就用一句话指出具体缺什么(如:缺数据来源 / 跑题 / 格式不符 / 内容太单薄)。不要客套、不要复述任务。")
+        try:
+            step = await judge_llm.next_step(
+                [Message(role=Role.SYSTEM, content="你是严格但简洁的交付质检员,只判断产物是否达成任务。"),
+                 Message(role=Role.USER, content=prompt)], [], None)
+            verdict = (getattr(step, "text", "") or "").strip()
+        except Exception:
+            return ""
+        if not verdict or verdict.upper().replace(".", "").startswith("OK"):
+            return ""
+        if len(verdict) > 400:   # 判词过长多半是模型跑偏,放行避免误伤
+            return ""
+        return "[交付校验·内容] 质检发现:" + verdict + " —— 请据此补正产物,或如实说明为何无法满足。"
+
+    def _salvage_partial(self, ctx: Context, max_chars: int = 4000) -> str:
+        """步数/预算用尽时,从对话里抢救最近的工具产出与正文,作为阶段性成果交回。"""
+        try:
+            msgs = list(ctx.llm_view())
+        except Exception:
+            return ""
+        chunks: list[str] = []
+        total = 0
+        for m in reversed(msgs):
+            role = getattr(getattr(m, "role", None), "value", "") or str(getattr(m, "role", ""))
+            if role not in ("tool", "assistant"):
+                continue
+            content = (getattr(m, "content", "") or "").strip()
+            if not content or content.startswith("已停止:"):
+                continue
+            piece = content[:1500]
+            chunks.append(piece)
+            total += len(piece)
+            if total >= max_chars:
+                break
+        return "\n---\n".join(reversed(chunks))[:max_chars + 1200]
+
+    def _emit_plan(self, emit, args: dict) -> None:
+        """把 plan.update 的入参翻译成右侧 Progress 面板要的 plan_update 事件。"""
+        try:
+            from capabilities.tools.plan import normalize_steps
+            steps = normalize_steps(args.get("steps"))
+            if not steps:
+                return
+            _MAP = {"todo": "pending", "pending": "pending", "doing": "running",
+                    "running": "running", "done": "done", "failed": "failed"}
+            nodes = [{"id": f"t{i + 1}", "sub_task": s["text"]} for i, s in enumerate(steps)]
+            emit(EventType.PLAN_UPDATE, {"type": "plan", "nodes": nodes})
+            for i, s in enumerate(steps):
+                st = _MAP.get(s["status"], "pending")
+                if st != "pending":
+                    emit(EventType.PLAN_UPDATE, {"type": "node", "id": f"t{i + 1}", "status": st})
+            # 断点续跑:把待办快照落盘,会话中断后可接着干。
+            sid = getattr(self, "_session_id", "") or ""
+            if sid:
+                try:
+                    from memory.checkpoint_store import CheckpointStore
+                    CheckpointStore().save(sid, steps)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _charge_input(self, ctx: Context) -> None:
         """估算并计入本轮发送给模型的 input token(全部历史 + 能力清单)。"""
@@ -310,7 +595,12 @@ class Agent:
         if mem is None:
             return
         try:
-            items = mem.retrieve(user_text, k=5)
+            # 隔离:只检索当前对接/项目 + 全局偏好的记忆,避免跨会话/跨对接串味。
+            _scope = getattr(ctx, "mem_scope", None)
+            if _scope is None:
+                _ch = getattr(getattr(ctx, "identity", None), "channel", "") or ""
+                _scope = f"{_ch}|" if _ch else None
+            items = mem.retrieve(user_text, k=5, scope=_scope)
         except Exception:
             return
         if not items:
@@ -347,6 +637,30 @@ class Agent:
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[自我改进提示]"))]
         ctx.add_system(tip)
+
+    # 迎合压力信号:主人在诱导附和。命中才注入提醒 → 平时零开销,该提醒时不漏。
+    _SYCOPHANCY_CUES = (
+        "顺着我说", "顺着我", "你就同意", "就同意吧", "别反驳", "不要反驳",
+        "难道不是", "对吧", "对不对", "是不是这样", "你也觉得", "你不觉得",
+        "众所周知", "我说得对", "认同我", "附和", "迎合",
+    )
+
+    def _inject_anti_sycophancy(self, user_text: str, ctx: Context) -> None:
+        """检测"迎合压力"话术 → 作答前注入抗谄媚提醒(零额外推理,机制级兜底)。
+
+        谄媚多发生在主人预设错误前提 + 诱导附和时;此处不替模型判断对错,
+        只在该警惕的时刻强制它"先核对前提、错就纠正",把抗谄媚从"提示词劝"变成"触发即提醒"。
+        """
+        t = user_text or ""
+        if not any(cue in t for cue in self._SYCOPHANCY_CUES):
+            return
+        # 去重:同一轮只注一条
+        ctx.messages = [m for m in ctx.messages
+                        if not (m.role == Role.SYSTEM and m.content.startswith("[抗谄媚]"))]
+        ctx.add_system(
+            "[抗谄媚] 主人这句带了诱导你附和的语气(如'顺着我说/对吧/众所周知')。"
+            "先独立核对其中预设的事实/前提:若有错,礼貌但明确地先纠正(给出正确事实),再继续;"
+            "绝不为讨好而附和明显错误的说法——主人要的是真话。")
 
     def _inject_experience(self, user_text: str, ctx: Context) -> None:
         """注入与当前任务相关的"做法经验"(主动记忆),让 agent 复用有效做法、绕开坑。"""

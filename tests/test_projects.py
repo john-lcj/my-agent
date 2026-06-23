@@ -34,7 +34,7 @@ def test_project_context_block():
         p = ps.create("X", instructions="先查证再下结论", knowledge=[kf])
         block = ps.context_block(p["id"])
         assert "专属指令" in block and "先查证再下结论" in block
-        assert "项目知识库" in block and "日本机房" in block
+        assert "工作区知识库" in block and "日本机房" in block
 
 
 def test_session_project_and_search():

@@ -77,6 +77,8 @@ class SessionStore:
     # ── 会话级 ────────────────────────────────────────────────────────────────
     def ensure_session(self, session_id: str, title: str = "", kind: str = "chat") -> None:
         now = time.time()
+        if session_id.startswith("s-cowork-") and kind == "chat":
+            kind = "coworker"
         self._conn.execute(
             "INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at, kind) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -145,36 +147,6 @@ class SessionStore:
         self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self._conn.commit()
-
-    def save_roundtable(self, session_id: str, title: str, meta: dict) -> None:
-        """持久化圆桌记录(meta 含 topic/messages/summary 等)。"""
-        now = time.time()
-        meta_json = json.dumps(meta, ensure_ascii=False)
-        title = (title or "圆桌会议").strip()[:80]
-        self._conn.execute(
-            "INSERT INTO sessions (id, title, created_at, updated_at, kind, meta) "
-            "VALUES (?, ?, ?, ?, 'roundtable', ?) "
-            "ON CONFLICT(id) DO UPDATE SET "
-            "title = excluded.title, updated_at = excluded.updated_at, "
-            "kind = 'roundtable', meta = excluded.meta",
-            (session_id, title, now, now, meta_json),
-        )
-        self._conn.commit()
-
-    def load_roundtable(self, session_id: str) -> Optional[dict]:
-        row = self._conn.execute(
-            "SELECT meta, title FROM sessions WHERE id = ? AND kind = 'roundtable'",
-            (session_id,),
-        ).fetchone()
-        if row is None or not row["meta"]:
-            return None
-        try:
-            data = json.loads(row["meta"])
-        except Exception:
-            return None
-        if isinstance(data, dict):
-            data.setdefault("title", row["title"])
-        return data
 
     # ── 消息级 ────────────────────────────────────────────────────────────────
     def append(self, session_id: str, message: Message) -> None:

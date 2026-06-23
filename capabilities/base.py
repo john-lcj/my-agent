@@ -32,6 +32,7 @@ class CapabilityRegistry:
 
     def __init__(self, capabilities: list[Capability] | None = None) -> None:
         self._caps: dict[str, Capability] = {}
+        self._specs_cache: list[dict] | None = None
         for c in capabilities or []:
             self.register(c)
 
@@ -39,6 +40,7 @@ class CapabilityRegistry:
         if cap.name in self._caps:
             raise ValueError(f"能力重名:{cap.name}")
         self._caps[cap.name] = cap
+        self._specs_cache = None   # 能力集变了,specs 缓存失效
 
     def get(self, name: str) -> Capability | None:
         return self._caps.get(name)
@@ -48,8 +50,15 @@ class CapabilityRegistry:
         return list(self._caps.values())
 
     def specs(self) -> list[dict]:
-        """供 LLM 选择调用的能力清单(name/description/schema/risk)。"""
-        return [
+        """供 LLM 选择调用的能力清单(name/description/schema/risk)。
+
+        一轮 run 内能力集不变,这份清单每步都要发给模型 → 缓存,避免每步重建 ~40 个 dict。
+        register() 时缓存失效;返回浅拷贝防外部改坏缓存。
+        """
+        cache = getattr(self, "_specs_cache", None)
+        if cache is not None:
+            return list(cache)
+        cache = [
             {
                 "name": c.name,
                 "description": c.description,
@@ -58,6 +67,8 @@ class CapabilityRegistry:
             }
             for c in self._caps.values()
         ]
+        self._specs_cache = cache
+        return list(cache)
 
     async def invoke(self, name: str, args: dict, ctx: Any) -> CapabilityResult:
         cap = self.get(name)

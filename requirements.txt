@@ -19,6 +19,10 @@ tiktoken>=0.7.0
 # macOS: 零额外依赖(screencapture + osascript 系统内置)
 # 如需 Windows/Linux 可选装 pyautogui>=0.9.54
 
+# 浏览器交互(browser.* 能力:真实登录/点击/填表/截图/上传下载):
+# 装完还需下载内核:python3 -m playwright install chromium
+playwright>=1.40.0      # 不装则 browser.* 报"未安装 Playwright",其余能力不受影响
+
 # 联网与邮件:
 aiohttp>=3.9.0          # web.search / web.fetch
 aiosmtplib>=3.0.0       # 异步 SMTP(可选;邮件渠道默认用 stdlib smtplib)

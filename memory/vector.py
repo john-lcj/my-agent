@@ -38,7 +38,7 @@ class VectorMemory:
         parent = os.path.dirname(db_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(db_path)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
 
@@ -56,23 +56,35 @@ class VectorMemory:
             )
             """
         )
+        # 兼容旧库:补 scope 列(隔离键)
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(vectors)").fetchall()}
+        if "scope" not in cols:
+            self._conn.execute("ALTER TABLE vectors ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
         self._conn.commit()
 
     def store(self, item: MemoryItem) -> None:
         vec = self._to_vec(item.content)
         self._conn.execute(
-            "INSERT INTO vectors (kind, content, importance, created_at, last_used, vec) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (item.kind, item.content, item.importance,
+            "INSERT INTO vectors (kind, content, importance, scope, created_at, last_used, vec) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (item.kind, item.content, item.importance, getattr(item, "scope", "") or "",
              item.created_at, item.last_used, _pack(vec)),
         )
         self._conn.commit()
 
-    def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]:
+    def retrieve(self, query: str, k: int = 5, scope: str | None = None) -> list[MemoryItem]:
         q_vec = np.array(self._to_vec(query), dtype=np.float32)
-        rows = self._conn.execute(
-            "SELECT id, kind, content, importance, created_at, last_used, vec FROM vectors"
-        ).fetchall()
+        # 隔离:scope 非 None 时只取 当前 scope 或 全局('');None=不过滤。
+        if scope is not None:
+            rows = self._conn.execute(
+                "SELECT id, kind, content, importance, scope, created_at, last_used, vec "
+                "FROM vectors WHERE scope = ? OR scope = ''",
+                (scope,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, kind, content, importance, scope, created_at, last_used, vec FROM vectors"
+            ).fetchall()
         if not rows:
             return []
 
@@ -98,6 +110,7 @@ class VectorMemory:
             items.append(MemoryItem(
                 kind=row["kind"], content=row["content"],
                 importance=row["importance"],
+                scope=row["scope"] if "scope" in row.keys() else "",
                 created_at=row["created_at"], last_used=now,
             ))
         self._conn.commit()

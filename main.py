@@ -118,15 +118,9 @@ async def _invoke_skill_cli(skill_name: str, task: str, bundle, ctx, channel: CL
 
 
 def _collect_banner_meta() -> tuple[list[tuple[str, str]], list[tuple[str, str]], set[str]]:
+    # 多 agent 已移除:无专家名单(单 agent 架构)。
     experts: list[tuple[str, str]] = []
     expert_names: set[str] = set()
-    try:
-        from agents.spec import load_specs_from_roster
-        for s in load_specs_from_roster("agents/roster"):
-            expert_names.add(s.name)
-            experts.append((s.name, s.role or s.name))
-    except Exception:
-        pass
 
     skills: list[tuple[str, str]] = []
     for m in _skill_manifests():

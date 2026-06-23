@@ -22,6 +22,7 @@ class MemoryItem:
     content: str
     importance: float = 0.5   # 用于遗忘:低分优先清理
     source: str = "agent"     # 'user' 用户明说 | 'agent' agent 推断 —— 影响可信度
+    scope: str = ""           # 归属隔离键 '渠道|项目';'' = 全局(偏好/经验,跨对接始终可见)
     created_at: float = field(default_factory=time.time)
     last_used: float = field(default_factory=time.time)
 
@@ -29,5 +30,5 @@ class MemoryItem:
 @runtime_checkable
 class Memory(Protocol):
     def store(self, item: MemoryItem) -> None: ...
-    def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]: ...
+    def retrieve(self, query: str, k: int = 5, scope: str | None = None) -> list[MemoryItem]: ...
     def forget(self) -> None: ...

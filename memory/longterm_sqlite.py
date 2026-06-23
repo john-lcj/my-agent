@@ -21,7 +21,7 @@ class SQLiteMemory:
         parent = os.path.dirname(db_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(db_path)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
 
@@ -39,36 +39,45 @@ class SQLiteMemory:
             )
             """
         )
-        # 兼容旧库:补 source 列
+        # 兼容旧库:补 source / scope 列
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(memories)").fetchall()}
         if "source" not in cols:
             self._conn.execute("ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT 'agent'")
+        if "scope" not in cols:
+            self._conn.execute("ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
         self._conn.commit()
 
     def store(self, item: MemoryItem) -> None:
         self._conn.execute(
-            "INSERT INTO memories (kind, content, importance, source, created_at, last_used) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO memories (kind, content, importance, source, scope, created_at, last_used) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (item.kind, item.content, item.importance, item.source or "agent",
-             item.created_at, item.last_used),
+             getattr(item, "scope", "") or "", item.created_at, item.last_used),
         )
         self._conn.commit()
 
-    def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]:
+    def retrieve(self, query: str, k: int = 5, scope: str | None = None) -> list[MemoryItem]:
         tokens = [t for t in query.replace("，", " ").replace(",", " ").split() if t]
+        # 隔离:scope 非 None 时只取 当前 scope 或 全局('') 的记忆;None=不过滤(取全部)。
+        scope_sql = ""
+        scope_params: list = []
+        if scope is not None:
+            scope_sql = " AND (scope = ? OR scope = '')"
+            scope_params = [scope]
         rows: list[sqlite3.Row]
         if tokens:
             where = " OR ".join(["content LIKE ?"] * len(tokens))
             params = [f"%{t}%" for t in tokens]
             rows = self._conn.execute(
-                f"SELECT * FROM memories WHERE {where} "
+                f"SELECT * FROM memories WHERE ({where}){scope_sql} "
                 f"ORDER BY importance DESC, last_used DESC LIMIT ?",
-                (*params, k),
+                (*params, *scope_params, k),
             ).fetchall()
         else:
+            where_only = scope_sql.replace(" AND ", " WHERE ", 1) if scope_sql else ""
             rows = self._conn.execute(
-                "SELECT * FROM memories ORDER BY importance DESC, last_used DESC LIMIT ?",
-                (k,),
+                f"SELECT * FROM memories{where_only} ORDER BY importance DESC, last_used DESC LIMIT ?",
+                (*scope_params, k),
             ).fetchall()
 
         now = time.time()
@@ -78,6 +87,7 @@ class SQLiteMemory:
             items.append(MemoryItem(kind=r["kind"], content=r["content"],
                                     importance=r["importance"],
                                     source=r["source"] if "source" in r.keys() else "agent",
+                                    scope=r["scope"] if "scope" in r.keys() else "",
                                     created_at=r["created_at"], last_used=now))
         self._conn.commit()
         return items

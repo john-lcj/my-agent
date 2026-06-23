@@ -20,10 +20,12 @@ class Context:
     capability_grants: set[str] = field(default_factory=set)
     # 当前用户问题内:点过一次「允许」后,后续 ASK 不再弹窗
     task_auto_approve: bool = False
-    # Captain 汇总轮(显式 /专家名 后):避免 Coordinator 二次路由
+    # Captain 单 agent 直答,避免上层二次路由
     captain_only: bool = False
-    # Coworker 引擎:极致工作模式 —— 非闲聊任务一律强制走 DAG 编排、激进派子代理
+    # Cowork 模式:全自动确认(仅硬边界拦),Chat 模式写操作需确认
     coworker: bool = False
+    # Agent.run 期间注入,供能力回调确认门(软边界确认)
+    confirm_fn: Any = None
     working: WorkingMemory = field(default_factory=WorkingMemory)
     log: ConversationLog = field(default_factory=ConversationLog)
     session: SessionAttachment = field(default_factory=SessionAttachment)

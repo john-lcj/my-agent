@@ -25,19 +25,7 @@ def list_slash_commands(roster_dir: str, skills_dirs: str | list[str] = "skills"
             "group": "模型",
         })
 
-    if os.path.isdir(roster_dir):
-        from server.roster_api import list_roster_agents
-        for a in list_roster_agents(roster_dir):
-            name = a.get("name") or a.get("id", "")
-            if not name:
-                continue
-            items.append({
-                "cmd": f"/{name}",
-                "label": a.get("role") or name,
-                "hint": f"/{name} <任务>",
-                "group": "专家",
-            })
-
+    # 多 agent 专家命令已移除(单 agent 架构);只保留 /model 与 /skill。
     try:
         from skills.base import SkillRegistry
         reg = SkillRegistry(skills_dirs)

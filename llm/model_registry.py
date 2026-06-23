@@ -58,7 +58,40 @@ def default_model_id() -> str:
     return "deepseek-v4-flash"
 
 
+def extra_models() -> list[dict]:
+    """注册表之外、用户实际配好的"聊天可用"端点(小米 MiMo / 自定义 OpenAI 兼容)。
+
+    - 小米:用户用 VISION_* 配的(VISION_MODEL+VISION_API_KEY)→ id "ext:xiaomi"。
+    - 自定义端点:model_keys.json 里非内置、且填了 key+model 的 → id "ext:<provider>"。
+    这些会出现在模型下拉里,选中后由 factory 用其 base_url+key+model 直接构建 OpenAI 兼容 LLM。
+    """
+    out: list[dict] = []
+    vm = os.environ.get("VISION_MODEL", "").strip()
+    vk = (os.environ.get("VISION_API_KEY", "").strip()
+          or os.environ.get("OPENAI_API_KEY", "").strip())
+    if vm and vk:
+        out.append({"id": "ext:xiaomi", "label": f"小米 MiMo · {vm}",
+                    "provider": "openai", "context": 200_000})
+    try:
+        import json as _json
+        path = os.path.join(Config.LOG_DIR, "model_keys.json")
+        data = _json.load(open(path, encoding="utf-8")) if os.path.isfile(path) else {}
+        for prov, v in data.items():
+            if prov in ("deepseek", "openai", "claude", "xiaomi_vision", "image"):
+                continue
+            cfg = v if isinstance(v, dict) else {"key": v}
+            if cfg.get("key") and cfg.get("model"):
+                out.append({"id": f"ext:{prov}",
+                            "label": f"{cfg.get('label', prov)} · {cfg['model']}",
+                            "provider": "openai", "context": 128_000})
+    except Exception:
+        pass
+    return out
+
+
 def normalize_model_id(raw: str) -> Optional[str]:
+    if (raw or "").strip().lower().startswith("ext:"):
+        return (raw or "").strip()      # 额外端点 id 原样透传(由 factory 解析)
     key = (raw or "").strip().lower()
     if not key:
         return None
@@ -107,14 +140,9 @@ def is_provider_configured(provider: str) -> bool:
     if p == "claude":
         return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
     if p == "ollama":
-        base = (Config.OLLAMA_BASE_URL or "").rstrip("/").replace("/v1", "")
-        if not base:
-            return False
-        try:
-            urllib.request.urlopen(f"{base}/api/tags", timeout=1.5)
-            return True
-        except (urllib.error.URLError, OSError, ValueError):
-            return False
+        # 仅看是否配了地址;**不做网络探测**(探测会给每次列模型加 ~1.5s 延迟、
+        # 还会放大前端竞态)。真不可用时,实际调用时再报错即可。
+        return bool((Config.OLLAMA_BASE_URL or "").strip())
     return False
 
 

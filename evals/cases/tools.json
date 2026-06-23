@@ -1,0 +1,48 @@
+[
+  {
+    "name": "工具-写文件",
+    "category": "tool-use",
+    "prompt": "在工作区创建文件 产物/notes.txt,内容写一行『hello captain』。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["fs.write"], "files_exist": ["notes.txt"]}
+  },
+  {
+    "name": "工具-数文件用shell",
+    "category": "tool-use",
+    "prompt": "用命令统计当前工作目录下有多少个 .md 文件,把数字告诉我,并附上你执行的命令。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["shell.run"], "regex": ["\\d"]}
+  },
+  {
+    "name": "工具-查最新优先exa",
+    "category": "tool-use",
+    "prompt": "帮我查一下 2026 年最值得关注的开源 AI agent 框架,列两三个要点。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["exa.search", "web.search"],
+               "judge": "是否真去联网检索并给出了具体、相关、像样的要点(而不是空泛或拒答)",
+               "judge_threshold": 6}
+  },
+  {
+    "name": "工具-内容检索fs.search",
+    "category": "tool-use",
+    "prompt": "在工作区里找一下哪个文件里写了『hello captain』这句话,告诉我文件名。如果没有就先创建 产物/notes.txt 写进去再找。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["fs.search", "shell.run", "fs.write"],
+               "any": ["notes.txt", "notes"]}
+  },
+  {
+    "name": "工具-该用工具别硬算",
+    "category": "tool-use",
+    "prompt": "帮我算一下 7919 乘以 6113 等于多少,要准确。",
+    "mode": "coworker",
+    "expect": {"any": ["48408847", "48,408,847"]}
+  },
+  {
+    "name": "工具-抓网页内容",
+    "category": "tool-use",
+    "prompt": "抓取 https://example.com 的网页内容,告诉我页面标题或主要文字是什么。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["web.fetch", "browser.open", "browser.text", "shell.run"],
+               "any": ["Example", "example", "示例", "Domain"]}
+  }
+]

@@ -9,13 +9,46 @@ DeepSeek 复用同一套协议,只是换 base_url 与默认模型(见 deepseek_l
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import random
 from typing import Optional
 
 from core.context import repair_tool_pairing
 from core.types import CapabilityCall, Message, Role, Step
 from llm.streaming import EmitTokenFn
+
+# 瞬时错误关键词(超时 / 连接 / 限流 / 网关)——这类不应当场失败,应退避重试。
+_TRANSIENT = ("timeout", "timed out", "connection", "rate limit", "ratelimit",
+              "429", "overloaded", "503", "502", "temporarily")
+
+
+def _is_transient(e: Exception) -> bool:
+    s = f"{type(e).__name__} {e}".lower()
+    return any(k in s for k in _TRANSIENT)
+
+
+async def _acreate_with_retry(client, **kwargs):
+    """对 chat.completions.create 做指数退避重试,扛住并发压测下的瞬时超时/连接错误。
+
+    并发跑多个子代理时(map-reduce 并行节点),DeepSeek 偶发超时/连接重置是常态;
+    一次抖动就让整个节点失败、级联跳过太脆。这里重试 N 次,显著提升长任务成功率。
+    """
+    retries = int(os.environ.get("AGENT_LLM_RETRIES", "3"))
+    delay = 1.0
+    last: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return await client.chat.completions.create(**kwargs)
+        except Exception as e:  # noqa: BLE001 —— 需按错误内容判断是否瞬时
+            last = e
+            if attempt >= retries or not _is_transient(e):
+                raise
+            await asyncio.sleep(delay + random.uniform(0, 0.4))
+            delay = min(delay * 2, 8.0)
+    assert last is not None
+    raise last
 
 
 class OpenAILLM:
@@ -25,27 +58,40 @@ class OpenAILLM:
         api_key_env: str = "OPENAI_API_KEY",
         base_url: Optional[str] = None,
         name: str = "openai",
+        api_key: Optional[str] = None,
+        api_keys: Optional[list] = None,
     ) -> None:
         self.name = name
         self.model = model
         self.api_key_env = api_key_env
         self.base_url = base_url
-        self._client = None  # 懒加载
+        # key 池:多个 key 时每次请求轮流用一个,把并发分散到不同 key(绕开单 key 限流)。
+        pool = [k for k in (api_keys or []) if k] or ([api_key] if api_key else [])
+        self._keys = pool                      # 空 = 回退读环境变量(单 key)
+        self._clients: dict = {}               # key -> AsyncOpenAI(懒建)
+        self._rr = 0                           # round-robin 游标
 
-    def _ensure_client(self):
-        if self._client is not None:
-            return self._client
-        api_key = os.environ.get(self.api_key_env)
-        if not api_key:
-            raise RuntimeError(
-                f"缺少环境变量 {self.api_key_env}。请在 .env 中配置,或改用 MockLLM 跑通流程。"
-            )
+    def _pick_client(self):
         try:
             from openai import AsyncOpenAI  # 懒加载,未安装也不影响 mock
         except ImportError as e:
             raise RuntimeError("未安装 openai SDK,请先 `pip install openai`。") from e
-        self._client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
-        return self._client
+        keys = self._keys or [os.environ.get(self.api_key_env) or ""]
+        key = keys[self._rr % len(keys)]
+        self._rr += 1
+        if not key:
+            raise RuntimeError(
+                f"缺少 {self.api_key_env}(或 key 池为空)。请在 .env 配置,或改用 MockLLM。"
+            )
+        client = self._clients.get(key)
+        if client is None:
+            client = AsyncOpenAI(api_key=key, base_url=self.base_url)
+            self._clients[key] = client
+        return client
+
+    # 兼容旧调用名
+    def _ensure_client(self):
+        return self._pick_client()
 
     def needs_deepseek_reasoning_echo(self) -> bool:
         """DeepSeek 思考模式要求 tool-call 轮次的 reasoning_content 必须回传。"""
@@ -70,7 +116,8 @@ class OpenAILLM:
     async def _next_step_blocking(self, messages: list[Message], capabilities: list[dict]) -> Step:
         client = self._ensure_client()
         name_map = {_sanitize(c["name"]): c["name"] for c in capabilities}
-        resp = await client.chat.completions.create(
+        resp = await _acreate_with_retry(
+            client,
             model=self.model,
             messages=_to_openai_messages(
                 messages,
@@ -88,7 +135,8 @@ class OpenAILLM:
     ) -> Step:
         client = self._ensure_client()
         name_map = {_sanitize(c["name"]): c["name"] for c in capabilities}
-        stream = await client.chat.completions.create(
+        stream = await _acreate_with_retry(
+            client,
             model=self.model,
             messages=_to_openai_messages(
                 messages,

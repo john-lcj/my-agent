@@ -64,19 +64,52 @@ def build_registry(
     worker_registry: Any = None,
 ) -> CapabilityRegistry:
     """按 profile 注册能力 + 加载 skill 插件 + 并入全局附加能力(MCP 等)。"""
+    from capabilities.tools.schedule import ScheduleCreate, ScheduleList, ScheduleDelete
+    from capabilities.tools.plan import PlanUpdate
+    from capabilities.tools.fs_search import FsSearch
+    from capabilities.tools.browser import (
+        BrowserOpen, BrowserText, BrowserClick, BrowserFill,
+        BrowserWait, BrowserScreenshot, BrowserUpload, BrowserDownload,
+        BrowserLoginAssist,
+    )
+    from capabilities.tools.vision import VisionSee
+    from capabilities.tools.http_request import HttpRequest
+    from capabilities.tools.secret import SecretSave, SecretList
+    from capabilities.tools.wechat import WechatFormat
+    from capabilities.tools.skill_scaffold import SkillScaffold
+    from capabilities.tools.multimodal import ImageOCR, ImageGenerate
+    from capabilities.tools.monitor import MonitorCreate, MonitorList, MonitorDelete
+    from capabilities.tools.goal import GoalSet, GoalList, GoalRemove
+    from capabilities.tools.exa_search import ExaSearch
+    from capabilities.tools.suggest import SuggestAdd, SuggestList
     caps = [ReadFile(), ListDir(), WriteFile(), RunShell(),
-            WebSearch(), WebFetch(),
+            WebSearch(), WebFetch(), FsSearch(),
             RememberMemory(), RecallMemory(),
-            ProgramRemember(), ProgramRecall(), ProgramList()]
+            ProgramRemember(), ProgramRecall(), ProgramList(),
+            ScheduleCreate(), ScheduleList(), ScheduleDelete(),
+            PlanUpdate(),
+            BrowserOpen(), BrowserText(), BrowserClick(), BrowserFill(),
+            BrowserWait(), BrowserScreenshot(), BrowserUpload(), BrowserDownload(),
+            BrowserLoginAssist(),
+            VisionSee(), HttpRequest(),
+            SecretSave(), SecretList(), WechatFormat(), SkillScaffold(),
+            ImageOCR(), ImageGenerate(),
+            MonitorCreate(), MonitorList(), MonitorDelete(),
+            GoalSet(), GoalList(), GoalRemove(), ExaSearch(),
+            SuggestAdd(), SuggestList()]
     if profile in _gui_capable_profiles():
         from capabilities.gui import GUIControl
         caps.append(GUIControl())
     if profile == "external":
         from capabilities.tools.notify import SendEmail
         caps.append(SendEmail())
-    if worker_registry is not None and profile in ("cli", "interactive"):
-        from capabilities.delegate import DelegateToAgent
-        caps.append(DelegateToAgent(worker_registry, max_depth=3))
+    # 声明式连接器(connectors/*.json)→ 每个 action 注册成能力(github.list_repos 等)。
+    try:
+        from capabilities.connector_loader import build_connector_tools
+        caps += build_connector_tools()
+    except Exception as _ce:
+        print(f"[bootstrap] 连接器加载失败(跳过): {_ce}")
+    # 多 agent 委托(delegate)已移除:单 agent 架构不再派活给别的 agent。
     registry = CapabilityRegistry(caps)
     from skills.paths import build_skill_registry
     build_skill_registry().load_all_into(registry)
@@ -103,6 +136,7 @@ def build_agent_bundle(
     model: Optional[str] = None,
     max_cost_usd: Optional[float] = None,
     governance_mode: Optional[str] = None,
+    max_steps: Optional[int] = None,
 ) -> AgentBundle:
     """装配一套完整可运行的 agent。
 
@@ -126,14 +160,22 @@ def build_agent_bundle(
         mode=governance_mode or Config.GOVERNANCE_MODE,
     )
     bus = EventBus()
+    # max_steps<=0 视为"无限制"(用极大数,避免改动 captain_phase 的 min() 逻辑)
+    _ms = Config.MAX_STEPS if max_steps is None else max_steps
+    if _ms is not None and _ms <= 0:
+        _ms = 1_000_000
     budget = BudgetGovernor(
-        max_steps=Config.MAX_STEPS,
+        max_steps=_ms,
         max_cost_usd=max_cost_usd if max_cost_usd is not None else Config.MAX_COST_USD,
         provider=budget_provider,
     )
 
     ctx = Context(identity=identity)
     ctx.add_system(build_system_prompt(registry.specs(), persona))
+    # 邮件等外部渠道:追加"纯文本自然段"排版指引,避免 Markdown 符号原样漏进邮件。
+    if profile == "external":
+        from core.prompts import email_style_block
+        ctx.add_system(email_style_block())
     if longterm is not None:
         ctx.longterm = longterm
         # 偏好注入:persona 管恒定人格,长期记忆里的偏好管动态认知,两者叠加。
@@ -143,6 +185,20 @@ def build_agent_bundle(
             ctx.add_system(pref_block)
     from memory.program_store import ProgramMemoryStore
     ctx.program = ProgramMemoryStore(db_path=f"{Config.LOG_DIR}/program_memory.db")
+    # 凭据保险库:加密存登录信息,供 secret.* 与 browser.fill 的 secret: 解引用。
+    try:
+        from memory.secrets_vault import SecretsVault
+        ctx.vault = SecretsVault(db_path=f"{Config.LOG_DIR}/vault.db",
+                                 key_file=f"{Config.LOG_DIR}/.vault_key")
+    except Exception as _e:
+        ctx.vault = None
+        print(f"[bootstrap] 凭据保险库初始化失败(降级为不可用): {_e}")
+    from memory.monitor_store import MonitorStore
+    ctx.monitors = MonitorStore(path=f"{Config.LOG_DIR}/monitors.json")
+    from memory.goals_store import GoalsStore
+    ctx.goals = GoalsStore(path=f"{Config.LOG_DIR}/goals.json")
+    from memory.suggestions_store import SuggestionsStore
+    ctx.suggestions = SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json")
 
     tracer = FileTracer(log_dir=Config.LOG_DIR, echo=trace_echo)
     bus.subscribe(tracer.log)

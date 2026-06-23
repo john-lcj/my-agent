@@ -14,6 +14,19 @@ from core.types import CapabilityResult, Risk
 from memory.base import MemoryItem
 
 
+def _scope_of(ctx: Any) -> str:
+    """当前对话的记忆隔离键 '渠道|项目'。
+
+    优先用 server 注入的 ctx.mem_scope;缺省时退回 渠道('email|'/'scheduler|'),
+    保证每个对接(web/邮件/定时)各自独立;'' 表示全局。
+    """
+    s = getattr(ctx, "mem_scope", None)
+    if s is not None:
+        return str(s)
+    ch = getattr(getattr(ctx, "identity", None), "channel", "") or ""
+    return f"{ch}|" if ch else ""
+
+
 class RememberMemory(Tool):
     name = "memory.remember"
     risk = Risk.WRITE         # 持久写入 → 默认 ASK;低重要性可 policy 自动放行
@@ -53,6 +66,7 @@ class RememberMemory(Tool):
             importance = 0.8
         try:
             mem.store(MemoryItem(kind=kind, content=content, source=source,
+                                 scope=_scope_of(ctx),
                                  importance=max(0.0, min(1.0, importance))))
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -82,7 +96,7 @@ class RecallMemory(Tool):
         except (TypeError, ValueError):
             k = 5
         try:
-            items = mem.retrieve(query, k=k)
+            items = mem.retrieve(query, k=k, scope=_scope_of(ctx))
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
         if not items:

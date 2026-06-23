@@ -62,8 +62,8 @@ class Config:
     if not os.path.isabs(LOG_DIR):
         LOG_DIR = os.path.join(_PROJECT_ROOT, LOG_DIR)
     MAX_STEPS = int(os.environ.get("AGENT_MAX_STEPS", "20"))
-    # 模式 A+：Captain 先自治的步数上限，用尽后升级专家（仍小于 MAX_STEPS）
-    CAPTAIN_MAX_STEPS = int(os.environ.get("AGENT_CAPTAIN_MAX_STEPS", "8"))
+    # 已废弃:Captain 不再单独限步,由 triage 决定是否派子 agent;保留变量仅供旧文档兼容。
+    CAPTAIN_MAX_STEPS = int(os.environ.get("AGENT_CAPTAIN_MAX_STEPS", "0") or "0")
 
     # 控制台是否回显 trace(开发期方便观察)
     TRACE_ECHO = os.environ.get("AGENT_TRACE_ECHO", "0") == "1"

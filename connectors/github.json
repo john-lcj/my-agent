@@ -1,0 +1,45 @@
+{
+  "name": "github",
+  "label": "GitHub",
+  "base_url": "https://api.github.com",
+  "auth": {"type": "bearer", "secret_ref": "github"},
+  "default_headers": {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  },
+  "actions": [
+    {
+      "name": "me",
+      "method": "GET",
+      "path": "/user",
+      "description": "查看当前登录用户信息"
+    },
+    {
+      "name": "list_repos",
+      "method": "GET",
+      "path": "/user/repos",
+      "description": "列出我的仓库",
+      "query": ["per_page", "sort", "visibility", "affiliation"]
+    },
+    {
+      "name": "get_repo",
+      "method": "GET",
+      "path": "/repos/{owner}/{repo}",
+      "description": "获取某个仓库的信息"
+    },
+    {
+      "name": "list_issues",
+      "method": "GET",
+      "path": "/repos/{owner}/{repo}/issues",
+      "description": "列出仓库的 issue",
+      "query": ["state", "labels", "per_page"]
+    },
+    {
+      "name": "create_issue",
+      "method": "POST",
+      "path": "/repos/{owner}/{repo}/issues",
+      "description": "在仓库新建一个 issue(写操作,需确认)",
+      "body": ["title", "body", "labels"]
+    }
+  ]
+}

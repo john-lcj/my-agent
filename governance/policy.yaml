@@ -4,6 +4,46 @@
 defaults:
   mode: balanced
 
+# ★ shell 安全白名单:仅以下命令允许无人值守自动执行。
+# 不在列表中的 shell 命令将被 BLOCK(默认拒绝 + 白名单放行)。
+shell_whitelist:
+  - pattern: '^python3\s'
+    reason: 运行Python脚本
+  - pattern: '\bmkdir\s+-p\b'
+    reason: 创建工作区子目录
+  - pattern: '\bwc\b(?:\s+-[a-z]+\s+|\s+)(?!/dev/)'
+    reason: 文件统计(行数/字数)
+  - pattern: '\bfind\b(?:\s+.*\s+-type\s+[fdl]\b)|\bfind\b\s+\.\s+'
+    reason: 查找文件与目录
+  - pattern: '\bls\b(?:\s+-[a-zA-Z]+\s+|\s+)'
+    reason: 列出目录内容
+  - pattern: '\bhead\b(?:\s+-[a-z]+\s+|\s+)'
+    reason: 预览文件头部
+  - pattern: '\btail\b(?:\s+-[a-z]+\s+|\s+)'
+    reason: 预览文件尾部
+  - pattern: '\bcat\b\s+'
+    reason: 读取文件内容
+  - pattern: '\begrep\b|\bgrep\b(?:\s+-[a-zA-Z]+\s+|\s+)'
+    reason: 文本搜索
+  - pattern: '\bsort\b(?:\s+-[a-zA-Z]+\s+|\s+[^\|;>&]*)'
+    reason: 文本排序
+  - pattern: '\buniq\b(?:\s+-[a-z]+\s+|\s*)'
+    reason: 文本去重
+  - pattern: '\bcut\b(?:\s+-[a-z]+\s+|\s+)'
+    reason: 文本列提取
+  - pattern: '\bawk\b(?:\s+.*)?\{\s*print\b'
+    reason: 纯打印 awk(无写操作)
+  - pattern: '\b(date|pwd|which)\b'
+    reason: 系统信息查询
+  - pattern: '\bfile\b\s+'
+    reason: 文件类型识别
+  - pattern: '\bdu\s+-[a-z]+\s+'
+    reason: 磁盘用量统计
+  - pattern: '^echo\s+'
+    reason: 调试输出
+  - pattern: '^python3\s.*>\s'
+    reason: Python脚本输出到文件
+
 # 治理档位(保留供 Web runtime 切换;确认规则见 confirm 段,与档位无关)
 modes:
   conservative: {}
@@ -68,6 +108,21 @@ confirm:
     - skill.xlsx_writer    # 生成 Excel 文件,需确认
     - skill.pptx_writer    # 生成 PPT 文件,需确认
     - skill.http_request   # 调外部接口(可能外发/写远端),需确认
+    - http.request         # 通用 HTTP 连接器(可能外发/写远端),需确认
+    - secret.save          # 写入凭据保险库,需确认
+    - skill.scaffold       # 固化生成新 skill(写持久文件),需确认
+    - image.generate       # 文生图(调用付费 API + 写文件),需确认
+    - monitor.create       # 新建常驻监控(标准规则变更),需确认
+    - monitor.delete       # 删除监控,需确认
+    - goal.set             # 登记长期目标(标准配置变更),需确认
+    - goal.remove          # 删除长期目标,需确认
+    - schedule.create      # 新建定时任务(标准配置变更),需确认
+    - schedule.delete      # 删除定时任务,需确认
+    - browser.click        # 浏览器点击(可能提交/跳转),需确认
+    - browser.fill         # 浏览器填表,需确认
+    - browser.upload       # 浏览器上传文件,需确认
+    - browser.download     # 浏览器触发下载,需确认
+    - browser.login_assist # 弹出可见浏览器协同登录,需确认
   shell_patterns:
     - pattern: '\brm\b'
       reason: '删除文件或目录,需确认。'
@@ -104,7 +159,10 @@ capability_whitelist:
   delegate:  ["fs.read", "fs.list", "web.search", "web.fetch"]
   scheduler: ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."]
 
-  # 动态子代理:两个权限档(领域专长由子任务动态决定,不再按领域预设人设)
-  researcher:          ["fs.read", "fs.list", "web.search", "web.fetch", "skill."]
-  executor:            ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch"]
+  # 固定子 agent + 心理咨询(researcher 与 roster 一致:调研可交付产物)
+  researcher:          ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."]
+  verifier:            ["fs.read", "fs.list", "web.search", "web.fetch", "skill."]
+  writer:              ["fs.read", "fs.list", "fs.write", "web.search", "web.fetch", "skill."]
+  coder:               ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."]
+  executor:            ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule."]
   adler_counselor_agent: ["memory.remember", "memory.recall"]

@@ -31,6 +31,30 @@ def _summarize_args(args: dict) -> dict:
     return out
 
 
+def read_recent(limit: int = 100) -> list[dict]:
+    """读最近 N 条审计记录(倒序,最新在前),供 /api/audit 与前端查看。"""
+    path = _audit_path()
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+    out: list[dict] = []
+    for ln in reversed(lines):
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            out.append(json.loads(ln))
+        except Exception:
+            continue
+        if len(out) >= limit:
+            break
+    return out
+
+
 def audit(*, trace_id: str = "", agent: str = "", capability: str = "",
           args: dict | None = None, decision: str = "", ok: bool | None = None,
           detail: str = "") -> None:

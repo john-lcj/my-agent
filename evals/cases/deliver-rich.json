@@ -1,0 +1,43 @@
+[
+  {
+    "name": "交付-HTML网页",
+    "category": "deliver-rich",
+    "prompt": "做一个单文件 HTML 页面 产物/名片.html,展示『张三 / 产品经理 / 北京』,要有基本的内联 CSS 样式。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["fs.write", "shell.run"], "files_exist": ["名片.html"],
+               "file_contains": ["<html", "style", "张三"]}
+  },
+  {
+    "name": "交付-公众号长文排版",
+    "category": "deliver-rich",
+    "prompt": "把『如何坚持运动』写成公众号推文(标题+三小段),用 wechat.format 生成内联样式 HTML,存到 产物/坚持运动.html。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["wechat.format"], "files_exist": ["坚持运动.html"],
+               "file_contains": ["<section", "style="]}
+  },
+  {
+    "name": "交付-长报告判质量",
+    "category": "deliver-rich",
+    "prompt": "写一份 400 字以上、有逻辑结构的短报告,主题『远程办公的利与弊』,至少分利、弊、结论三部分,存到 产物/远程办公.md。",
+    "mode": "coworker",
+    "expect": {"files_exist": ["远程办公.md"],
+               "file_contains": ["利", "弊", "结论"],
+               "judge": "报告是否真有逻辑结构、分利弊与结论三部分、内容具体不空泛、字数够",
+               "judge_threshold": 6}
+  },
+  {
+    "name": "交付-Excel表格(探极限)",
+    "category": "deliver-rich",
+    "prompt": "生成一个真正的 Excel 文件 产物/销售.xlsx,含表头(月份、销售额)和三行数据。必须是可被 Excel 打开的 .xlsx,不是 csv。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["shell.run", "fs.write"], "files_exist": ["销售.xlsx"]}
+  },
+  {
+    "name": "交付-配图或诚实说明(无key降级)",
+    "category": "deliver-rich",
+    "prompt": "用 image.generate 生成一张『日出』配图,并写一段 50 字的图说,一起放进 产物/日出.md(用 Markdown 图片语法引用生成的图)。如果文生图没配置,就如实说明并给出替代方案,别假装生成了。",
+    "mode": "coworker",
+    "expect": {"any": ["![", "未配置", "没配", "用不了", "无法生成", "缺", "替代", "占位", "图片"],
+               "not_contains": ["已生成图片并保存到", "步数用尽", "未全部完成"]}
+  }
+]

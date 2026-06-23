@@ -1,0 +1,17 @@
+[
+  {
+    "name": "记忆-写入再读出",
+    "category": "memory",
+    "prompt": "请先用 memory.remember 记住一条信息:『我的项目代号是猎鹰』。然后立刻用 memory.recall 把它查出来,复述给我确认。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["memory.remember", "memory.recall"], "contains": ["猎鹰"]}
+  },
+  {
+    "name": "记忆-召回不编造",
+    "category": "memory",
+    "prompt": "用 memory.recall 查一下我有没有告诉过你『我最喜欢的颜色』。如果记忆里没有,就如实说没有,别编。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["memory.recall"],
+               "any": ["没有", "未", "查不到", "不知道", "没记录", "无"]}
+  }
+]

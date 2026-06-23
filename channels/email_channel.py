@@ -53,10 +53,12 @@ class EmailChannel:
         self.user = user or os.environ.get("EMAIL_USER", "")
         self.password = password or os.environ.get("EMAIL_PASS", "")
         self.poll_sec = poll_sec or float(os.environ.get("EMAIL_POLL_SEC", "30"))
-        # 白名单:只响应这些发件人的邮件(逗号分隔)。默认只听自己,防陌生人驱使 agent。
+        # 白名单:只响应这些发件人的邮件(逗号分隔),防陌生人驱使 agent。
+        # **始终包含自己(EMAIL_USER)**——主人从 agent 自己的邮箱发任务也能被处理。
         raw_allow = os.environ.get("EMAIL_ALLOWED_SENDERS", "").strip()
-        self.allowed = {a.strip().lower() for a in raw_allow.split(",") if a.strip()} or (
-            {self.user.lower()} if self.user else set())
+        self.allowed = {a.strip().lower() for a in raw_allow.split(",") if a.strip()}
+        if self.user:
+            self.allowed.add(self.user.lower())
 
         self._inbox: asyncio.Queue[Optional[tuple[str, str]]] = asyncio.Queue()
         self._pending_confirm: dict[str, asyncio.Future] = {}

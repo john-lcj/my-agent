@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Captain · 全链路AI自动化</title>
+<style>
+/* ═══════════════ 主题变量 ═══════════════ */
+:root {
+  --bg: #0a0b0f; --bg2: #111318; --card: #181a20; --card2: #1e2028;
+  --border: #252830; --border2: #2e303a;
+  --txt: #e8e8ea; --txt2: #b0b2b8; --muted: #7a7c84;
+  --accent: #c9a24c; --accent2: #e0b95f; --accent-soft: rgba(201,162,76,.12);
+  --blue: #5b8def; --green: #4caf79; --red: #e05555;
+  --r: 12px; --r-sm: 8px; --r-lg: 20px;
+  --font: 'Inter',ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'Noto Sans SC',sans-serif;
+  --font-mono: 'JetBrains Mono',ui-monospace,Menlo,monospace;
+  --trans: 200ms ease;
+  scroll-behavior: smooth;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font: 15px/1.6 var(--font); background: var(--bg); color: var(--txt);
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+a { color: var(--accent); text-decoration: none; }
+button { cursor: pointer; font-family: inherit; border: none; transition: var(--trans); }
+
+/* ═══════════════ 导航 ═══════════════ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,11,15,.85); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border); padding: 0 24px;
+  display: flex; align-items: center; justify-content: space-between; height: 56px;
+}
+.nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -.02em; }
+.nav-logo-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--accent-soft);
+  border: 1px solid rgba(201,162,76,.25); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 16px; }
+.nav-links { display: flex; gap: 4px; align-items: center; }
+.nav-link { padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; color: var(--txt2);
+  background: transparent; transition: var(--trans); }
+.nav-link:hover { background: var(--card); color: var(--txt); }
+.nav-lang { display: flex; gap: 2px; margin-left: 8px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 99px; padding: 2px; }
+.nav-lang-btn { padding: 5px 10px; border-radius: 99px; font-size: 12px; color: var(--muted); background: transparent; }
+.nav-lang-btn.active { background: var(--card2); color: var(--txt); font-weight: 500; }
+.nav-cta { padding: 8px 18px; border-radius: 99px; font-size: 13px; font-weight: 500;
+  background: var(--accent); color: #0a0b0f; margin-left: 8px; }
+.nav-cta:hover { background: var(--accent2); }
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav { padding: 0 16px; }
+}
+
+/* ═══════════════ Section 通用 ═══════════════ */
+.sec { padding: 80px 24px; max-width: 1120px; margin: 0 auto; }
+.sec-label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 12px; }
+.sec-title { font-size: clamp(28px,4vw,44px); font-weight: 500; letter-spacing: -.03em;
+  line-height: 1.2; margin-bottom: 16px; }
+.sec-sub { font-size: 17px; color: var(--txt2); max-width: 560px; line-height: 1.6; margin-bottom: 40px; }
+
+/* ═══════════════ Hero ═══════════════ */
+.hero { padding: 120px 24px 80px; text-align: center; position: relative; overflow: hidden; }
+.hero::before {
+  content: ''; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 800px; background: radial-gradient(circle, rgba(201,162,76,.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+  border-radius: 99px; border: 1px solid var(--border2); background: var(--card);
+  font-size: 13px; color: var(--accent); margin-bottom: 24px; }
+.hero-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.hero h1 { font-size: clamp(36px,6vw,64px); font-weight: 500; letter-spacing: -.04em; line-height: 1.1; margin-bottom: 20px; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p { font-size: 18px; color: var(--txt2); max-width: 600px; margin: 0 auto 36px; line-height: 1.6; }
+.hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn-primary { padding: 12px 28px; border-radius: 99px; font-size: 15px; font-weight: 500;
+  background: var(--accent); color: #0a0b0f; }
+.btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+.btn-secondary { padding: 12px 28px; border-radius: 99px; font-size: 15px; font-weight: 500;
+  background: transparent; color: var(--txt); border: 1px solid var(--border2); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ═══════════════ 能力链路 ═══════════════ */
+.pipeline { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-top: 24px; }
+@media (max-width: 768px) { .pipeline { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 480px) { .pipeline { grid-template-columns: 1fr; } }
+.pipe-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 28px 24px; position: relative; overflow: hidden; transition: var(--trans); }
+.pipe-card:hover { border-color: var(--accent); transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.pipe-num { font-family: var(--font-mono); font-size: 12px; color: var(--accent); margin-bottom: 12px; font-weight: 500; }
+.pipe-icon { font-size: 32px; margin-bottom: 16px; display: block; }
+.pipe-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; letter-spacing: -.01em; }
+.pipe-desc { font-size: 13px; color: var(--txt2); line-height: 1.55; }
+.pipe-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.pipe-tag { font-size: 11px; padding: 3px 8px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent); }
+.pipe-arrow { display: none; position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+  font-size: 20px; color: var(--accent); z-index: 2; }
+@media (min-width: 769px) { .pipe-arrow { display: block; } }
+
+/* ═══════════════ 行业方案 ═══════════════ */
+.industry-tabs { display: flex; gap: 4px; margin-bottom: 32px; flex-wrap: wrap;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 4px; }
+.industry-tab { padding: 10px 20px; border-radius: var(--r-sm); font-size: 14px; font-weight: 500;
+  color: var(--txt2); background: transparent; transition: var(--trans); }
+.industry-tab:hover { color: var(--txt); }
+.industry-tab.active { background: var(--card2); color: var(--txt); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.industry-panels { position: relative; }
+.industry-panel { display: none; animation: fadeIn .3s ease; }
+.industry-panel.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } }
+
+.solution-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+@media (max-width: 640px) { .solution-grid { grid-template-columns: 1fr; } }
+.solution-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 24px; transition: var(--trans); cursor: default; }
+.solution-card:hover { border-color: var(--border2); }
+.solution-card-top { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+.solution-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.solution-name { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+.solution-sub { font-size: 12px; color: var(--muted); }
+.solution-flow { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+  margin-bottom: 12px; flex-wrap: wrap; }
+.solution-flow-step { padding: 4px 10px; border-radius: 99px; background: var(--bg2); border: 1px solid var(--border);
+  white-space: nowrap; }
+.solution-flow-arrow { color: var(--accent); font-weight: 600; }
+.solution-output { font-size: 12px; color: var(--green); padding: 4px 0; }
+
+/* ═══════════════ 对话演示 ═══════════════ */
+.demo-chat-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+  overflow: hidden; max-width: 800px; margin: 0 auto; }
+.demo-chat-top { display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+  border-bottom: 1px solid var(--border); background: var(--card2); }
+.demo-chat-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.demo-chat-name { font-weight: 600; font-size: 14px; }
+.demo-chat-status { font-size: 11px; color: var(--green); margin-left: auto; }
+.demo-scenario-tabs { display: flex; gap: 4px; padding: 8px 20px; border-bottom: 1px solid var(--border);
+  overflow-x: auto; }
+.demo-scenario-tab { padding: 6px 14px; border-radius: 99px; font-size: 12px; color: var(--txt2);
+  background: transparent; border: 1px solid var(--border); white-space: nowrap; flex-shrink: 0; }
+.demo-scenario-tab.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.demo-chat-msgs { padding: 20px; min-height: 360px; max-height: 520px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px; }
+.demo-msg { display: flex; gap: 10px; max-width: 85%; animation: msgIn .35s ease; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(8px); } }
+.demo-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+.demo-msg-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 12px; flex-shrink: 0; }
+.demo-msg.user .demo-msg-avatar { background: var(--accent-soft); color: var(--accent); }
+.demo-msg.agent .demo-msg-avatar { background: var(--card2); color: var(--txt2); }
+.demo-msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55;
+  background: var(--card2); border: 1px solid var(--border); }
+.demo-msg.user .demo-msg-bubble { background: var(--accent-soft); border-color: rgba(201,162,76,.2); }
+.demo-msg-meta { font-size: 10px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+.demo-chat-actions { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+.demo-chat-actions button { padding: 8px 18px; border-radius: 99px; font-size: 13px; }
+.demo-typing { display: flex; gap: 4px; align-items: center; padding: 10px 14px; }
+.demo-typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--muted);
+  animation: bounce 1s infinite; }
+.demo-typing span:nth-child(2) { animation-delay: .15s; }
+.demo-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,80%,100% { transform: scale(.7); opacity: .5; } 40% { transform: scale(1.1); opacity: 1; } }
+
+/* ═══════════════ 报告预览 ═══════════════ */
+.report-demo { margin-top: 48px; }
+.report-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 32px; max-width: 800px; margin: 0 auto; }
+.report-card h3 { font-size: 20px; margin-bottom: 6px; }
+.report-card .report-meta { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+.report-table th { text-align: left; padding: 10px 12px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--txt2); font-size: 11px; letter-spacing: .03em; }
+.report-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.report-table tr:last-child td { border-bottom: none; }
+.report-bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 4px; }
+.report-bar-fill { height: 100%; border-radius: 99px; }
+.report-badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.report-badge.good { background: rgba(76,175,121,.15); color: var(--green); }
+.report-badge.warn { background: rgba(201,162,76,.15); color: var(--accent); }
+.report-badge.bad { background: rgba(224,85,85,.15); color: var(--red); }
+
+/* ═══════════════ 数据亮点 ═══════════════ */
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-top: 24px; }
+@media (max-width: 640px) { .stats-row { grid-template-columns: repeat(2,1fr); } }
+.stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 24px; text-align: center; }
+.stat-num { font-size: 36px; font-weight: 600; letter-spacing: -.02em; color: var(--accent); }
+.stat-label { font-size: 13px; color: var(--txt2); margin-top: 6px; }
+
+/* ═══════════════ Footer ═══════════════ */
+.footer { border-top: 1px solid var(--border); padding: 40px 24px; text-align: center; }
+.footer p { font-size: 13px; color: var(--muted); }
+.footer a { color: var(--accent); }
+
+/* ═══════════════ 响应式 ═══════════════ */
+@media (max-width: 640px) {
+  .sec { padding: 48px 16px; }
+  .hero { padding: 100px 16px 60px; }
+  .hero h1 { font-size: 32px; }
+  .hero p { font-size: 15px; }
+  .industry-tabs { overflow-x: auto; flex-wrap: nowrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ 导航 ═══════════════ -->
+<nav class="nav">
+  <div class="nav-logo">
+    <div class="nav-logo-ic">⚓</div>
+    <span>Captain</span>
+  </div>
+  <div class="nav-links">
+    <a href="#capability" class="nav-link" data-i18n="navCapability">能力</a>
+    <a href="#solutions" class="nav-link" data-i18n="navSolutions">方案</a>
+    <a href="#demo" class="nav-link" data-i18n="navDemo">演示</a>
+    <div class="nav-lang">
+      <button class="nav-lang-btn active" id="lang-zh" onclick="setLang('zh')">中</button>
+      <button class="nav-lang-btn" id="lang-en" onclick="setLang('en')">EN</button>
+    </div>
+    <a href="#demo" class="nav-cta" data-i18n="navCta">体验 Demo</a>
+  </div>
+</nav>
+
+<!-- ═══════════════ Hero ═══════════════ -->
+<section class="hero">
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    <span data-i18n="heroBadge">全链路 AI 自动化 · 金融级可靠</span>
+  </div>
+  <h1 data-i18n="heroTitle">调研 → 分析 → 诊断 → 报告<br><em>全链路AI自动化</em></h1>
+  <p data-i18n="heroSub">Captain 听懂目标，自己拆解执行。从数据采集、深度分析、风险诊断到专业报告生成——一条链路自动完成，你只需要看结果。</p>
+  <div class="hero-btns">
+    <a href="#demo" class="btn-primary" data-i18n="heroCta1">观看演示</a>
+    <a href="#solutions" class="btn-secondary" data-i18n="heroCta2">查看行业方案</a>
+  </div>
+</section>
+
+<!-- ═══════════════ 能力链路 ═══════════════ -->
+<section class="sec" id="capability">
+  <div class="sec-label" data-i18n="capLabel">核心能力</div>
+  <div class="sec-title" data-i18n="capTitle">四个阶段，一条链路</div>
+  <div class="sec-sub" data-i18n="capSub">每个阶段可独立使用，也可串联成完整的自动化工作流。真实工具调用，非模拟。</div>
+
+  <div class="pipeline">
+    <div class="pipe-card">
+      <span class="pipe-num">01</span>
+      <span class="pipe-icon">🔍</span>
+      <div class="pipe-title" data-i18n="pipe1Title">调研 Research</div>
+      <div class="pipe-desc" data-i18n="pipe1Desc">联网搜索、网页抓取、PDF/文档解析、数据库查询、API 调用——多源异构数据自动汇聚。</div>
+      <div class="pipe-tags">
+        <span class="pipe-tag">Web Search</span>
+        <span class="pipe-tag">PDF 解析</span>
+        <span class="pipe-tag">API 对接</span>
+        <span class="pipe-tag">数据库</span>
+      </div>
+      <span class="pipe-arrow">→</span>
+    </div>
+
+    <div class="pipe-card">
+      <span class="pipe-num">02</span>
+      <span class="pipe-icon">📊</span>
+      <div class="pipe-title" data-i18n="pipe2Title">分析 Analysis</div>
+      <div class="pipe-desc" data-i18n="pipe2Desc">数据清洗、统计建模、趋势识别、文本挖掘——Python 脚本直接执行，结果实时返回。</div>
+      <div class="pipe-tags">
+        <span class="pipe-tag">Python 脚本</span>
+        <span class="pipe-tag">统计分析</span>
+        <span class="pipe-tag">NLP</span>
+        <span class="pipe-tag">可视化</span>
+      </div>
+      <span class="pipe-arrow">→</span>
+    </div>
+
+    <div class="pipe-card">
+      <span class="pipe-num">03</span>
+      <span class="pipe-icon">🩺</span>
+      <div class="pipe-title" data-i18n="pipe3Title">诊断 Diagnosis</div>
+      <div class="pipe-desc" data-i18n="pipe3Desc">根因定位、异常检测、风险评估、合规审查——结合业务规则与AI判断，给出可执行的诊断结论。</div>
+      <div class="pipe-tags">
+        <span class="pipe-tag">风险评估</span>
+        <span class="pipe-tag">合规检查</span>
+        <span class="pipe-tag">异常检测</span>
+        <span class="pipe-tag">根因分析</span>
+      </div>
+      <span class="pipe-arrow">→</span>
+    </div>
+
+    <div class="pipe-card">
+      <span class="pipe-num">04</span>
+      <span class="pipe-icon">📋</span>
+      <div class="pipe-title" data-i18n="pipe4Title">报告 Report</div>
+      <div class="pipe-desc" data-i18n="pipe4Desc">自动生成 Word/PDF/Excel/HTML 多格式报告，含图表、表格、结论——可直接交付或归档。</div>
+      <div class="pipe-tags">
+        <span class="pipe-tag">Word</span>
+        <span class="pipe-tag">PDF</span>
+        <span class="pipe-tag">Excel</span>
+        <span class="pipe-tag">HTML</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 数据亮点 ═══════════════ -->
+<section class="sec" style="padding-top:0;">
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-num">20+</div>
+      <div class="stat-label" data-i18n="statTools">内置工具/Skill</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">4</div>
+      <div class="stat-label" data-i18n="statStages">自动化阶段</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">100%</div>
+      <div class="stat-label" data-i18n="statReal">真实执行(非模拟)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" data-i18n="statFormat">多格式</div>
+      <div class="stat-label" data-i18n="statOutput">报告输出格式</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 行业方案 ═══════════════ -->
+<section class="sec" id="solutions">
+  <div class="sec-label" data-i18n="solLabel">行业方案</div>
+  <div class="sec-title" data-i18n="solTitle">金融行业深度方案</div>
+  <div class="sec-sub" data-i18n="solSub">以下方案均可在 Captain 中真实运行——非 PPT 空谈，每条链路都基于实际工具与数据源。</div>
+
+  <div class="industry-tabs" id="industry-tabs">
+    <button class="industry-tab active" data-panel="finance" data-i18n="tabFinance">🏦 金融</button>
+    <button class="industry-tab" data-panel="ecommerce" data-i18n="tabEcommerce">🛒 电商</button>
+    <button class="industry-tab" data-panel="healthcare" data-i18n="tabHealthcare">🏥 医疗</button>
+    <button class="industry-tab" data-panel="legal" data-i18n="tabLegal">⚖️ 法律</button>
+  </div>
+
+  <div class="industry-panels">
+    <!-- ══ 金融 ══ -->
+    <div class="industry-panel active" id="panel-finance">
+      <div class="solution-grid">
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">🛡️</div>
+            <div>
+              <div class="solution-name" data-i18n="fin1Name">智能风控评估</div>
+              <div class="solution-sub" data-i18n="fin1Sub">企业信用风险全维度扫描</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step" data-i18n="stepCollect">📥 数据采集</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepAnalyze">📊 指标分析</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepDiagnose">🩺 风险诊断</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepReport">📋 风控报告</span>
+          </div>
+          <div class="solution-output" data-i18n="fin1Out">✓ 输出：信用评分卡 · 风险清单 · 行业对比 · 预警建议</div>
+        </div>
+
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">📈</div>
+            <div>
+              <div class="solution-name" data-i18n="fin2Name">投研分析报告</div>
+              <div class="solution-sub" data-i18n="fin2Sub">上市公司深度调研自动化</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step" data-i18n="stepCollect">📥 财报抓取</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepAnalyze">📊 财务分析</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepDiagnose">🩺 估值诊断</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepReport">📋 研报生成</span>
+          </div>
+          <div class="solution-output" data-i18n="fin2Out">✓ 输出：财务摘要 · DCF估值 · 行业对比 · 投资建议</div>
+        </div>
+
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">📜</div>
+            <div>
+              <div class="solution-name" data-i18n="fin3Name">合规审查</div>
+              <div class="solution-sub" data-i18n="fin3Sub">监管政策解读与业务合规检查</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step" data-i18n="stepCollect">📥 政策抓取</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepAnalyze">📊 要点提取</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepDiagnose">🩺 差距分析</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepReport">📋 合规报告</span>
+          </div>
+          <div class="solution-output" data-i18n="fin3Out">✓ 输出：政策摘要 · 合规清单 · 整改建议 · 风险地图</div>
+        </div>
+
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">💳</div>
+            <div>
+              <div class="solution-name" data-i18n="fin4Name">信贷评估报告</div>
+              <div class="solution-sub" data-i18n="fin4Sub">企业/个人信贷资质自动化评估</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step" data-i18n="stepCollect">📥 多维数据</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepAnalyze">📊 信用建模</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepDiagnose">🩺 违约预测</span>
+            <span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step" data-i18n="stepReport">📋 授信建议</span>
+          </div>
+          <div class="solution-output" data-i18n="fin4Out">✓ 输出：信用评分 · 违约概率 · 授信额度建议 · 风险缓释方案</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 电商 ══ -->
+    <div class="industry-panel" id="panel-ecommerce">
+      <div class="solution-grid">
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">📦</div>
+            <div>
+              <div class="solution-name" data-i18n="ec1Name">供应链优化分析</div>
+              <div class="solution-sub" data-i18n="ec1Sub">库存、物流与成本全链路诊断</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 数据导入</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 趋势分析</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 瓶颈诊断</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 优化方案</span>
+          </div>
+          <div class="solution-output">✓ 输出：库存健康度 · 物流时效分析 · 降本建议</div>
+        </div>
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">🎯</div>
+            <div>
+              <div class="solution-name" data-i18n="ec2Name">竞品调研报告</div>
+              <div class="solution-sub" data-i18n="ec2Sub">市场格局、价格策略与用户评价分析</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 竞品抓取</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 多维对比</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 差距分析</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 竞争策略</span>
+          </div>
+          <div class="solution-output">✓ 输出：竞品矩阵 · 价格分析 · 用户情感 · 策略建议</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 医疗 ══ -->
+    <div class="industry-panel" id="panel-healthcare">
+      <div class="solution-grid">
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">🏥</div>
+            <div>
+              <div class="solution-name" data-i18n="med1Name">病历结构化分析</div>
+              <div class="solution-sub" data-i18n="med1Sub">非结构化病历 → 标准化数据提取</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 病历导入</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 NLP解析</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 异常标注</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 结构化报告</span>
+          </div>
+          <div class="solution-output">✓ 输出：主诉提取 · 诊断编码 · 用药清单 · 随访建议</div>
+        </div>
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">💊</div>
+            <div>
+              <div class="solution-name" data-i18n="med2Name">药物安全监测</div>
+              <div class="solution-sub" data-i18n="med2Sub">不良反应信号检测与文献回顾</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 文献检索</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 信号检测</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 因果评估</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 安全性报告</span>
+          </div>
+          <div class="solution-output">✓ 输出：信号列表 · 文献摘要 · 风险评估 · 监管建议</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 法律 ══ -->
+    <div class="industry-panel" id="panel-legal">
+      <div class="solution-grid">
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">⚖️</div>
+            <div>
+              <div class="solution-name" data-i18n="law1Name">合同审查</div>
+              <div class="solution-sub" data-i18n="law1Sub">条款风险识别与合规性检查</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 合同导入</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 条款提取</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 风险标注</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 审查报告</span>
+          </div>
+          <div class="solution-output">✓ 输出：风险条款清单 · 修改建议 · 合规对照表</div>
+        </div>
+        <div class="solution-card">
+          <div class="solution-card-top">
+            <div class="solution-icon">📚</div>
+            <div>
+              <div class="solution-name" data-i18n="law2Name">法规检索与解读</div>
+              <div class="solution-sub" data-i18n="law2Sub">多法域法规查询与关键条款解读</div>
+            </div>
+          </div>
+          <div class="solution-flow">
+            <span class="solution-flow-step">📥 法规检索</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📊 要点提取</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">🩺 适用性判断</span><span class="solution-flow-arrow">→</span>
+            <span class="solution-flow-step">📋 法律意见书</span>
+          </div>
+          <div class="solution-output">✓ 输出：法规摘要 · 案例分析 · 合规建议 · 风险提示</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 对话演示 ═══════════════ -->
+<section class="sec" id="demo">
+  <div class="sec-label" data-i18n="demoLabel">交互演示</div>
+  <div class="sec-title" data-i18n="demoTitle">跟 Captain 对话，见证全链路</div>
+  <div class="sec-sub" data-i18n="demoSub">选择一个场景，观看 Captain 如何自动完成调研→分析→诊断→报告的全过程。</div>
+
+  <div class="demo-chat-wrap">
+    <div class="demo-chat-top">
+      <div class="demo-chat-avatar">⚓</div>
+      <div class="demo-chat-name">Captain</div>
+      <div class="demo-chat-status" id="demo-status" data-i18n="demoReady">就绪</div>
+    </div>
+    <div class="demo-scenario-tabs" id="scenario-tabs">
+      <button class="demo-scenario-tab active" data-scene="risk" data-i18n="sceneRisk">🛡️ 风控评估</button>
+      <button class="demo-scenario-tab" data-scene="research" data-i18n="sceneResearch">📈 投研分析</button>
+      <button class="demo-scenario-tab" data-scene="compliance" data-i18n="sceneCompliance">📜 合规审查</button>
+    </div>
+    <div class="demo-chat-msgs" id="demo-msgs">
+      <div style="text-align:center;color:var(--muted);padding:40px;font-size:14px;" data-i18n="demoClickToStart">👆 点击上方场景标签，开始演示</div>
+    </div>
+    <div class="demo-chat-actions">
+      <button class="btn-primary" id="btn-replay" onclick="replayScene()" data-i18n="btnReplay">▶ 重新播放</button>
+      <button class="btn-secondary" id="btn-speed" onclick="toggleSpeed()" data-i18n="btnSpeed">⏩ 加速</button>
+    </div>
+  </div>
+
+  <!-- 报告预览（风控场景结束后展示） -->
+  <div class="report-demo" id="report-demo" style="display:none;">
+    <div class="report-card">
+      <h3 id="report-title">📋 企业信用风险评估报告</h3>
+      <div class="report-meta" id="report-meta">报告日期：2026-06-19 · 评估对象：XYZ科技有限公司 · 行业：信息技术</div>
+      <table class="report-table">
+        <thead><tr>
+          <th data-i18n="rptCol1">评估维度</th>
+          <th data-i18n="rptCol2">得分</th>
+          <th data-i18n="rptCol3">评级</th>
+          <th data-i18n="rptCol4">关键发现</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td data-i18n="rptDim1">财务健康度</td>
+            <td>78/100<div class="report-bar"><div class="report-bar-fill" style="width:78%;background:var(--accent)"></div></div></td>
+            <td><span class="report-badge good">良好</span></td>
+            <td data-i18n="rptFind1">流动比率 1.8，负债率 52%，处于行业健康区间</td>
+          </tr>
+          <tr>
+            <td data-i18n="rptDim2">经营稳定性</td>
+            <td>85/100<div class="report-bar"><div class="report-bar-fill" style="width:85%;background:var(--green)"></div></div></td>
+            <td><span class="report-badge good">优秀</span></td>
+            <td data-i18n="rptFind2">连续 3 年营收增长 >15%，客户集中度低于 30%</td>
+          </tr>
+          <tr>
+            <td data-i18n="rptDim3">法律合规</td>
+            <td>62/100<div class="report-bar"><div class="report-bar-fill" style="width:62%;background:var(--accent)"></div></div></td>
+            <td><span class="report-badge warn">关注</span></td>
+            <td data-i18n="rptFind3">涉及 2 起知识产权纠纷，需持续跟踪</td>
+          </tr>
+          <tr>
+            <td data-i18n="rptDim4">舆情与声誉</td>
+            <td>70/100<div class="report-bar"><div class="report-bar-fill" style="width:70%;background:var(--accent)"></div></div></td>
+            <td><span class="report-badge good">良好</span></td>
+            <td data-i18n="rptFind4">近期无重大负面舆情，社交媒体情感偏正面</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:20px;padding:16px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);">
+        <div style="font-weight:600;margin-bottom:8px;" data-i18n="rptConclusion">综合结论</div>
+        <div style="font-size:13px;color:var(--txt2);line-height:1.6;" data-i18n="rptConclusionText">
+          XYZ科技综合信用评分 <strong style="color:var(--accent)">74 分（B+）</strong>，属于可接受风险区间。
+          建议授信额度不超过 500 万元，并设置资产负债率 < 60%、涉诉金额 < 200 万元作为预警触发条件。
+          需关注知识产权纠纷进展，建议每季度复审一次。
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ Footer ═══════════════ -->
+<footer class="footer">
+  <p>Captain · 全链路AI自动化 · 调研 → 分析 → 诊断 → 报告</p>
+  <p style="margin-top:6px;"><span data-i18n="footerNote">基于真实工具链，所有能力均可实际运行，非 PPT 画饼。</span></p>
+</footer>
+
+<!-- ═══════════════ 脚本 ═══════════════ -->
+<script>
+/* ═══════════════ i18n ═══════════════ */
+const I18N = {
+  zh: {
+    navCapability:'能力', navSolutions:'方案', navDemo:'演示', navCta:'体验 Demo',
+    heroBadge:'全链路 AI 自动化 · 金融级可靠',
+    heroTitle:'调研 → 分析 → 诊断 → 报告<br><em>全链路AI自动化</em>',
+    heroSub:'Captain 听懂目标，自己拆解执行。从数据采集、深度分析、风险诊断到专业报告生成——一条链路自动完成，你只需要看结果。',
+    heroCta1:'观看演示', heroCta2:'查看行业方案',
+    capLabel:'核心能力', capTitle:'四个阶段，一条链路',
+    capSub:'每个阶段可独立使用，也可串联成完整的自动化工作流。真实工具调用，非模拟。',
+    pipe1Title:'调研 Research', pipe1Desc:'联网搜索、网页抓取、PDF/文档解析、数据库查询、API 调用——多源异构数据自动汇聚。',
+    pipe2Title:'分析 Analysis', pipe2Desc:'数据清洗、统计建模、趋势识别、文本挖掘——Python 脚本直接执行，结果实时返回。',
+    pipe3Title:'诊断 Diagnosis', pipe3Desc:'根因定位、异常检测、风险评估、合规审查——结合业务规则与AI判断，给出可执行的诊断结论。',
+    pipe4Title:'报告 Report', pipe4Desc:'自动生成 Word/PDF/Excel/HTML 多格式报告，含图表、表格、结论——可直接交付或归档。',
+    statTools:'内置工具/Skill', statStages:'自动化阶段', statReal:'真实执行(非模拟)', statFormat:'多格式', statOutput:'报告输出格式',
+    solLabel:'行业方案', solTitle:'金融行业深度方案', solSub:'以下方案均可在 Captain 中真实运行——非 PPT 空谈，每条链路都基于实际工具与数据源。',
+    tabFinance:'🏦 金融', tabEcommerce:'🛒 电商', tabHealthcare:'🏥 医疗', tabLegal:'⚖️ 法律',
+    fin1Name:'智能风控评估', fin1Sub:'企业信用风险全维度扫描',
+    fin2Name:'投研分析报告', fin2Sub:'上市公司深度调研自动化',
+    fin3Name:'合规审查', fin3Sub:'监管政策解读与业务合规检查',
+    fin4Name:'信贷评估报告', fin4Sub:'企业/个人信贷资质自动化评估',
+    ec1Name:'供应链优化分析', ec1Sub:'库存、物流与成本全链路诊断',
+    ec2Name:'竞品调研报告', ec2Sub:'市场格局、价格策略与用户评价分析',
+    med1Name:'病历结构化分析', med1Sub:'非结构化病历 → 标准化数据提取',
+    med2Name:'药物安全监测', med2Sub:'不良反应信号检测与文献回顾',
+    law1Name:'合同审查', law1Sub:'条款风险识别与合规性检查',
+    law2Name:'法规检索与解读', law2Sub:'多法域法规查询与关键条款解读',
+    stepCollect:'📥 数据采集', stepAnalyze:'📊 指标分析', stepDiagnose:'🩺 风险诊断', stepReport:'📋 风控报告',
+    fin1Out:'✓ 输出：信用评分卡 · 风险清单 · 行业对比 · 预警建议',
+    fin2Out:'✓ 输出：财务摘要 · DCF估值 · 行业对比 · 投资建议',
+    fin3Out:'✓ 输出：政策摘要 · 合规清单 · 整改建议 · 风险地图',
+    fin4Out:'✓ 输出：信用评分 · 违约概率 · 授信额度建议 · 风险缓释方案',
+    demoLabel:'交互演示', demoTitle:'跟 Captain 对话，见证全链路',
+    demoSub:'选择一个场景，观看 Captain 如何自动完成调研→分析→诊断→报告的全过程。',
+    demoReady:'就绪', demoClickToStart:'👆 点击上方场景标签，开始演示',
+    btnReplay:'▶ 重新播放', btnSpeed:'⏩ 加速',
+    sceneRisk:'🛡️ 风控评估', sceneResearch:'📈 投研分析', sceneCompliance:'📜 合规审查',
+    rptCol1:'评估维度', rptCol2:'得分', rptCol3:'评级', rptCol4:'关键发现',
+    rptDim1:'财务健康度', rptDim2:'经营稳定性', rptDim3:'法律合规', rptDim4:'舆情与声誉',
+    rptFind1:'流动比率 1.8，负债率 52%，处于行业健康区间',
+    rptFind2:'连续 3 年营收增长 >15%，客户集中度低于 30%',
+    rptFind3:'涉及 2 起知识产权纠纷，需持续跟踪',
+    rptFind4:'近期无重大负面舆情，社交媒体情感偏正面',
+    rptConclusion:'综合结论',
+    rptConclusionText:'XYZ科技综合信用评分 <strong style="color:#c9a24c">74 分（B+）</strong>，属于可接受风险区间。建议授信额度不超过 500 万元，并设置资产负债率 < 60%、涉诉金额 < 200 万元作为预警触发条件。需关注知识产权纠纷进展，建议每季度复审一次。',
+    footerNote:'基于真实工具链，所有能力均可实际运行，非 PPT 画饼。',
+    // 对话脚本
+    msgUserRisk:'请对 XYZ 科技有限公司进行全面的信用风险评估，重点关注财务健康、经营稳定性、法律合规和舆情风险。',
+    msgAgentRisk1:'收到，Captain。启动全链路风控评估流程：\n\n🔍 **阶段一：调研** — 开始多源数据采集\n• 工商信息查询 → 已获取 XYZ 科技注册信息\n• 财务数据抓取 → 获取近 3 年资产负债表\n• 司法信息检索 → 检索涉诉记录\n• 舆情扫描 → 采集近 6 个月新闻与社交媒体数据',
+    msgAgentRisk2:'📊 **阶段二：分析** — 多维度指标计算完成\n\n| 指标 | 数值 | 行业均值 |\n|------|------|----------|\n| 流动比率 | 1.8 | 1.5 |\n| 资产负债率 | 52% | 55% |\n| 营收增长率 | 18% | 10% |\n| 客户集中度 | 28% | 35% |\n\nPython 脚本已完成杜邦分析、Z-score 计算和趋势拟合。',
+    msgAgentRisk3:'🩺 **阶段三：诊断** — 风险识别与评估\n\n✓ 财务健康：良好（Z-score=2.8，高于预警线）\n⚠️  法律风险：涉及 2 起知识产权纠纷（涉诉金额约 180 万元）\n✓ 经营稳定：连续 3 年增长，客户较分散\n✓ 舆情健康：无重大负面\n\n**综合风险评级：B+（可接受风险区间）**',
+    msgAgentRisk4:'📋 **阶段四：报告** — 已生成完整评估报告\n\n文件已写入工作区：\n• `report/XYZ科技_信用评估报告.docx`（Word 格式，可直接发送）\n• `report/XYZ科技_风险评分卡.xlsx`（Excel 评分明细）\n\n报告包含：综合评分、风险清单、行业对比、授信建议和预警触发条件。',
+    msgUserResearch:'请帮我做一份贵州茅台的深度投研分析报告，覆盖财务表现、估值分析和行业对比。',
+    msgAgentResearch1:'收到，Captain。启动投研分析流程：\n\n🔍 **阶段一：调研**\n• 年报抓取 → 获取近 3 年财报（PDF解析）\n• 行业数据 → 白酒行业市场规模与竞争格局\n• 券商研报 → 汇总近 6 个月主流机构观点\n• 新闻舆情 → 采集高管动态与市场关注点',
+    msgAgentResearch2:'📊 **阶段二：分析**\n\n核心财务指标（Python 脚本计算）：\n• ROE：29.8%（行业均值 15%）\n• 毛利率：91.2%（行业最高）\n• 净利率：53.4%\n• 自由现金流：持续为正，分红率 51.9%\n\nDCF 估值模型：基于 WACC 9.5%、永续增长 2%，计算得合理估值区间。',
+    msgAgentResearch3:'🩺 **阶段三：诊断**\n\n✓ 护城河：品牌溢价 + 稀缺性，竞争壁垒极高\n✓ 财务质量：零负债，现金流充沛\n⚠️  风险点：消费降级压力、政策调控不确定性\n✓ 估值：当前 PE 处于 5 年低位，安全边际充足\n\n综合投资评级：**增持**',
+    msgAgentResearch4:'📋 **阶段四：报告**\n\n已生成：\n• `report/贵州茅台_投研分析报告.docx`（含DCF模型）\n• `report/贵州茅台_财务模型.xlsx`（可调参数）\n\n报告包含：公司概况、财务分析、估值模型、行业对比、风险提示和投资建议。',
+    msgUserCompliance:'请帮我检查我们公司的业务流程是否满足《个人信息保护法》的合规要求，重点关注用户数据采集、存储和跨境传输环节。',
+    msgAgentCompliance1:'收到，Captain。启动合规审查流程：\n\n🔍 **阶段一：调研**\n• 法规检索 → 获取《个人信息保护法》全文及最新修订\n• 监管文件 → 网信办配套规定与实施细则\n• 行业案例 → 近 2 年数据合规处罚案例\n• 最佳实践 → 头部企业隐私合规方案',
+    msgAgentCompliance2:'📊 **阶段二：分析**\n\n提取关键合规要求：\n| 环节 | 法规要求 | 行业标准 |\n|------|----------|----------|\n| 数据采集 | 明确告知+单独同意 | 弹窗+勾选框 |\n| 数据存储 | 境内存储+分类管理 | 加密+脱敏 |\n| 跨境传输 | 安全评估+认证 | SCC标准合同 |\n| 用户权利 | 查阅/更正/删除 | 自助门户 |',
+    msgAgentCompliance3:'🩺 **阶段三：诊断**\n\n⚠️  高风险：用户数据跨境传输未完成安全评估\n⚠️  中风险：数据采集环节未实现「单独同意」机制\n✓ 已达标：数据存储已实现加密与脱敏\n✓ 已达标：已建立用户数据查阅与删除通道\n\n**合规评分：68/100（需整改）**',
+    msgAgentCompliance4:'📋 **阶段四：报告**\n\n已生成：\n• `report/个保法合规审查报告.docx`（含差距分析）\n• `report/合规整改清单.xlsx`（按优先级排序）\n\n报告包含：法规对标、差距分析、整改建议和整改时间表。',
+  },
+  en: {
+    navCapability:'Capabilities', navSolutions:'Solutions', navDemo:'Demo', navCta:'Try Demo',
+    heroBadge:'Full-chain AI Automation · Finance-grade Reliability',
+    heroTitle:'Research → Analyze → Diagnose → Report<br><em>Full-chain AI Automation</em>',
+    heroSub:'Captain understands your goal and executes autonomously. From data collection, deep analysis, risk diagnosis to professional report generation — one chain, automated end-to-end. You only need to review the results.',
+    heroCta1:'Watch Demo', heroCta2:'View Solutions',
+    capLabel:'Core Capabilities', capTitle:'Four stages, one chain',
+    capSub:'Each stage works independently or chained into a complete automated workflow. Real tool invocations, not simulations.',
+    pipe1Title:'Research', pipe1Desc:'Web search, page scraping, PDF/document parsing, database queries, API calls — multi-source heterogeneous data auto-aggregation.',
+    pipe2Title:'Analyze', pipe2Desc:'Data cleaning, statistical modeling, trend identification, text mining — Python scripts executed directly, results returned in real-time.',
+    pipe3Title:'Diagnose', pipe3Desc:'Root cause analysis, anomaly detection, risk assessment, compliance review — combining business rules with AI judgment for actionable conclusions.',
+    pipe4Title:'Report', pipe4Desc:'Auto-generate Word/PDF/Excel/HTML multi-format reports with charts, tables, and conclusions — ready for delivery or archiving.',
+    statTools:'Built-in Tools/Skills', statStages:'Automation Stages', statReal:'Real Execution', statFormat:'Multi-format', statOutput:'Report formats',
+    solLabel:'Industry Solutions', solTitle:'Deep Finance Solutions', solSub:'All solutions below run on Captain with real toolchains — not slides, every pipeline is backed by actual tools and data sources.',
+    tabFinance:'🏦 Finance', tabEcommerce:'🛒 E-commerce', tabHealthcare:'🏥 Healthcare', tabLegal:'⚖️ Legal',
+    fin1Name:'Smart Risk Assessment', fin1Sub:'Full-dimension corporate credit risk scanning',
+    fin2Name:'Investment Research', fin2Sub:'Automated deep-dive on listed companies',
+    fin3Name:'Compliance Review', fin3Sub:'Regulatory policy interpretation & business compliance check',
+    fin4Name:'Credit Evaluation', fin4Sub:'Automated corporate/personal credit assessment',
+    ec1Name:'Supply Chain Optimization', ec1Sub:'Inventory, logistics & cost chain diagnosis',
+    ec2Name:'Competitive Research', ec2Sub:'Market landscape, pricing & sentiment analysis',
+    med1Name:'Medical Record Structuring', med1Sub:'Unstructured records → standardized data extraction',
+    med2Name:'Drug Safety Monitoring', med2Sub:'Adverse reaction signal detection & literature review',
+    law1Name:'Contract Review', law1Sub:'Clause risk identification & compliance check',
+    law2Name:'Legal Research', law2Sub:'Multi-jurisdiction regulation search & interpretation',
+    stepCollect:'📥 Collect', stepAnalyze:'📊 Analyze', stepDiagnose:'🩺 Diagnose', stepReport:'📋 Report',
+    fin1Out:'✓ Output: Credit scorecard · Risk checklist · Industry benchmark · Alert recommendations',
+    fin2Out:'✓ Output: Financial summary · DCF valuation · Peer comparison · Investment advice',
+    fin3Out:'✓ Output: Policy digest · Compliance checklist · Remediation plan · Risk map',
+    fin4Out:'✓ Output: Credit score · Default probability · Credit line advice · Risk mitigation',
+    demoLabel:'Interactive Demo', demoTitle:'Chat with Captain, witness the full chain',
+    demoSub:'Select a scenario and watch how Captain autonomously completes Research → Analyze → Diagnose → Report.',
+    demoReady:'Ready', demoClickToStart:'👆 Click a scenario tab above to start',
+    btnReplay:'▶ Replay', btnSpeed:'⏩ Speed Up',
+    sceneRisk:'🛡️ Risk Assessment', sceneResearch:'📈 Investment Research', sceneCompliance:'📜 Compliance Review',
+    rptCol1:'Dimension', rptCol2:'Score', rptCol3:'Rating', rptCol4:'Key Finding',
+    rptDim1:'Financial Health', rptDim2:'Business Stability', rptDim3:'Legal Compliance', rptDim4:'Reputation',
+    rptFind1:'Current ratio 1.8, debt ratio 52%, within healthy industry range',
+    rptFind2:'3-year consecutive revenue growth >15%, customer concentration <30%',
+    rptFind3:'2 ongoing IP disputes, requires continued monitoring',
+    rptFind4:'No major negative sentiment recently, social media sentiment positive',
+    rptConclusion:'Overall Conclusion',
+    rptConclusionText:'XYZ Technology composite credit score <strong style="color:#c9a24c">74 (B+)</strong>, within acceptable risk range. Recommended credit line ≤ 5 million CNY, with debt ratio < 60% and litigation amount < 2 million CNY as alert triggers. Monitor IP dispute progress; quarterly review recommended.',
+    footerNote:'Built on real toolchains. All capabilities are actually executable — not slideware.',
+    // Chat scripts
+    msgUserRisk:'Please perform a comprehensive credit risk assessment for XYZ Technology Co., Ltd., focusing on financial health, business stability, legal compliance, and reputational risk.',
+    msgAgentRisk1:'Acknowledged, Captain. Initiating full-chain risk assessment workflow:\n\n🔍 **Phase 1: Research** — Multi-source data collection begins\n• Business registry lookup → XYZ Technology registration retrieved\n• Financial data scraping → Last 3 years balance sheets acquired\n• Judicial records search → Litigation history retrieved\n• Sentiment scanning → 6-month news & social media data collected',
+    msgAgentRisk2:'📊 **Phase 2: Analysis** — Multi-dimension metrics computed\n\n| Metric | Value | Industry Avg |\n|--------|-------|-------------|\n| Current Ratio | 1.8 | 1.5 |\n| Debt-to-Asset | 52% | 55% |\n| Revenue Growth | 18% | 10% |\n| Customer Concentration | 28% | 35% |\n\nPython scripts completed DuPont analysis, Z-score calculation, and trend fitting.',
+    msgAgentRisk3:'🩺 **Phase 3: Diagnosis** — Risk identification & evaluation\n\n✓ Financial Health: Good (Z-score=2.8, above alert line)\n⚠️  Legal Risk: 2 IP disputes (claimed amount ~1.8M CNY)\n✓ Business Stability: 3-year consecutive growth, diversified customers\n✓ Reputation: No major negative sentiment\n\n**Composite Risk Rating: B+ (Acceptable Risk)**',
+    msgAgentRisk4:'📋 **Phase 4: Report** — Full assessment report generated\n\nFiles written to workspace:\n• `report/XYZTech_Credit_Assessment.docx` (Word format, ready to send)\n• `report/XYZTech_Risk_Scorecard.xlsx` (Excel scoring details)\n\nReport includes: composite score, risk checklist, industry comparison, credit recommendations, and alert triggers.',
+    msgUserResearch:'Please prepare a deep investment research report on Kweichow Moutai, covering financial performance, valuation analysis, and industry comparison.',
+    msgAgentResearch1:'Acknowledged, Captain. Initiating investment research workflow:\n\n🔍 **Phase 1: Research**\n• Annual reports → Last 3 years financials (PDF parsing)\n• Industry data → Baijiu market size & competitive landscape\n• Broker reports → Last 6 months institutional views\n• News sentiment → Management updates & market focus',
+    msgAgentResearch2:'📊 **Phase 2: Analysis**\n\nKey financial metrics (Python computed):\n• ROE: 29.8% (industry avg 15%)\n• Gross Margin: 91.2% (industry highest)\n• Net Margin: 53.4%\n• Free Cash Flow: consistently positive, payout ratio 51.9%\n\nDCF valuation model: WACC 9.5%, terminal growth 2%, fair value range computed.',
+    msgAgentResearch3:'🩺 **Phase 3: Diagnosis**\n\n✓ Moat: Brand premium + scarcity, extremely high barriers\n✓ Financial Quality: Zero debt, strong cash flow\n⚠️  Risk Factors: Consumption downgrade pressure, policy uncertainty\n✓ Valuation: Current PE at 5-year low, adequate margin of safety\n\nComposite Investment Rating: **Overweight**',
+    msgAgentResearch4:'📋 **Phase 4: Report**\n\nGenerated:\n• `report/Moutai_Investment_Report.docx` (incl. DCF model)\n• `report/Moutai_Financial_Model.xlsx` (adjustable params)\n\nReport includes: company overview, financial analysis, valuation model, peer comparison, risk warnings, and investment recommendation.',
+    msgUserCompliance:'Please check whether our business processes meet the compliance requirements of the Personal Information Protection Law (PIPL), focusing on user data collection, storage, and cross-border transfer.',
+    msgAgentCompliance1:'Acknowledged, Captain. Initiating compliance review workflow:\n\n🔍 **Phase 1: Research**\n• Regulation retrieval → PIPL full text & latest amendments\n• Regulatory documents → CAC supplementary rules & implementation guidelines\n• Industry cases → Last 2 years data compliance penalties\n• Best practices → Leading company privacy frameworks',
+    msgAgentCompliance2:'📊 **Phase 2: Analysis**\n\nKey compliance requirements extracted:\n| Area | Legal Requirement | Industry Standard |\n|------|-------------------|-------------------|\n| Collection | Explicit notice + separate consent | Popup + checkbox |\n| Storage | Domestic storage + classification | Encryption + masking |\n| Cross-border | Security assessment + certification | SCC standard contracts |\n| User Rights | Access/correction/deletion | Self-service portal |',
+    msgAgentCompliance3:'🩺 **Phase 3: Diagnosis**\n\n⚠️  High Risk: Cross-border data transfer lacking security assessment\n⚠️  Medium Risk: Data collection lacks "separate consent" mechanism\n✓ Compliant: Data storage encrypted and masked\n✓ Compliant: User data access/deletion channels established\n\n**Compliance Score: 68/100 (Remediation Required)**',
+    msgAgentCompliance4:'📋 **Phase 4: Report**\n\nGenerated:\n• `report/PIPL_Compliance_Review.docx` (with gap analysis)\n• `report/Compliance_Remediation_Checklist.xlsx` (prioritized)\n\nReport includes: regulation mapping, gap analysis, remediation recommendations, and timeline.',
+  }
+};
+
+let lang = 'zh';
+let currentScene = 'risk';
+let isPlaying = false;
+let speedMultiplier = 1;
+let sceneTimeout = null;
+
+function t(key) {
+  return (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
+}
+
+function setLang(l) {
+  lang = l;
+  document.getElementById('lang-zh').classList.toggle('active', l === 'zh');
+  document.getElementById('lang-en').classList.toggle('active', l === 'en');
+  document.documentElement.lang = l === 'en' ? 'en' : 'zh-CN';
+  // 刷新所有 i18n 文本
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (key) el.innerHTML = t(key);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  // 如果正在播放中，不重置
+  if (!isPlaying) {
+    document.getElementById('demo-msgs').innerHTML =
+      `<div style="text-align:center;color:var(--muted);padding:40px;font-size:14px;">${t('demoClickToStart')}</div>`;
+  }
+}
+
+/* ═══════════════ 行业 Tab 切换 ═══════════════ */
+document.getElementById('industry-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.industry-tab');
+  if (!tab) return;
+  document.querySelectorAll('.industry-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const panelId = 'panel-' + tab.dataset.panel;
+  document.querySelectorAll('.industry-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(panelId);
+  if (panel) panel.classList.add('active');
+});
+
+/* ═══════════════ 对话演示 ═══════════════ */
+const SCENE_MSG_KEYS = {
+  risk: ['msgUserRisk', 'msgAgentRisk1', 'msgAgentRisk2', 'msgAgentRisk3', 'msgAgentRisk4'],
+  research: ['msgUserResearch', 'msgAgentResearch1', 'msgAgentResearch2', 'msgAgentResearch3', 'msgAgentResearch4'],
+  compliance: ['msgUserCompliance', 'msgAgentCompliance1', 'msgAgentCompliance2', 'msgAgentCompliance3', 'msgAgentCompliance4'],
+};
+
+function selectScene(scene) {
+  if (isPlaying) return;
+  currentScene = scene;
+  document.querySelectorAll('.demo-scenario-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-scene="${scene}"]`)?.classList.add('active');
+  startScene(scene);
+}
+
+document.getElementById('scenario-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.demo-scenario-tab');
+  if (!tab) return;
+  selectScene(tab.dataset.scene);
+});
+
+function startScene(scene) {
+  if (isPlaying) return;
+  isPlaying = true;
+  const msgsEl = document.getElementById('demo-msgs');
+  msgsEl.innerHTML = '';
+  document.getElementById('report-demo').style.display = 'none';
+  document.getElementById('demo-status').textContent = '🔄 ' + (lang === 'zh' ? '执行中…' : 'Running…');
+  document.getElementById('demo-status').style.color = 'var(--accent)';
+
+  const keys = SCENE_MSG_KEYS[scene];
+  if (!keys) { isPlaying = false; return; }
+
+  let delay = 0;
+  const baseDelay = 1200;
+
+  keys.forEach((key, idx) => {
+    const isUser = key.includes('User');
+    delay += baseDelay / speedMultiplier;
+
+    sceneTimeout = setTimeout(() => {
+      const msg = t(key);
+      addDemoMsg(isUser ? 'user' : 'agent', msg, isUser ? 'You' : 'Captain');
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+
+      if (idx === keys.length - 1) {
+        // 最后一条消息
+        sceneTimeout = setTimeout(() => {
+          isPlaying = false;
+          document.getElementById('demo-status').textContent = '✓ ' + (lang === 'zh' ? '完成' : 'Done');
+          document.getElementById('demo-status').style.color = 'var(--green)';
+          document.getElementById('report-demo').style.display = 'block';
+          document.getElementById('report-demo').scrollIntoView({ behavior: 'smooth' });
+        }, 800 / speedMultiplier);
+      }
+    }, delay);
+  });
+}
+
+function addDemoMsg(type, text, name) {
+  const msgsEl = document.getElementById('demo-msgs');
+  // 移除 typing 指示器
+  const typing = msgsEl.querySelector('.demo-msg.typing-indicator');
+  if (typing) typing.remove();
+
+  // 对 agent 消息先显示 typing
+  if (type === 'agent') {
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'demo-msg agent typing-indicator';
+    typingDiv.innerHTML = `
+      <div class="demo-msg-avatar">⚓</div>
+      <div class="demo-msg-bubble">
+        <div class="demo-msg-meta">${name}</div>
+        <div class="demo-typing"><span></span><span></span><span></span></div>
+      </div>`;
+    msgsEl.appendChild(typingDiv);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    // 短暂延迟后替换为真实内容
+    setTimeout(() => {
+      typingDiv.remove();
+      renderMsg(type, text, name);
+    }, 400 / speedMultiplier);
+  } else {
+    renderMsg(type, text, name);
+  }
+}
+
+function renderMsg(type, text, name) {
+  const msgsEl = document.getElementById('demo-msgs');
+  const div = document.createElement('div');
+  div.className = `demo-msg ${type}`;
+  const avatarChar = type === 'user' ? '👤' : '⚓';
+  // 简单 Markdown 渲染
+  const html = simpleMD(text);
+  div.innerHTML = `
+    <div class="demo-msg-avatar">${avatarChar}</div>
+    <div class="demo-msg-bubble">
+      <div class="demo-msg-meta">${name}</div>
+      <div>${html}</div>
+    </div>`;
+  msgsEl.appendChild(div);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+function simpleMD(text) {
+  if (!text) return '';
+  // 粗体
+  let t = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 表格
+  t = t.replace(/\|(.+)\|/g, (match) => {
+    // 简单地处理表格行
+    return match;
+  });
+  // 换行
+  t = t.replace(/\n/g, '<br>');
+  return t;
+}
+
+function replayScene() {
+  // 清除所有定时器
+  if (sceneTimeout) clearTimeout(sceneTimeout);
+  isPlaying = false;
+  startScene(currentScene);
+}
+
+function toggleSpeed() {
+  speedMultiplier = speedMultiplier === 1 ? 3 : 1;
+  const btn = document.getElementById('btn-speed');
+  btn.textContent = speedMultiplier === 3 ? '⏩ 3x' : '⏩ 加速';
+  if (isPlaying) {
+    if (sceneTimeout) clearTimeout(sceneTimeout);
+    isPlaying = false;
+    startScene(currentScene);
+  }
+}
+
+// 初始化：默认加载风控场景的对话预览
+setTimeout(() => {
+  if (!isPlaying) {
+    selectScene('risk');
+  }
+}, 600);
+
+/* ═══════════════ 平滑滚动 ═══════════════ */
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', (e) => {
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) {
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+});
+</script>
+</body>
+</html>

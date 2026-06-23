@@ -50,7 +50,9 @@ _DEFAULT_POLICY = {
     },
     "confirm": {
         "capabilities": ["fs.write", "gui.control", "payment.",
-                         "skill.file_edit", "skill.file_append"],
+                         "skill.file_edit", "skill.file_append",
+                         "skill.docx_writer", "skill.xlsx_writer", "skill.pptx_writer",
+                         "skill.http_request", "schedule.create", "schedule.delete"],
         "shell_patterns": [
             {"pattern": r"\brm\b", "reason": "删除文件或目录,需确认。"},
             {"pattern": r"\bmv\b", "reason": "移动/重命名会改动现有文件,需确认。"},
@@ -70,10 +72,31 @@ _DEFAULT_POLICY = {
     },
     "capability_whitelist": {
         "readonly": ["fs.read", "fs.list", "web.search", "web.fetch"],
-        "executor": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."],
+        "researcher": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."],
+        "executor": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule."],
         "delegate":  ["fs.read", "fs.list", "web.search", "web.fetch"],
         "scheduler": ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."],
     },
+    "shell_whitelist": [
+        {"pattern": r"^python3\s", "reason": "运行Python脚本"},
+        {"pattern": r"\bmkdir\s+-p\b", "reason": "创建工作区子目录"},
+        {"pattern": r"\bwc\b", "reason": "文件统计"},
+        {"pattern": r"\bfind\b", "reason": "查找文件"},
+        {"pattern": r"\bls\b", "reason": "列出目录"},
+        {"pattern": r"\bhead\b", "reason": "预览文件头部"},
+        {"pattern": r"\btail\b", "reason": "预览文件尾部"},
+        {"pattern": r"\bcat\b\s+", "reason": "读取文件"},
+        {"pattern": r"\bgrep\b", "reason": "文本搜索"},
+        {"pattern": r"\bsort\b", "reason": "文本排序"},
+        {"pattern": r"\buniq\b", "reason": "文本去重"},
+        {"pattern": r"\bcut\b", "reason": "文本列提取"},
+        {"pattern": r"\bawk\b.*print", "reason": "纯打印awk"},
+        {"pattern": r"\b(date|pwd|which)\b", "reason": "系统查询"},
+        {"pattern": r"\bfile\b\s+", "reason": "文件类型"},
+        {"pattern": r"\bdu\s+", "reason": "磁盘用量"},
+        {"pattern": r"^echo\s+", "reason": "调试输出"},
+        {"pattern": r"^python3\s.*>\s", "reason": "Python脚本输出到文件"},
+    ],
     "modes": {
         "conservative": {},
         "balanced": {},
@@ -106,21 +129,48 @@ class DeclarativePolicy:
         config_path: str | None = None,
         mode: str | None = None,
     ) -> None:
+        import os as _os
+
         self.registry = registry
-        self.config = self._load(config_path)
+        self._config_path = config_path
+        self._config_mtime: float = 0.0
         self._mode_override = mode
+        self.config = self._load(config_path)
+        self._apply_config(self.config)
+        if self._config_path:
+            try:
+                self._config_mtime = _os.path.getmtime(self._config_path)
+            except OSError:
+                self._config_mtime = 0.0
+        # 工作区根:设了 AGENT_WORKSPACE_ROOT 就把 fs.* 限制在根内,区外访问升级为确认
+        # (AGENT_WORKSPACE_STRICT=1 则直接拒绝)。未设=不限制(个人机零配置,向后兼容)。
+        root = _os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
+        self._ws_root = _os.path.realpath(_os.path.expanduser(root)) if root else ""
+        self._ws_strict = _os.environ.get("AGENT_WORKSPACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _apply_config(self, config: dict) -> None:
+        self.config = config
         self._forbidden_cmd = _compile_rules(self.config.get("forbidden_patterns", []))
         self._forbidden_path = _compile_rules(self.config.get("forbidden_paths", []))
         self._confirm_shell = _compile_rules(
             (self.config.get("confirm") or {}).get("shell_patterns", [])
             or _DEFAULT_POLICY["confirm"]["shell_patterns"]
         )
-        # 工作区根:设了 AGENT_WORKSPACE_ROOT 就把 fs.* 限制在根内,区外访问升级为确认
-        # (AGENT_WORKSPACE_STRICT=1 则直接拒绝)。未设=不限制(个人机零配置,向后兼容)。
+        self._shell_whitelist = _compile_rules(self.config.get("shell_whitelist", []))
+
+    def _maybe_reload(self) -> None:
+        """policy.yaml 变更后热重载,避免改规则必须重启 server。"""
+        if not self._config_path:
+            return
         import os as _os
-        root = _os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
-        self._ws_root = _os.path.realpath(_os.path.expanduser(root)) if root else ""
-        self._ws_strict = _os.environ.get("AGENT_WORKSPACE_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            mtime = _os.path.getmtime(self._config_path)
+        except OSError:
+            return
+        if mtime <= self._config_mtime:
+            return
+        self._config_mtime = mtime
+        self._apply_config(self._load(self._config_path))
 
     def _workspace_review(self, call: CapabilityCall):
         """fs.* 的 path 若落在工作区根之外:strict→BLOCK,否则→ASK。未配置则不干预。"""
@@ -187,6 +237,7 @@ class DeclarativePolicy:
 
     def review_detailed(self, call: CapabilityCall, actor: Identity, ctx: Any) -> GovReview:
         """完整裁决:返回 决定 + 原因 + 命中规则,供回传用户与落 trace 统计。"""
+        self._maybe_reload()
         # 0) 按主体鉴权:actor.roles 白名单(多 agent / 多用户安全基础)
         wl = self._whitelist_allows(call, actor)
         if wl is False:
@@ -227,6 +278,14 @@ class DeclarativePolicy:
         if ws is not None:
             return ws
 
+        # 2.45) shell 白名单:shell.run 命令不在白名单内 → BLOCK(默认拒绝 + 仅放行安全命令)
+        if call.name == "shell.run" and self._shell_whitelist:
+            cmd = str(call.args.get("command", "")).strip()
+            if cmd and not self._whitelist_cmd_allowed(cmd):
+                return GovReview(Decision.BLOCK,
+                                 reason=f"shell命令不在安全白名单内,已拒绝。",
+                                 rule="shell_whitelist")
+
         # 2.5) 本任务已点过「允许」→ 不再重复询问(一次弹窗管一整轮)
         if getattr(ctx, "task_auto_approve", False):
             return GovReview(
@@ -264,6 +323,16 @@ class DeclarativePolicy:
                     reason="写操作,但该路径本会话已授权放手。",
                     rule="grant",
                 )
+            # Cowork(coworker)模式:全自动——确认门一律自动放行。
+            # 注意:此处只翻转"需确认(ASK)"的判定;前面的硬边界(forbidden_cmd/
+            # forbidden_path)、工作区越界保护、白名单 BLOCK 都在本判定之前返回,
+            # 不受影响,仍会拦。Chat 模式(coworker=False)维持原有确认行为。
+            if getattr(ctx, "coworker", False):
+                return GovReview(
+                    Decision.ALLOW,
+                    reason="Cowork 全自动模式:风险操作自动放行(硬边界仍拦截)。",
+                    rule="coworker:auto",
+                )
             return GovReview(Decision.ASK, reason=reason, rule=rule)
 
         return GovReview(Decision.ALLOW, reason="无需确认,自动放行。", rule="auto")
@@ -294,6 +363,18 @@ class DeclarativePolicy:
                         f"confirm:shell:{regex.pattern}",
                     )
         return False, "", ""
+
+    def _whitelist_cmd_allowed(self, cmd: str) -> bool:
+        """检查 shell 命令是否在安全白名单内。白名单空 = 未启用 = 所有命令都放行(回退旧行为)。"""
+        if not self._shell_whitelist:
+            return True  # 未配置白名单 → 兼容模式
+        cmd_stripped = cmd.strip()
+        if not cmd_stripped:
+            return True
+        for regex, _ in self._shell_whitelist:
+            if regex.search(cmd_stripped):
+                return True
+        return False
 
     def _review_memory(self, call: CapabilityCall, actor: Identity) -> GovReview | None:
         """memory.remember:scheduler 禁止;其余自动放行。"""

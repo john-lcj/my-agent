@@ -25,9 +25,10 @@ class HybridMemory:
         self._kw.store(item)
         self._sem.store(item)
 
-    def retrieve(self, query: str, k: int = 5) -> list[MemoryItem]:
-        kw_hits = self._kw.retrieve(query, k=k)
-        sem_hits = self._sem.retrieve(query, k=k)
+    def retrieve(self, query: str, k: int = 5, scope: str | None = None) -> list[MemoryItem]:
+        # scope 非 None → 两路后端都只取 当前 scope 或 全局('');None=不隔离(取全部)。
+        kw_hits = self._kw.retrieve(query, k=k, scope=scope)
+        sem_hits = self._sem.retrieve(query, k=k, scope=scope)
         kept_norm: list[str] = []
         merged: list[MemoryItem] = []
         # 向量结果优先(语义相近),再补关键词命中。

@@ -1,0 +1,43 @@
+[
+  {
+    "name": "多步-检索后成文落盘",
+    "category": "planning",
+    "prompt": "查一下『番茄工作法』每个工作时段通常是多少分钟,然后写一段 100 字左右的介绍,把这个分钟数写进去,保存到 产物/番茄简介.md。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["exa.search", "web.search", "fs.read"],
+               "files_exist": ["番茄简介.md"],
+               "file_contains": ["25"],
+               "judge": "这段介绍是否通顺切题、且确实把番茄钟时长写了进去",
+               "judge_threshold": 6}
+  },
+  {
+    "name": "数据-生成CSV",
+    "category": "planning",
+    "prompt": "生成一个 CSV 文件 产物/水果.csv,三列:名称,颜色,单价。写入三种水果各一行数据(含表头)。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["fs.write"], "files_exist": ["水果.csv"],
+               "file_contains": ["名称", "颜色", "单价", ","]}
+  },
+  {
+    "name": "数据-统计并回答",
+    "category": "planning",
+    "prompt": "产物/水果.csv 里有几行数据(不含表头)?用命令数出来,把数字告诉我。如果文件不存在就先创建一个含三行数据的。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["shell.run", "fs.read"], "regex": ["\\d"]}
+  },
+  {
+    "name": "多步-两文件交付",
+    "category": "planning",
+    "prompt": "为一场『时间管理』线上分享,生成两个文件:产物/分享大纲.md(三个要点)和 产物/开场白.md(一段开场白)。两个都要真落盘。",
+    "mode": "coworker",
+    "expect": {"capabilities": ["fs.write"],
+               "files_exist": ["分享大纲.md", "开场白.md"], "min_length": 5}
+  },
+  {
+    "name": "多步-改写已有文件",
+    "category": "planning",
+    "prompt": "把 产物/开场白.md 的内容读出来,改写得更口语化一些,覆盖保存回同一个文件。如果文件不存在就先写一段再改。",
+    "mode": "coworker",
+    "expect": {"capabilities_any": ["fs.read", "fs.write"], "files_exist": ["开场白.md"]}
+  }
+]
