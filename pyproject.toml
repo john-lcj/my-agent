@@ -29,6 +29,7 @@ memory = ["sqlite-vec>=0.1.9", "numpy>=1.24.0"]
 channels = ["aiohttp>=3.9.0", "aiosmtplib>=3.0.0", "aioimaplib>=1.1.0", "cryptography>=42.0.0"]
 cli = ["prompt_toolkit>=3.0.0", "PyYAML>=6.0"]
 mcp = ["mcp>=1.0.0"]
+dev = ["pytest>=8.0.0", "pytest-cov>=5.0.0"]
 # Office 文档生成/解析(docx/pptx/xlsx_writer、pdf_extract 等 skill 依赖)
 office = ["python-docx>=1.1.0", "python-pptx>=0.6.23", "openpyxl>=3.1.0",
           "pypdf>=4.0.0", "pdfplumber>=0.11.0"]
@@ -61,6 +62,7 @@ packages = [
     "observability",
     "scheduler",
     "server",
+    "server.routers",
     "skills",
 ]
 
@@ -69,3 +71,13 @@ packages = [
 governance = ["*.yaml"]
 skills = ["**/*.py", "**/*.md"]
 "*" = ["*.yaml", "*.yml", "*.md"]
+
+[tool.coverage.run]
+branch = false
+omit = ["tests/*", ".venv/*", "*/__pycache__/*", "scripts/*", "main.py"]
+
+[tool.coverage.report]
+# 只读后端代码;UI/前端不计。显示未覆盖行号便于补测。
+show_missing = true
+skip_covered = false
+exclude_lines = ["pragma: no cover", "raise NotImplementedError", "if __name__"]

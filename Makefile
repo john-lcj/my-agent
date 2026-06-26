@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 PY := .venv/bin/python
 
-.PHONY: help setup config web cli test eval compare docker-build docker-up docker-down docker-logs clean
+.PHONY: help setup config web cli test cov eval compare docker-build docker-up docker-down docker-logs clean
 
 help:  ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -25,6 +25,11 @@ cli:  ## 终端对话(MockLLM 零配置可跑)
 
 test:  ## 跑回归测试
 	$(PY) -m pytest -q tests/test_regression.py
+
+cov:  ## 跑全套测试 + 覆盖率报告(需 pip install -e ".[dev]")
+	$(PY) -m pytest tests/ -q \
+		--cov=core --cov=capabilities --cov=memory --cov=governance --cov=llm --cov=server --cov=skills \
+		--cov-report=term-missing:skip-covered
 
 eval:  ## 真实模型质量评测(40 用例,需 DEEPSEEK_API_KEY)
 	$(PY) scripts/run_evals.py

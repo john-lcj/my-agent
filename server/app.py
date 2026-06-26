@@ -822,24 +822,8 @@ def create_app():
         return JSONResponse({"ok": True, "task": rec})
 
     # ── 自定义:提示词/指令模板 ────────────────────────────────────────────────
-    @app.get("/api/templates")
-    async def list_templates() -> JSONResponse:
-        return JSONResponse({"templates": _template_store.list()})
-
-    @app.post("/api/templates")
-    async def save_template(request: Request) -> JSONResponse:
-        b = await request.json()
-        title = str(b.get("title", "")).strip()
-        content = str(b.get("content", "")).strip()
-        if not (title or content):
-            return JSONResponse({"ok": False, "error": "标题和内容不能都为空"}, status_code=400)
-        row = _template_store.save(title=title, content=content,
-                                   category=str(b.get("category", "")), tid=b.get("id"))
-        return JSONResponse({"ok": True, "template": row})
-
-    @app.delete("/api/templates/{tid}")
-    async def delete_template(tid: str) -> JSONResponse:
-        return JSONResponse({"ok": _template_store.delete(tid)})
+    from server.routers.templates import register_templates
+    register_templates(app, _template_store)
 
     # ── 自定义:连接器/外部服务凭据(只读元信息,绝不返回密码)──────────────────
     @app.get("/api/secrets")
@@ -868,28 +852,8 @@ def create_app():
         return JSONResponse({"ok": _vault.delete(name)})
 
     # ── 主动监控:列出/新建/删除监控器 ────────────────────────────────────────
-    @app.get("/api/monitors")
-    async def list_monitors() -> JSONResponse:
-        from memory.monitor_store import MonitorStore
-        return JSONResponse({"monitors": MonitorStore(path=f"{Config.LOG_DIR}/monitors.json").list()})
-
-    @app.post("/api/monitors")
-    async def create_monitor(request: Request) -> JSONResponse:
-        from memory.monitor_store import MonitorStore
-        b = await request.json()
-        source = str(b.get("source", "")).strip()
-        action = str(b.get("action", "")).strip()
-        if not source or not action:
-            return JSONResponse({"ok": False, "error": "需要 source 和 action"}, status_code=400)
-        rec = MonitorStore(path=f"{Config.LOG_DIR}/monitors.json").create(
-            name=str(b.get("name", "")), source_type=str(b.get("source_type", "url")),
-            source=source, action=action, interval_sec=int(b.get("interval_sec", 1800) or 1800))
-        return JSONResponse({"ok": True, "monitor": rec})
-
-    @app.delete("/api/monitors/{mid}")
-    async def delete_monitor(mid: str) -> JSONResponse:
-        from memory.monitor_store import MonitorStore
-        return JSONResponse({"ok": MonitorStore(path=f"{Config.LOG_DIR}/monitors.json").delete(mid)})
+    from server.routers.monitors import register_monitors
+    register_monitors(app)
 
     # ── 高音质语音(小米 MiMo ASR/TTS,服务端代理,key 不出浏览器)────────────────
     @app.post("/api/voice/tts")
@@ -928,25 +892,8 @@ def create_app():
             return JSONResponse({"ok": False, "error": str(e)[:300]}, status_code=502)
 
     # ── 主动性:长期目标/关注点(主动反思引擎据此判断该做什么)──────────────────
-    @app.get("/api/goals")
-    async def list_goals() -> JSONResponse:
-        from memory.goals_store import GoalsStore
-        return JSONResponse({"goals": GoalsStore(path=f"{Config.LOG_DIR}/goals.json").list()})
-
-    @app.post("/api/goals")
-    async def add_goal(request: Request) -> JSONResponse:
-        from memory.goals_store import GoalsStore
-        b = await request.json()
-        text = str(b.get("text", "")).strip()
-        if not text:
-            return JSONResponse({"ok": False, "error": "缺少 text"}, status_code=400)
-        rec = GoalsStore(path=f"{Config.LOG_DIR}/goals.json").add(text, str(b.get("kind", "goal")))
-        return JSONResponse({"ok": True, "goal": rec})
-
-    @app.delete("/api/goals/{gid}")
-    async def delete_goal(gid: str) -> JSONResponse:
-        from memory.goals_store import GoalsStore
-        return JSONResponse({"ok": GoalsStore(path=f"{Config.LOG_DIR}/goals.json").remove(gid)})
+    from server.routers.goals import register_goals
+    register_goals(app)
 
     # ── 专注写作:对选中/全文做润色/续写/改写;保存到产物 ─────────────────────────
     @app.post("/api/writing/assist")

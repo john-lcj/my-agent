@@ -41,3 +41,9 @@ ai-assistant-landing/
 data/
 report/
 /票据市场行情报告_*.md
+
+# 覆盖率数据
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
