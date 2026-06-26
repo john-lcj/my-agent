@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "my-agent"
 version = "0.1.0"
-description = "一个有分寸感的多 agent 平台:统一能力收口 + 硬/软边界治理 + 记忆 + 多渠道 + 圆桌协作 + Web"
+description = "一个有分寸感的 AI Agent 平台骨架：Cowork DAG 编排 + 硬/软边界治理 + 混合记忆 + MCP + 28 skill + Web 界面（~29,000 行，MIT）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
