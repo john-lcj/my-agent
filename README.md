@@ -1,206 +1,157 @@
-# my-agent
+# my-agent · Captain
 
-一个有"分寸感"的 agent 平台骨架。
+**中文** · [English](README.en.md)
 
-设计哲学一句话:**循环很笨,治理很严,观测很全,放手很安心。**
-对过程激进(读/想/试全自主),对决策保守(删/改/花钱/不可逆才回来问。
+一个有"分寸感"的**个人 AI Agent 平台** —— 本地优先、自托管、模型无关(DeepSeek / 智谱 / OpenAI / Claude / Ollama)。
 
-> ⚠️ **定位**:本项目面向**个人 / 可信网络环境**,默认绑定 `127.0.0.1`。它会在宿主机上
-> 执行 shell、读写文件——治理层提供"分寸"约束,但不是沙箱。**未经额外加固(`/ws` 鉴权、
-> shell 沙箱化、多用户隔离),请勿对公网开放或作为多用户在线服务。** 详见 [SECURITY.md](SECURITY.md)。
+设计哲学一句话:**循环很专注,治理很严,观测很全,放手很安心。**
+对过程激进(读 / 想 / 试全自主),对决策保守(删 / 改 / 花钱 / 不可逆才回来问你)。
+
+> ⚠️ **定位**:面向**个人 / 可信网络环境**,默认绑定 `127.0.0.1`。它会在你的机器上执行
+> shell、读写文件——治理层提供"分寸"约束,但**不是沙箱**。未经额外加固(shell 沙箱化、
+> 多用户隔离),请勿对公网开放或作为多用户在线服务。对外暴露(`AGENT_WEB_HOST=0.0.0.0`)
+> 时务必设 `AGENT_API_TOKEN`。详见 [SECURITY.md](SECURITY.md)。
+
+---
 
 ## 60 秒快速开始
 
-**方式一 · 本机(有 Python)**
-
 ```bash
 make setup     # 创建 .venv 并装好依赖(首次)
+make config    # 配置向导:交互式填模型 key / 文生图 / 令牌(可跳过)
 make web       # 启动网页 → http://127.0.0.1:8000
 make cli       # 或:终端对话(MockLLM 零配置即可跑)
 ```
 
-**方式二 · Docker(零环境依赖)**
+**Docker(零环境依赖):**
 
 ```bash
-echo "AGENT_API_TOKEN=$(openssl rand -hex 16)" >> .env   # 容器访问需令牌
-make docker-up                                            # = docker compose up -d --build
-# 打开 http://127.0.0.1:8000 → 设置→「访问令牌」填入上面的 token 即可使用
+echo "AGENT_API_TOKEN=$(openssl rand -hex 16)" >> .env
+make docker-up        # = docker compose up -d --build
+# 打开 http://127.0.0.1:8000 → 设置 →「访问令牌」填入上面的 token
 ```
 
-> 没有 `make`?对应命令见下文与 `Makefile`。要用真实模型,在 `.env` 配 `DEEPSEEK_API_KEY`
-> 等并参考[质量评测](#质量评测用真实模型跑)一节。
+> 没装 `make`?对应命令都在 `Makefile` 里。基座零依赖即可用 MockLLM 跑通;要用真实模型,
+> 跑 `make config` 或在 `.env` 配 `DEEPSEEK_API_KEY`。
 
-## 当前状态
+---
 
-- ✅ **单 agent 闭环**:感知 → 规划 → 治理 → 行动 → 反思(mock 与真实 DeepSeek 均验证)。
-- ✅ **系统提示词**(分寸原则 + 动态能力清单);**严格工具配对协议**(多步链路稳定)。
-- ✅ **治理**:声明式策略、硬/软边界、可解释裁决(`GOVERNANCE_DECISION`)、本会话授权放手。
-- ✅ **可回滚**:写/删前自动快照;CLI `/rollback` 与 Web `/rollback` / WS 回滚。
-- ✅ **记忆**:工作记忆摘要 + **混合长期记忆**(SQLite 关键词 + 向量语义,RAG);定时记忆清理任务。
-- ✅ **Web 聊天界面**:FastAPI + WebSocket + **真 token 流式** + 确认卡片 + 治理事件展示 + 服务端 provider 配置。
-- ✅ **skill 插件系统**:目录化自动发现 + 懒加载 + READ skill 按任务自动路由预取(`skills/router.py`);
-  内置 `text_stats` / `readability_score` / `keyword_extract` / `notify_dispatch` / `personal_search` 及指导型 `claude_design` / `design_taste_frontend`。
-- ✅ **多 agent(模式 A+)**:Captain 先自治(默认 `AGENT_CAPTAIN_MAX_STEPS=8` 步),解决不了**自动升级专家**(AutoDispatcher 选人 + 移交尝试摘要);`/专家名` 可显式直达;圆桌/Hierarchical/辩论编排保留。
-- ✅ **专家收编(5 人,权限差异化)**:code(代码+shell)/ data_analyst(数据+shell,产物 `logs/reports/`)/ web(网页+联网)/ ops_notify(唯一真实推送)/ adler_counselor(纯对话+记忆);权限写在 `governance/policy.yaml` 白名单(roles=专家名,**默认拒绝**),不靠 prompt。
-- ✅ **偏好自动沉淀**:会话结束后自动抽取耐用偏好写入长期记忆,下次开场注入(persona 管恒定人格,偏好记忆管动态认知);`GET/DELETE /api/memory/preferences` 可查看/删除。
-- ✅ **每日简报**:启动时幂等注册 daily 定时任务(默认 08:00 → QQ,`AGENT_BRIEFING_*` 配置),agent 汇总待办/要点/建议后主动推送。
-- ✅ **个人数据接入(只读)**:`AGENT_PERSONAL_DIRS` 目录增量索引进向量记忆(每天 03:30 自动,Web 任务页可手动跑);`personal_search` skill 语义检索,"我笔记里"等说法自动路由。
-- ✅ **真实任务评测**:`python -m eval.run_real` 用真模型跑 `eval/personal/tasks.yaml`(10 个预置任务,LLM 评委打分),报告落 `logs/eval_reports/` 并与上次对比。
-- ✅ **GUI 控制**:macOS 截图/点击/键入(需辅助功能权限,默认 ASK)。
-- ✅ **外部渠道**:邮件 / 企业微信 / QQ / **Slack / Telegram** webhook;与 Web 一样走 **Coordinator** 派活。
-- ✅ **程序记忆**:结构化 KV(`program.remember` / `program.recall` / `program.list`)。
-- ✅ **联网搜索**:`web.search` + `web.fetch`(默认 DuckDuckGo;可选 Tavily / Brave / Serper)。
-- ✅ **Context 门面**:`ConversationLog` + `SessionAttachment` 拆分(对外仍用 `Context`)。
-- ✅ **多模型**:Claude / OpenAI / DeepSeek / **Ollama(本地)** + Router;`AGENT_EMBED_PROVIDER` 配置向量嵌入。
-- ✅ **辩论编排**:正反方交替 + 主持人总结(WebSocket `debate_start`)。
-- ✅ **分级治理**:conservative / balanced / aggressive 档位(Web 设置可写 runtime)。
-- ✅ **资源互斥锁**:写同一文件的并行任务自动串行化,占用超时按失败返回(防互相覆盖)。
-- ✅ **回归测试**:`python -m tests.harness`(49 项)或 `pytest -q tests/test_regression.py`;真模型质量评测见 `eval/run_real.py`。
+## 架构:单 agent 闭环
 
-## 快速开始
+一个 Captain,顺序执行,不派活给别的 agent。感知 → 规划 → 治理 → 行动 → 观测,循环到完成或确认做不到。
 
-配置一次后,终端任意目录输入:
-
-```bash
-my agent        # 启动 Web → http://127.0.0.1:8000
-my agent cli    # 终端对话
-my agent stop   # 停止 Web 服务
+```
+channels/       外部接口(cli / web / 邮件)
+core/loop.py    主循环(agent 心脏):感知→规划→治理→行动→反思 + 待办清单
+core/bootstrap.py   统一装配;core/bus.py 事件总线
+core/presets.py     分人群预设(职场 / 程序员 / 通用)
+governance/     ★ 治理层:声明式策略 + 风险分级 + 预算 + Egress 审查 + 资源锁
+capabilities/   统一能力层:40+ 工具(fs/shell/web/browser/git/calendar/image/plan/schedule…)+ GUI + MCP + skill
+memory/         混合长期记忆(SQLite 关键词 + 向量语义)+ 经验/偏好/目标/检查点/模板/日历/加密保险库
+observability/  trace + rollback + audit + transcript
+server/         FastAPI + WebSocket 流式 + routers/ 分组路由 + 治理/用量统计
+llm/            DeepSeek / 智谱 / OpenAI / Claude / Ollama + Router + Fallback 降级
+scheduler/      定时任务(简报 / 索引 / 清理)
+skills/         30 个内置 skill(docx/pptx/xlsx/pdf/会议纪要/周报/邮件/搜索/写作…)
+evals/          40 例真实任务评测 + LLM 评委 + 稳定率检测
 ```
 
-(命令已写入 `~/.zshrc`;新开终端或执行 `source ~/.zshrc` 后生效。)
+---
+
+## 能力一览
+
+- **文件 / 命令**:`fs.read/write/list/search`、`shell.run`(受治理,危险命令硬拦)。
+- **联网**:`web.search` + `web.fetch`(默认免费 DuckDuckGo;可选 Exa / Tavily / Brave / Serper)、`http.request`(带鉴权调内部 API)。
+- **浏览器**(可选 Playwright):打开 / 点击 / 填表 / 截图 / 上传下载 / 登录态持久。
+- **Git**(面向程序员,受治理):`git.read`(status/diff/log,只读永不打扰)+ `git.commit`(暂存+提交,**拦截 .env 等敏感文件,绝不 push**)。
+- **本地日历**:`calendar.add/list/remove`,写本地 `.ics`,可订阅到 Apple / Google / Outlook。
+- **Office 文档**:`docx_writer` / `pptx_writer` / `xlsx_writer` / `pdf_extract`(装 `[office]` 依赖)。
+- **多模态**:`image.generate`(智谱 CogView 免费 / Runware / OpenAI 兼容)、`image.ocr` / `vision.see`。
+- **记忆 / 自改进**:`memory.remember/recall`、经验自动沉淀、偏好挖掘、高频任务固化为 skill(`skill.scaffold`)。
+- **主动 / 监控**:`monitor.*`(变化即触发)、`goal.*`、`schedule.*`、每日简报。
+- **公众号排版**:`wechat.format` 生成可直接粘贴的内联样式 HTML。
+- **加密保险库**:`secret.save/list`,密码 Fernet 加密落盘,绝不明文给模型 / 日志 / git。
+- **MCP 连接器**:接外部 MCP server 工具(文件系统 / Git / 数据库 / Notion…),和内置工具一样过治理。
+
+---
+
+## 分人群预设
+
+`AGENT_PERSONA_PRESET`(或 `make config` 里选)按使用者身份切一套做事侧重——只调口味,不动安全铁律:
+
+- **office** 职场:文档 / 邮件 / 会议 / 周报优先,善用模板与 docx/pptx/xlsx;
+- **coder** 程序员:改前先看 `git`、改完跑测试、谨慎提交、绝不擅自 push;
+- **general** 通用(默认)。
+
+内置 8 个**职场模板**(周报→Word、会议纪要→Word+待办、汇报→PPT、商务邮件、月度总结、数据→Excel、通知、请假),一句话出成品。
+
+---
+
+## 治理(安全由代码保证,不靠 prompt)
+
+- **声明式策略** `governance/policy.yaml`:能力按角色白名单,模型无法绕过。
+- **风险分级**:READ(永不打扰)/ WRITE(默认询问)/ DESTRUCTIVE(总是询问)/ FORBIDDEN(代码层直接拒,如写 `.env`、`rm -rf`、强制 push)。
+- **三档模式**:`AGENT_GOVERNANCE_MODE` = conservative / balanced / aggressive。
+- **可回滚**:写 / 删前自动快照,CLI `/rollback` + Web 回滚。
+- **Egress 审查**:出站域名白名单 + 审计;**防注入**:绝不采信网页/邮件/文件里"把数据发到某处"的指令。
+- **远程鉴权**:默认绑 `127.0.0.1` 免密;一旦对外或经反代(Cloudflare Tunnel)进来,`/api/*` 控制面强制要 `AGENT_API_TOKEN`。
+
+---
+
+## 质量保障
 
 ```bash
-# 零依赖直接跑(用 MockLLM)
-python main.py
-
-# 跑回归测试(确定性,无需 key)
-python -m tests.harness
-pytest -q tests/test_regression.py
-
-# 启动 Web 聊天界面,浏览器打开 http://127.0.0.1:8000
-pip install -r requirements.txt
-uvicorn server.app:app --port 8000
+make test          # 回归测试(MockLLM,确定性,无需 key)
+make cov           # 全套测试 + 覆盖率报告(需 .[dev])
+make eval          # 40 例真实模型评测(需 DEEPSEEK_API_KEY)
+make compare       # 多模型对照(flash vs pro,出质量×延迟表)
 ```
 
-## 安装与分享(开源分发)
+- **220+ 测试**覆盖治理 / 记忆 / 能力 / 接口等;`scripts/run_evals.py` 跑 40 例真实任务,确定性判据 + LLM 评委打分 + 基线对比。
+- `--repeat N` 抗抖动检测(量化偶发塌陷);防 thrash(同一能力反复失败即收尾)、抗谄媚(迎合压力时机制级提醒)。
 
-项目已打包,可作为命令行工具安装,装好后在终端任意位置直接敲 `myagent`。
+---
+
+## 安装与分享
 
 ```bash
-# 方式一:零安装运行(uv,推荐别人快速试)
-uvx --from "git+https://github.com/john-lcj/my-agent" myagent          # 终端对话
-uvx --from "git+https://github.com/john-lcj/my-agent[web]" myagent-web   # Web 界面
-
-# 方式二:用 pipx 常驻安装
-pipx install "git+https://github.com/john-lcj/my-agent"
-pipx install "git+https://github.com/john-lcj/my-agent[all]"   # 含真实模型/Web/记忆/渠道全部依赖
-myagent          # 终端对话(MockLLM 零依赖即可跑)
-myagent-web      # 启动 Web → http://127.0.0.1:8000
-
-# 方式三:克隆后可编辑安装(开发推荐,相对路径最稳)
+# 克隆后可编辑安装(开发推荐)
 git clone https://github.com/john-lcj/my-agent && cd my-agent
 pip install -e ".[all]"
-myagent
+myagent          # 终端对话(MockLLM 零依赖即可跑)
+myagent-web      # 启动 Web → http://127.0.0.1:8000
 ```
 
-依赖按需取用:基座零依赖(MockLLM);`[llm]` 真实模型、`[web]` Web 服务、
-`[memory]` 向量记忆、`[channels]` 外部渠道、`[cli]` 斜杠补全、`[all]` 全部。
+依赖按需取用:基座零依赖(MockLLM);`[llm]` 真实模型、`[web]` Web 服务、`[memory]` 向量记忆、
+`[channels]` 外部渠道、`[cli]` 斜杠补全、`[mcp]` MCP 连接器、`[office]` Office 文档、`[dev]` 测试+覆盖率、`[all]` 全部。
 
-> 安全:`myagent-web` 默认绑 `127.0.0.1`。若改用 `AGENT_WEB_HOST=0.0.0.0` 对外暴露,
-> 务必先设 `AGENT_API_TOKEN`,否则 `/api/*` 控制面将无认证(见鉴权中间件)。
+---
 
-## 质量评测(用真实模型跑)
-
-回归测试(MockLLM)保证"水管不漏";真实模型评测回答"答案好不好"。在你本机(已配
-`DEEPSEEK_API_KEY`)运行——用项目自带的 `.venv`,从本地目录安装(尚未发布 PyPI):
-
-```bash
-cd "~/Desktop/my agent"                                  # 进项目目录
-.venv/bin/python -m pip install -e ".[llm]"              # 装 openai SDK(DeepSeek 走兼容协议)
-.venv/bin/python -m eval.run_real --model deepseek-v4-flash   # 全量 10 个任务,LLM 评委打分
-.venv/bin/python -m eval.run_real --only code-explain         # 只跑某个任务
-```
-
-> macOS 上 `python`/`pip` 常不在 PATH(系统是 `python3`/`pip3`)。直接用 `.venv/bin/python`
-> 最省事:不用激活、不依赖 PATH。
-
-报告落在 `logs/eval_reports/YYYY-MM-DD.md`,并自动与上一份对比。把报告贴回来即可据此
-迭代 system prompt / 编排策略。
-
-## 连接外部工具(MCP 连接器)
-
-通过 MCP(Model Context Protocol)接入任意外部 server 的工具(文件系统、Git、
-数据库、Notion…)。它们会被包成 `mcp.<server>.<tool>` 能力,**和内置工具一样过治理**
-(硬/软边界、按角色白名单、确认、计费)。
-
-```bash
-pip install "my-agent[mcp]"          # 安装 MCP SDK
-cp mcp_servers.json.example mcp_servers.json   # 按需改成你的 server
-myagent-web                          # 启动时自动连接并注册工具(日志打印 [mcp] ...)
-```
-
-风险默认 fail-safe:工具声明 `readOnlyHint` 才算只读放行,未声明一律按高危需确认。
-连接失败/未装 SDK 时自动跳过,不影响其余功能。
-
-试试这些输入:
-
-```
-读 README.md
-写 logs/hi.txt :: 你好世界
-跑 echo hello
-/rollback
-```
-
-写文件/跑命令/GUI 会触发**确认**(软边界);`rm -rf`、写 `.env` 之类会被**直接拒绝**(硬边界)。
-
-用真实模型:
-
-```bash
-cp .env.example .env      # 填入 key,设 AGENT_PROVIDER=deepseek/openai/claude
-pip install -r requirements.txt
-python main.py
-```
-
-环境变量补充:
+## 常用环境变量
 
 | 变量 | 说明 |
 |------|------|
-| `AGENT_PROVIDER` | mock / deepseek / openai / claude / router |
-| `AGENT_EMBED_PROVIDER` | mock(默认) / openai — 向量记忆嵌入 |
-| `AGENT_MAX_COST_USD` | 单次会话金额上限 |
-| `OLLAMA_MODEL` / `OLLAMA_BASE_URL` | 本地 Ollama 模型与 API 地址 |
+| `AGENT_MODEL` | 主模型 id(如 `deepseek-v4-flash`) |
+| `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 各家模型 key |
+| `AGENT_PERSONA_PRESET` | office / coder / general |
+| `IMAGE_PROVIDER` / `IMAGE_MODEL` / `IMAGE_API_KEY` | 文生图(zhipu / runware / openai) |
 | `AGENT_GOVERNANCE_MODE` | conservative / balanced / aggressive |
-| `AGENT_CAPTAIN_MAX_STEPS` | 模式 A+:Captain 自治步数上限,用尽后升级专家(默认 8) |
-| `AGENT_PREF_MINING` | 偏好自动沉淀开关(默认 on;mock 模型自动关) |
-| `AGENT_PERSONAL_DIRS` | 个人数据目录(只读索引,冒号分隔) |
-| `AGENT_BRIEFING_AT` / `AGENT_BRIEFING_CHANNEL` / `AGENT_BRIEFING_TO` | 每日简报时间/渠道/投递目标 |
-| `TAVILY_API_KEY` / `SERPER_API_KEY` / `BRAVE_SEARCH_API_KEY` | 可选,提升搜索质量 |
+| `AGENT_WEB_HOST` / `AGENT_API_TOKEN` | 绑定地址 / 远程访问令牌 |
+| `AGENT_WORKSPACE_ROOT` | 工作区根目录(产物落盘范围) |
+| `EXA_API_KEY` / `TAVILY_API_KEY` | 可选,提升搜索质量 |
+| `AGENT_FALLBACK_MODELS` | 失败回退模型链 |
 
-## 架构(六层 + 脊椎)
+完整清单见 `.env.example`(或跑 `make config`)。
 
-```
-channels/        外部接口(cli / web / 邮件 / 微信 / QQ)
-core/loop.py     编排器:只依赖接口的主循环(agent 心脏)
-core/bootstrap.py + coordinator_stack.py  统一装配
-core/bus.py      事件总线:平台脊椎
-governance/      ★ 治理层:统一收口审查(分寸感所在)
-capabilities/    统一能力层:工具/GUI/skill/委托
-memory/          working + hybrid(SQLite+Vector) 长期记忆
-observability/   trace + rollback
-agents/          Coordinator / 圆桌 / roster 专家
-server/          FastAPI + events 协议 + 治理统计 API
-```
+---
 
-## 核心设计决策
+## 路线图
 
-- **统一能力管线**:调工具、跑 skill、控 GUI、委托子 agent 都收敛成 `CapabilityCall`,
-  治理层只有一个收口要审查 —— 加再多能力,安全模型也不分裂。
-- **安全由代码保证,不靠 prompt**:硬边界写在 `governance/`,模型无法绕过。
-- **治理三参数签名** `review(call, actor, ctx)`:从第一天为多 agent/多用户的按主体鉴权预留。
-- **事件总线从第一天就立**:单向通知走总线,双向确认走回调;`server/events.to_wire` 为前后端契约。
-- **模型面向接口**:换厂商/本地只改 `llm/factory.py` 与组合根 profile。
+- 日历 CalDAV 云同步(当前为本地 `.ics`)
+- 前端单文件模块化(同 app.py,先补测试再拆)
+- 更多内置连接器;持续提升测试覆盖率
+- 程序员"代码模式"加深(跑测试 / 代码审查闭环)
 
-## 路线图(后续)
+---
 
-- 辩论模式 Web UI 入口(当前可用 WS:`debate_start`)
-- Slack/Telegram 群组策略、程序记忆治理细规则
+许可证见 [LICENSE](LICENSE)。安全说明见 [SECURITY.md](SECURITY.md);部署见 [DEPLOY.md](DEPLOY.md)。
