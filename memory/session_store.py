@@ -148,6 +148,61 @@ class SessionStore:
         self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self._conn.commit()
 
+    def list_messages_meta(self, session_id: str) -> list[dict]:
+        """返回会话消息元数据(含 SQLite id),供前端编辑/重生成。"""
+        rows = self._conn.execute(
+            "SELECT id, role, content, name, ts FROM messages "
+            "WHERE session_id = ? ORDER BY id",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def truncate_after(self, session_id: str, msg_id: int) -> bool:
+        """删除 id 严格大于 msg_id 的所有消息(保留 msg_id 及之前)。"""
+        if not self.session_exists(session_id):
+            return False
+        self._conn.execute(
+            "DELETE FROM messages WHERE session_id = ? AND id > ?",
+            (session_id, int(msg_id)),
+        )
+        self._conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+        self._conn.commit()
+        return True
+
+    def truncate_from(self, session_id: str, msg_id: int) -> bool:
+        """删除 id >= msg_id 的消息(用于编辑用户消息:从该条起重跑)。"""
+        if not self.session_exists(session_id):
+            return False
+        self._conn.execute(
+            "DELETE FROM messages WHERE session_id = ? AND id >= ?",
+            (session_id, int(msg_id)),
+        )
+        self._conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+        self._conn.commit()
+        return True
+
+    def message_at(self, session_id: str, msg_id: int) -> dict | None:
+        row = self._conn.execute(
+            "SELECT id, role, content, name, ts FROM messages "
+            "WHERE session_id = ? AND id = ?",
+            (session_id, int(msg_id)),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def last_user_message_id(self, session_id: str) -> int | None:
+        row = self._conn.execute(
+            "SELECT id FROM messages WHERE session_id = ? AND role = 'user' "
+            "ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
     # ── 消息级 ────────────────────────────────────────────────────────────────
     def append(self, session_id: str, message: Message) -> None:
         """追加一条消息;首条用户消息顺便给会话起个标题。"""

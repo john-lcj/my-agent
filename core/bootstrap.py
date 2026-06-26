@@ -82,6 +82,8 @@ def build_registry(
     from capabilities.tools.goal import GoalSet, GoalList, GoalRemove
     from capabilities.tools.exa_search import ExaSearch
     from capabilities.tools.suggest import SuggestAdd, SuggestList
+    from capabilities.tools.git_tool import GitRead, GitCommit
+    from capabilities.tools.calendar_tool import CalendarAdd, CalendarList, CalendarRemove
     caps = [ReadFile(), ListDir(), WriteFile(), RunShell(),
             WebSearch(), WebFetch(), FsSearch(),
             RememberMemory(), RecallMemory(),
@@ -96,7 +98,9 @@ def build_registry(
             ImageOCR(), ImageGenerate(),
             MonitorCreate(), MonitorList(), MonitorDelete(),
             GoalSet(), GoalList(), GoalRemove(), ExaSearch(),
-            SuggestAdd(), SuggestList()]
+            SuggestAdd(), SuggestList(),
+            GitRead(), GitCommit(),
+            CalendarAdd(), CalendarList(), CalendarRemove()]
     if profile in _gui_capable_profiles():
         from capabilities.gui import GUIControl
         caps.append(GUIControl())
@@ -160,7 +164,7 @@ def build_agent_bundle(
         mode=governance_mode or Config.GOVERNANCE_MODE,
     )
     bus = EventBus()
-    # max_steps<=0 视为"无限制"(用极大数,避免改动 captain_phase 的 min() 逻辑)
+    # max_steps<=0 视为"无限制"(用极大数,避免下游 min() 逻辑出 0)
     _ms = Config.MAX_STEPS if max_steps is None else max_steps
     if _ms is not None and _ms <= 0:
         _ms = 1_000_000

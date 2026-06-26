@@ -292,6 +292,9 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .msg-agent .md hr.md-hr{border:none;border-top:1px solid var(--border);margin:1em 0}
 .msg-agent .md a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .msg-agent .md a:hover{color:var(--accent2)}
+.chat-image-wrap{margin:.65em 0 .25em}
+.chat-inline-image{max-width:min(100%,480px);height:auto;border-radius:var(--r-sm);
+  border:1px solid var(--border);cursor:pointer;display:block;background:var(--surface2)}
 .msg-agent .md code.md-inline{font-family:ui-monospace,Menlo,monospace;font-size:.86em;
           background:var(--sb);border:none;padding:2px 6px;border-radius:5px;color:var(--txt)}
 .msg-agent .md pre.md-pre{margin:.85em 0;background:var(--bg);border:1px solid var(--border);
@@ -318,6 +321,41 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .pill.ok{color:var(--green);border-color:rgba(76,175,121,.3)}
 .pill.err{color:var(--red);border-color:rgba(232,85,85,.3)}
 .pill.warn{color:var(--yellow);border-color:rgba(245,200,66,.3)}
+.tool-trace-group{align-self:stretch;max-width:100%;display:flex;flex-direction:column;gap:4px;margin:2px 0 10px}
+.tool-trace-item{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-size:12px;color:var(--muted);overflow:hidden}
+.tool-trace-item>summary{cursor:pointer;padding:7px 10px;list-style:none;font-weight:500;color:var(--txt)}
+.tool-trace-item>summary::-webkit-details-marker{display:none}
+.tool-trace-item.call>summary{color:var(--blue)}
+.tool-trace-item.ok>summary{color:var(--green)}
+.tool-trace-item.err>summary{color:var(--red)}
+.tool-trace-item.warn>summary{color:var(--yellow)}
+.tool-trace-body{padding:0 10px 8px;max-height:280px;overflow:auto}
+.tool-trace-body pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11px;
+  font-family:ui-monospace,Menlo,monospace;color:var(--txt);line-height:1.45}
+.search-sources{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.search-source{display:block;padding:8px 10px;border-radius:var(--r-sm);background:var(--bg);
+  border:1px solid var(--border);text-decoration:none;color:inherit}
+.search-source:hover{border-color:rgba(217,119,87,.35)}
+.search-source-n{font-size:10px;font-weight:700;color:var(--accent);margin-bottom:2px}
+.search-source-t{font-size:12px;font-weight:600;color:var(--txt);line-height:1.35}
+.search-source-u{font-size:11px;color:var(--blue);word-break:break-all;margin-top:2px}
+.search-source-s{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}
+.composer-attachments{display:flex;flex-wrap:wrap;gap:8px;padding:0 4px 8px}
+.composer-attach-chip{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;
+  border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);font-size:11px}
+.composer-attach-chip img{width:36px;height:36px;object-fit:cover;border-radius:4px}
+.composer-attach-chip button{border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:14px}
+.user-msg-images{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.user-msg-images img{max-width:min(100%,200px);max-height:160px;border-radius:var(--r-sm);
+  border:1px solid var(--border);object-fit:cover;cursor:pointer}
+.msg-user .msg-footer,.msg-agent .msg-footer{display:flex;gap:2px;margin-top:6px;opacity:0;transition:opacity .12s}
+.msg-user:hover .msg-footer,.msg-agent:hover .msg-footer{opacity:1}
+.msg-edit-wrap{margin-top:6px}
+.msg-edit-wrap textarea{width:100%;min-height:72px;padding:8px 10px;border-radius:var(--r-sm);
+  border:1px solid var(--border);font:inherit;font-size:14px;resize:vertical}
+.msg-edit-actions{display:flex;gap:8px;margin-top:6px;justify-content:flex-end}
+.composer-tool.is-on{color:var(--accent);background:var(--accent-soft)}
 .gov-row{align-self:flex-start;max-width:90%;font-size:12px;padding:8px 12px;
          background:var(--panel);border:1px solid var(--border);border-radius:var(--r-sm)}
 .gov-row .gov-decision{font-weight:600;color:var(--yellow)}
@@ -972,6 +1010,7 @@ option{background:var(--card)}
             <div class="composer-wrap">
               <div class="composer">
                 <div class="chat-input-box">
+                  <div id="composer-attachments" class="composer-attachments" hidden></div>
                   <div id="slash-menu" role="listbox" aria-label="斜杠命令"></div>
                   <textarea id="chat-inp" rows="2" placeholder="Write a message…" autocomplete="off"></textarea>
                 </div>
@@ -988,6 +1027,8 @@ option{background:var(--card)}
                     </div>
                     <input type="file" id="file-inp" style="display:none" onchange="onFilePicked(this)"/>
                     <input type="file" id="folder-inp" style="display:none" webkitdirectory multiple onchange="onFolderPicked(this)"/>
+                    <button class="composer-tool" id="btn-tool-trace" type="button" onclick="toggleToolTrace(event)"
+                            data-i18n-title="toolTraceTitle" aria-label="工具轨迹" title="工具轨迹">⚙</button>
                     <button class="composer-tool" id="btn-mic" type="button" onclick="toggleMic(event)" data-i18n-title="micTitle" aria-label="语音输入">
                       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 17v4"/></svg>
                     </button>
@@ -1522,8 +1563,124 @@ let thinkingEl = null;
 let streamingMsgEl = null;
 let streamingText = '';
 let streamRenderTimer = null;
-/** 简洁模式:Chat 只显示最终回复; Code 显示完整执行过程 */
+/** 简洁模式:Chat 默认隐藏工具轨迹;开「工具轨迹」后显示 call/result */
 let conciseChat = true;
+let _activeTraceGroup = null;
+const _pendingAttachments = [];
+
+function isToolTraceEnabled() {
+  try { return localStorage.getItem('captain-show-tool-trace') === '1'; } catch { return false; }
+}
+function syncConciseChat() {
+  conciseChat = !isToolTraceEnabled();
+  const btn = document.getElementById('btn-tool-trace');
+  if (btn) btn.classList.toggle('is-on', isToolTraceEnabled());
+}
+function toggleToolTrace(e) {
+  e?.stopPropagation();
+  try {
+    localStorage.setItem('captain-show-tool-trace', isToolTraceEnabled() ? '0' : '1');
+  } catch {}
+  syncConciseChat();
+}
+function resetTraceGroup() { _activeTraceGroup = null; }
+function ensureTraceGroup() {
+  const area = document.getElementById('chat-messages');
+  if (!area) return null;
+  if (_activeTraceGroup && _activeTraceGroup.isConnected) return _activeTraceGroup;
+  const g = document.createElement('div');
+  g.className = 'tool-trace-group';
+  area.appendChild(g);
+  _activeTraceGroup = g;
+  area.scrollTop = area.scrollHeight;
+  return g;
+}
+function parseSearchHits(text) {
+  const hits = [];
+  const lines = String(text || '').split('\n');
+  let cur = null;
+  for (const line of lines) {
+    const head = line.match(/^(\d+)\.\s+(.+)/);
+    if (head) {
+      if (cur) hits.push(cur);
+      cur = { n: head[1], title: head[2].trim(), url: '', snippet: '' };
+      continue;
+    }
+    if (!cur) continue;
+    const t = line.trim();
+    if (/^https?:\/\//i.test(t)) { cur.url = t; continue; }
+    if (t && !/^\(搜索/.test(t)) {
+      cur.snippet = cur.snippet ? (cur.snippet + ' ' + t) : t;
+    }
+  }
+  if (cur) hits.push(cur);
+  return hits;
+}
+function renderSearchSources(hits) {
+  const box = document.createElement('div');
+  box.className = 'search-sources';
+  hits.forEach(h => {
+    const a = document.createElement(h.url ? 'a' : 'div');
+    a.className = 'search-source';
+    if (h.url) { a.href = h.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.innerHTML = `<div class="search-source-n">[${escHtml(h.n)}]</div>`
+      + `<div class="search-source-t">${escHtml(h.title)}</div>`
+      + (h.url ? `<div class="search-source-u">${escHtml(h.url)}</div>` : '')
+      + (h.snippet ? `<div class="search-source-s">${escHtml(h.snippet)}</div>` : '');
+    box.appendChild(a);
+  });
+  return box;
+}
+function appendToolTrace(kind, label, detail, extra) {
+  if (!isToolTraceEnabled() || currentView !== 'chat') return;
+  const g = ensureTraceGroup();
+  if (!g) return;
+  const d = document.createElement('details');
+  d.className = 'tool-trace-item ' + (kind || 'call');
+  d.open = kind === 'call' || kind === 'err';
+  const sum = document.createElement('summary');
+  sum.textContent = label;
+  d.appendChild(sum);
+  const body = document.createElement('div');
+  body.className = 'tool-trace-body';
+  if (extra && extra.searchHits && extra.searchHits.length) {
+    body.appendChild(renderSearchSources(extra.searchHits));
+    const pre = document.createElement('pre');
+    pre.textContent = detail || '';
+    if (pre.textContent) body.appendChild(pre);
+  } else {
+    const pre = document.createElement('pre');
+    pre.textContent = detail || '';
+    body.appendChild(pre);
+  }
+  d.appendChild(body);
+  g.appendChild(d);
+  const area = document.getElementById('chat-messages');
+  if (area) area.scrollTop = area.scrollHeight;
+}
+function buildMsgKey(role, content, id, ts) {
+  if (id != null && id !== '') return 'id:' + id;
+  return role + ':' + (ts || '') + ':' + String(content || '').length;
+}
+async function saveFeedback(msgKey, rating) {
+  if (!sessionId || !msgKey || ![0, 1, -1].includes(rating)) return;
+  try {
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, msg_key: msgKey, rating }),
+    });
+  } catch {}
+}
+async function loadFeedbackState(msgKey, upBtn, downBtn) {
+  if (!sessionId || !msgKey || !upBtn || !downBtn) return;
+  try {
+    const d = await (await fetch('/api/feedback?session_id=' + encodeURIComponent(sessionId)
+      + '&msg_key=' + encodeURIComponent(msgKey))).json();
+    if (d.rating === 1) upBtn.classList.add('is-up');
+    if (d.rating === -1) downBtn.classList.add('is-down');
+  } catch {}
+}
 let workMode = 'chat';
 let taskRunning = false;
 let activeTaskGen = 0;
@@ -1704,6 +1861,9 @@ function handle(ev) {
       streamingMsgEl.id = 'streaming-msg';
       streamingMsgEl.innerHTML = '<div class="msg-head"><span class="msg-label msg-label-agent">Captain</span></div><div class="msg-body"></div>';
       area.appendChild(streamingMsgEl);
+      if (typeof setTurnImageTarget === 'function') {
+        setTurnImageTarget(streamingMsgEl.querySelector('.msg-body'));
+      }
     }
     streamingText += p.token || '';
     const body = streamingMsgEl.querySelector('.msg-body');
@@ -1725,6 +1885,7 @@ function handle(ev) {
       const head = streamingMsgEl.querySelector('.msg-label-agent');
       if (head && who !== 'Captain') head.textContent = who;
       setAgentContent(body, text, false);
+      if (typeof setTurnImageTarget === 'function') setTurnImageTarget(body);
       streamingMsgEl.classList.remove('streaming');
       attachMsgActions(streamingMsgEl, text);
       streamingMsgEl.removeAttribute('id');
@@ -1747,9 +1908,26 @@ function handle(ev) {
   else if (etype === 'capability_call') {
     _lastCapCall = { name: p.name || '', args: p.args || {} };
     updateThinkingStatus(p.name || '', p.intent || '');
-    if (conciseChat && currentView === 'chat') return;
     const name = p.name || '';
     const args = p.args || {};
+    if (isToolTraceEnabled() && currentView === 'chat') {
+      if (name === 'coordinator.plan') { /* plan_update */ }
+      else if (name === 'coordinator.dispatch') {
+        const items = (args.assignments || []).map(a => `${a.agent}: ${(a.sub_task||'').slice(0,80)}`).join('\n');
+        appendToolTrace('call', t('evtDispatch'), items || (p.intent || ''));
+      } else if (name === 'coordinator.invoke') {
+        resetStreamingBubble();
+        document.querySelectorAll('.approval-card').forEach(el => el.remove());
+        appendToolTrace('call', t('evtExpert'), `${args.agent || '?'} · ${(args.task||'').slice(0,200)}`);
+      } else if (name.startsWith('skill.')) {
+        appendToolTrace('call', 'Skill', `「${skillLabel(name.slice(6))}」\n` + JSON.stringify(args, null, 2));
+      } else {
+        const detail = (p.intent ? p.intent + '\n\n' : '') + JSON.stringify(args, null, 2);
+        appendToolTrace('call', name, detail);
+      }
+      return;
+    }
+    if (conciseChat && currentView === 'chat') return;
     if (name === 'coordinator.plan') return;   // 由 plan_update 事件渲染执行计划图
     if (name === 'coordinator.dispatch') {
       const items = (args.assignments || []).map(a => `${a.agent}: ${(a.sub_task||'').slice(0,80)}`).join('\n');
@@ -1769,17 +1947,45 @@ function handle(ev) {
     chatEvent('call', t('evtCall'), `${name}`);
   }
   else if (etype === 'capability_result') {
+    const cap = _lastCapCall;
+    const capName = p.name || (cap && cap.name) || '';
     try {
-      if (_lastCapCall && _lastCapCall.name === 'fs.write' && p.ok
+      if (capName === 'fs.write' && p.ok
           && typeof registerWorkbenchArtifact === 'function') {
-        registerWorkbenchArtifact(_lastCapCall.args?.path, p.output);
+        registerWorkbenchArtifact((cap && cap.args)?.path, p.output);
+      }
+      if (capName === 'image.generate' && p.ok
+          && typeof appendChatImage === 'function') {
+        const rel = normalizeArtifactRel((cap && cap.args)?.name, p.output)
+          || normalizeArtifactRel('', p.artifact_path || '');
+        if (rel) {
+          registerWorkbenchArtifact(rel, p.output);
+          appendChatImage(rel);
+        }
       }
     } catch {}
     _lastCapCall = null;
-    if (conciseChat && currentView === 'chat') return;
-    chatEvent(p.ok?'ok':'err', p.ok?t('evtResult'):t('evtFail'), (p.output||p.error||'').slice(0,300));
+    if (isToolTraceEnabled() && currentView === 'chat') {
+      const outFull = p.output || p.error || '';
+      const hits = (capName === 'web.search' || capName === 'exa.search') && p.ok
+        ? parseSearchHits(outFull) : [];
+      appendToolTrace(
+        p.ok ? 'ok' : 'err',
+        `${capName || 'tool'} · ${p.ok ? t('evtResult') : t('evtFail')}`,
+        outFull,
+        hits.length ? { searchHits: hits } : null,
+      );
+    } else if (!(conciseChat && currentView === 'chat')) {
+      chatEvent(p.ok?'ok':'err', p.ok?t('evtResult'):t('evtFail'), (p.output||p.error||'').slice(0,300));
+    }
   }
   else if (etype === 'governance_decision') {
+    if (isToolTraceEnabled() && currentView === 'chat') {
+      const dec = p.decision || '';
+      const cls = dec === 'block' ? 'err' : (dec === 'ask' ? 'warn' : 'ok');
+      appendToolTrace(cls, t('evtGov'), `${p.name}: ${dec} · ${t('evtRule')} ${p.rule||'-'} · ${p.reason||''}`);
+      return;
+    }
     if (conciseChat && currentView === 'chat') return;
     const dec = p.decision || '';
     const cls = dec === 'block' ? 'err' : (dec === 'ask' ? 'warn' : 'ok');
@@ -1915,7 +2121,9 @@ function stopTask() {
 
 function sendMsg() {
   const inp = document.getElementById('chat-inp');
-  const text = inp.value.trim();
+  let text = inp.value.trim();
+  const attachRefs = _pendingAttachments.map(a => a.ref).filter(Boolean);
+  if (attachRefs.length) text = attachRefs.join('\n') + (text ? '\n' + text : '');
   if (!text) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     _wsSendQueue = text;
@@ -1929,11 +2137,14 @@ function sendMsg() {
     inp.value = ''; return;
   }
   lastUserPrompt = text;
+  if (typeof clearChatImagePaths === 'function') clearChatImagePaths();
+  resetTraceGroup();
   document.getElementById('ctx-task-usage').hidden = true;
   resetStreamingBubble();
   activeTaskGen = 0;
   document.querySelectorAll('.approval-card').forEach(el => el.remove());
-  chatMsg('user', text);
+  chatMsg('user', text, { attachments: _pendingAttachments.slice() });
+  clearPendingAttachments();
   ws.send(JSON.stringify({ type:'user', text }));
   inp.value = ''; inp.style.height='';
   closeSlashMenu();
@@ -1950,14 +2161,20 @@ function chatMsg(type, text, opts = {}) {
   if (empty) empty.style.display = 'none';
   const d = document.createElement('div');
   d.className = `msg msg-${type}`;
+  if (opts.msgId != null) d.dataset.msgId = String(opts.msgId);
+  const mkey = buildMsgKey(type, text, opts.msgId, opts.msgTs);
+  d.dataset.msgKey = mkey;
   if (type === 'agent') {
     const label = escHtml(opts.name || 'Captain');
     d.innerHTML = `<div class="msg-head"><span class="msg-label msg-label-agent">${label}</span></div><div class="msg-body"></div>`;
     const body = d.querySelector('.msg-body');
     setAgentContent(body, text);
-    attachMsgActions(d, text);
+    if (typeof setTurnImageTarget === 'function') setTurnImageTarget(body);
+    attachMsgActions(d, text, { msgKey: mkey, msgId: opts.msgId });
   } else if (type === 'user') {
-    d.innerHTML = `<div class="msg-body user-body">${escHtml(text)}</div>`;
+    d.innerHTML = '<div class="msg-body user-body"></div>';
+    renderUserMessageBody(d.querySelector('.msg-body'), text, opts.attachments);
+    attachUserMsgActions(d, text, { msgKey: mkey, msgId: opts.msgId });
   } else {
     d.textContent = text;
   }
@@ -1965,6 +2182,135 @@ function chatMsg(type, text, opts = {}) {
   area.scrollTop = area.scrollHeight;
   if (type === 'user') msgCount++;
   updateChatLayoutState();
+}
+
+function renderUserMessageBody(body, text, attachments) {
+  if (!body) return;
+  const paths = [];
+  (attachments || []).forEach(a => { if (a.path) paths.push(a.path); });
+  extractImagePathsFromText(text).forEach(p => paths.push(p));
+  const unique = [...new Set(paths)];
+  const imgPaths = unique.filter(p => isImageArtifact(p));
+  let displayText = String(text || '');
+  imgPaths.forEach(p => { displayText = displayText.replace(p, '').trim(); });
+  displayText = displayText.replace(/\[已上传[^\]]+\]/g, '').trim();
+  body.textContent = displayText || '';
+  if (imgPaths.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'user-msg-images';
+    imgPaths.forEach(p => {
+      const img = document.createElement('img');
+      img.alt = p.split('/').pop();
+      img.onclick = () => openArtifact(p);
+      loadInlineImage(img, p);
+      wrap.appendChild(img);
+    });
+    body.appendChild(wrap);
+  }
+}
+
+function attachUserMsgActions(el, text, meta) {
+  if (!el || el.querySelector('.msg-footer')) return;
+  const footer = document.createElement('div');
+  footer.className = 'msg-footer';
+  const mkBtn = (title, svg, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'msg-footer-btn'; b.title = title;
+    b.setAttribute('aria-label', title); b.innerHTML = svg;
+    b.onclick = (e) => { e.stopPropagation(); onClick(b); };
+    return b;
+  };
+  const ICON_EDIT = '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  footer.appendChild(mkBtn(t('editMsg'), ICON_EDIT, () => startEditUserMessage(el, text, meta)));
+  el.appendChild(footer);
+}
+
+function startEditUserMessage(el, text, meta) {
+  if (!el || el.querySelector('.msg-edit-wrap')) return;
+  const body = el.querySelector('.user-body');
+  if (!body) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-edit-wrap';
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  const acts = document.createElement('div');
+  acts.className = 'msg-edit-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'btn-secondary btn-sm'; cancel.textContent = t('cancel');
+  const save = document.createElement('button');
+  save.type = 'button'; save.className = 'btn-primary btn-sm'; save.textContent = t('save');
+  cancel.onclick = () => wrap.remove();
+  save.onclick = () => {
+    const nt = ta.value.trim();
+    if (!nt || !ws || ws.readyState !== 1) return;
+    const mid = meta?.msgId || el.dataset.msgId;
+    wrap.remove();
+    let node = el.nextSibling;
+    while (node) { const n = node.nextSibling; node.remove(); node = n; }
+    el.remove();
+    resetTraceGroup();
+    ws.send(JSON.stringify({
+      type: 'edit_user', session_id: sessionId, msg_id: mid ? parseInt(mid, 10) : null, text: nt,
+    }));
+    showThinking();
+    setTaskRunning(true);
+  };
+  acts.appendChild(cancel);
+  acts.appendChild(save);
+  wrap.appendChild(ta);
+  wrap.appendChild(acts);
+  el.appendChild(wrap);
+  ta.focus();
+}
+
+function regenerateFromUserMsg(userMsgId) {
+  if (!ws || ws.readyState !== 1) return;
+  const area = document.getElementById('chat-messages');
+  if (userMsgId != null && area) {
+    const uel = area.querySelector(`.msg-user[data-msg-id="${CSS.escape(String(userMsgId))}"]`);
+    if (uel) {
+      let node = uel.nextSibling;
+      while (node) { const n = node.nextSibling; node.remove(); node = n; }
+    }
+  } else if (area) {
+    const users = area.querySelectorAll('.msg-user');
+    if (users.length) {
+      const uel = users[users.length - 1];
+      let node = uel.nextSibling;
+      while (node) { const n = node.nextSibling; node.remove(); node = n; }
+    }
+  }
+  resetTraceGroup();
+  resetStreamingBubble();
+  ws.send(JSON.stringify({
+    type: 'regenerate', session_id: sessionId, user_msg_id: userMsgId != null ? userMsgId : null,
+  }));
+  showThinking();
+  setTaskRunning(true);
+}
+
+function clearPendingAttachments() {
+  _pendingAttachments.length = 0;
+  renderComposerAttachments();
+}
+function renderComposerAttachments() {
+  const box = document.getElementById('composer-attachments');
+  if (!box) return;
+  if (!_pendingAttachments.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = _pendingAttachments.map((a, i) => {
+    const thumb = a.isImage
+      ? `<img src="${escAttr(a.previewUrl || '')}" alt="">`
+      : `<span>📄</span>`;
+    return `<div class="composer-attach-chip">${thumb}<span>${escHtml(a.name)}</span>`
+      + `<button type="button" aria-label="remove" onclick="removePendingAttachment(${i})">×</button></div>`;
+  }).join('');
+}
+function removePendingAttachment(idx) {
+  const item = _pendingAttachments[idx];
+  if (item && item.previewUrl) try { URL.revokeObjectURL(item.previewUrl); } catch {}
+  _pendingAttachments.splice(idx, 1);
+  renderComposerAttachments();
 }
 
 function setAgentContent(el, text, streaming) {
@@ -1979,6 +2325,7 @@ function setAgentContent(el, text, streaming) {
   }
   el.innerHTML = `<div class="md">${renderMD(normalized)}</div>`;
   attachCodeCopyButtons(el);
+  mergeChatImagesInto(el);
 }
 
 function scheduleStreamRender(el, text) {
@@ -1986,6 +2333,7 @@ function scheduleStreamRender(el, text) {
   streamRenderTimer = setTimeout(() => {
     streamRenderTimer = null;
     el.innerHTML = `<div class="md streaming-md">${renderMD(text)}</div>`;
+    mergeChatImagesInto(el);
     if (el.parentElement) el.parentElement.scrollTop = el.parentElement.scrollHeight;
   }, 60);
 }
@@ -2278,11 +2626,12 @@ async function _ttsPump() {
 }
 function _ttsDrain() { if (_convoOn) _convoListenOnce(); }  // 念完最后一句 → 对话模式重新开麦
 
-function attachMsgActions(el, text) {
+function attachMsgActions(el, text, meta) {
   if (!el || el.querySelector('.msg-footer')) return;
   const footer = document.createElement('div');
   footer.className = 'msg-footer';
   const raw = text || el.textContent || '';
+  const msgKey = (meta && meta.msgKey) || el.dataset.msgKey || buildMsgKey('agent', raw);
 
   const mkBtn = (title, svg, onClick) => {
     const b = document.createElement('button');
@@ -2301,28 +2650,39 @@ function attachMsgActions(el, text) {
   const ICON_UP = '<svg viewBox="0 0 24 24"><path d="M7 11v8a1 1 0 001 1h2a1 1 0 001-1v-8M7 11H4a1 1 0 01-1-1V8a1 1 0 011-1h3M7 11l4-6a1 1 0 011-.8h1.5a2 2 0 012 1.7l1.2 5.1H20a1 1 0 011 1v5a1 1 0 01-1 1h-9"/></svg>';
   const ICON_DOWN = '<svg viewBox="0 0 24 24"><path d="M17 13V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v8M17 13h3a1 1 0 001-1V9a1 1 0 00-1-1h-3M17 13l-4 6a1 1 0 01-.9.5H10.5a2 2 0 01-1.8-1.4L7.5 13H4a1 1 0 01-1-1v-5a1 1 0 011-1h13"/></svg>';
 
+  const upBtn = mkBtn(t('thumbUp'), ICON_UP, (btn) => {
+    const on = btn.classList.toggle('is-up');
+    const sib = footer.querySelector('.is-down');
+    if (sib) sib.classList.remove('is-down');
+    saveFeedback(msgKey, on ? 1 : 0);
+  });
+  const downBtn = mkBtn(t('thumbDown'), ICON_DOWN, (btn) => {
+    const on = btn.classList.toggle('is-down');
+    const sib = footer.querySelector('.is-up');
+    if (sib) sib.classList.remove('is-up');
+    saveFeedback(msgKey, on ? -1 : 0);
+  });
   footer.appendChild(mkBtn(t('copyMsg'), ICON_COPY, (btn) => {
     navigator.clipboard.writeText(raw).catch(() => {});
     btn.classList.add('is-up');
     setTimeout(() => btn.classList.remove('is-up'), 800);
   }));
   footer.appendChild(mkBtn(t('readAloud'), ICON_SPEAKER, () => speakText(raw)));
-  footer.appendChild(mkBtn(t('thumbUp'), ICON_UP, (btn) => {
-    btn.classList.toggle('is-up');
-    const sib = footer.querySelector('.is-down');
-    if (sib) sib.classList.remove('is-down');
-  }));
-  footer.appendChild(mkBtn(t('thumbDown'), ICON_DOWN, (btn) => {
-    btn.classList.toggle('is-down');
-    const sib = footer.querySelector('.is-up');
-    if (sib) sib.classList.remove('is-up');
-  }));
+  footer.appendChild(upBtn);
+  footer.appendChild(downBtn);
   footer.appendChild(mkBtn(t('retryMsg'), ICON_RETRY, () => {
-    if (!lastUserPrompt || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: 'user', text: lastUserPrompt }));
-    showThinking();
-    setTaskRunning(true);
+    let uid = null;
+    let prev = el.previousElementSibling;
+    while (prev) {
+      if (prev.classList && prev.classList.contains('msg-user') && prev.dataset.msgId) {
+        uid = parseInt(prev.dataset.msgId, 10);
+        break;
+      }
+      prev = prev.previousElementSibling;
+    }
+    regenerateFromUserMsg(uid);
   }));
+  loadFeedbackState(msgKey, upBtn, downBtn);
 
   el.appendChild(footer);
   const spark = document.createElement('div');
@@ -2382,6 +2742,7 @@ function showTaskUsage(detail) {
 }
 
 // 恢复服务端发来的历史消息
+let pendingRestoreImages = [];
 function renderRestored(messages) {
   const area = document.getElementById('chat-messages');
   area.innerHTML = '';
@@ -2392,9 +2753,24 @@ function renderRestored(messages) {
     return;
   }
   messages.forEach(m => {
-    if (m.role === 'user') chatMsg('user', m.content);
-    else if (m.role === 'assistant' && m.content) chatMsg('agent', m.content);
-    else if (m.role === 'tool') chatEvent('ok', m.name || '工具', (m.content||'').slice(0,300));
+    if (m.role === 'user') {
+      pendingRestoreImages = [];
+      chatMsg('user', m.content, { msgId: m.id, msgTs: m.ts });
+    } else if (m.role === 'assistant' && m.content) {
+      chatMsg('agent', m.content, { msgId: m.id, msgTs: m.ts, name: m.name });
+      const agents = area.querySelectorAll('.msg-agent .msg-body');
+      const body = agents[agents.length - 1];
+      if (body) {
+        pendingRestoreImages.forEach(rel => attachImageToBody(body, rel));
+        mergeChatImagesInto(body);
+      }
+      pendingRestoreImages = [];
+    } else if (m.role === 'tool') {
+      const rel = (m.name === 'image.generate' || /已生成图片/.test(m.content || ''))
+        ? normalizeArtifactRel('', m.content) : '';
+      if (rel && isImageArtifact(rel)) pendingRestoreImages.push(rel);
+      else chatEvent('ok', m.name || '工具', (m.content || '').slice(0, 300));
+    }
   });
   updateChatLayoutState();
   syncChatTopbarTitle();
@@ -2464,6 +2840,7 @@ function resetStreamingBubble() {
 
 function clearChat() {
   resetStreamingBubble();
+  if (typeof clearChatImagePaths === 'function') clearChatImagePaths();
   document.getElementById('chat-messages').innerHTML = welcomeHtml();
   msgCount = 0;
   updateChatLayoutState();
@@ -4472,6 +4849,10 @@ const I18N = {
     usageUpgrade: '升级',
     thumbUp: '有帮助',
     thumbDown: '没帮助',
+    editMsg: '编辑',
+    cancel: '取消',
+    save: '保存并发送',
+    toolTraceTitle: '显示工具轨迹(调用/输出)',
     timeJustNow: '刚刚',
     timeMinutesAgo: '{n} 分钟前',
     timeHoursAgo: '{n} 小时前',
@@ -4833,6 +5214,10 @@ const I18N = {
     usageUpgrade: 'Upgrade',
     thumbUp: 'Good response',
     thumbDown: 'Bad response',
+    editMsg: 'Edit',
+    cancel: 'Cancel',
+    save: 'Save & send',
+    toolTraceTitle: 'Show tool trace (calls/output)',
     timeJustNow: 'Just now',
     timeMinutesAgo: '{n} minutes ago',
     timeHoursAgo: '{n} hours ago',
@@ -5055,7 +5440,7 @@ function setWorkMode(mode, opts = {}) {
   const prev = workMode;
   workMode = ['chat', 'coworker'].includes(mode) ? mode : 'chat';
   localStorage.setItem('captain-work-mode', workMode);
-  conciseChat = true;
+  syncConciseChat();
   try {
     const app = document.getElementById('app');
     if (app) app.classList.toggle('wb-open', workMode === 'coworker');
@@ -5297,6 +5682,7 @@ initSidebarState();
 initWorkMode();
 applyModeChrome();
 setStatusBarConnecting();
+syncConciseChat();
 window.addEventListener('resize', () => {
   const app = document.getElementById('app');
   if (!isMobileLayout()) app.classList.remove('sb-mobile-open');
@@ -6216,15 +6602,130 @@ function onFilePicked(input) {
       });
       const d = await r.json();
       if (d.ok) {
+        const path = d.path || '';
+        const ref = t('uploadedRef').replace('{path}', path);
+        const isImage = /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name || path);
+        const previewUrl = isImage ? URL.createObjectURL(file) : '';
+        _pendingAttachments.push({ path, name: file.name, ref, isImage, previewUrl });
+        renderComposerAttachments();
         const inp = document.getElementById('chat-inp');
-        const ref = t('uploadedRef').replace('{path}', d.path);
-        inp.value = ref + inp.value;
-        inp.focus();
+        if (inp && !isImage) inp.value = ref + inp.value;
+        inp?.focus();
       } else { alert(t('uploadFail') + (d.error || '')); }
     } catch (e) { alert(t('uploadFail') + e); }
     input.value = '';
   };
   reader.readAsDataURL(file);
+}
+
+/* —— 聊天内联图片(每轮回复各自显示,不串台) —— */
+const _IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|svg)$/i;
+const _IMAGE_PATH_RE = /(?:已生成图片|saved to)[:：]\s*([^\s\n]+\.(?:png|jpe?g|webp|gif|svg))|产物\/[^\s\n，。；、！？）)\]]+\.(?:png|jpe?g|webp|gif|svg)|!\[[^\]]*\]\(([^)]+\.(?:png|jpe?g|webp|gif|svg))\)/gi;
+const _turnImagePaths = new Set();
+let _turnImageTarget = null;
+function clearChatImagePaths() {
+  _turnImagePaths.clear();
+  _turnImageTarget = null;
+}
+function setTurnImageTarget(el) { _turnImageTarget = el || null; }
+function trackTurnImage(path) {
+  const key = String(path || '').replace(/\\/g, '/').trim();
+  if (key && isImageArtifact(key)) _turnImagePaths.add(key);
+}
+function isImageArtifact(path) { return _IMAGE_EXT_RE.test(String(path || '')); }
+function artifactRawUrl(path) {
+  return '/api/artifact/raw?path=' + encodeURIComponent(path);
+}
+async function loadInlineImage(imgEl, path) {
+  if (!imgEl || !path) return;
+  try {
+    const r = await fetch(artifactRawUrl(path));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    imgEl.src = URL.createObjectURL(blob);
+  } catch {
+    imgEl.alt = '图片加载失败';
+    imgEl.style.opacity = '0.5';
+  }
+}
+function extractImagePathsFromText(text) {
+  const paths = new Set();
+  const s = String(text || '');
+  let m; _IMAGE_PATH_RE.lastIndex = 0;
+  while ((m = _IMAGE_PATH_RE.exec(s))) {
+    const raw = m[1] || m[2] || m[0];
+    if (!raw) continue;
+    const r = normalizeArtifactRel('', raw);
+    if (r && isImageArtifact(r)) paths.add(r);
+  }
+  return [...paths];
+}
+function _makeChatImageWrap(key) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-image-wrap';
+  wrap.dataset.chatImage = key;
+  const img = document.createElement('img');
+  img.className = 'chat-inline-image';
+  img.alt = key.split('/').pop();
+  img.loading = 'lazy';
+  img.onclick = () => openArtifact(key);
+  wrap.appendChild(img);
+  loadInlineImage(img, key);
+  return wrap;
+}
+function attachImageToBody(body, rel) {
+  if (!body || !rel || !isImageArtifact(rel)) return;
+  const key = rel.replace(/\\/g, '/');
+  if (body.querySelector(`[data-chat-image="${CSS.escape(key)}"]`)) return;
+  body.appendChild(_makeChatImageWrap(key));
+}
+function mergeChatImagesInto(el) {
+  if (!el) return;
+  const paths = new Set(extractImagePathsFromText(el.textContent || ''));
+  if (el === _turnImageTarget) {
+    _turnImagePaths.forEach(p => paths.add(p));
+  }
+  paths.forEach(key => attachImageToBody(el, key));
+}
+function appendChatImage(rel) {
+  if (!rel || !isImageArtifact(rel)) return;
+  const key = rel.replace(/\\/g, '/');
+  trackTurnImage(key);
+  const area = document.getElementById('chat-messages');
+  if (!area) return;
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.style.display = 'none';
+  let target = _turnImageTarget;
+  if (!target && streamingMsgEl) target = streamingMsgEl.querySelector('.msg-body');
+  if (!target) {
+    const agents = area.querySelectorAll('.msg-agent .msg-body');
+    if (agents.length) target = agents[agents.length - 1];
+  }
+  if (target) {
+    setTurnImageTarget(target);
+    attachImageToBody(target, key);
+  } else {
+    const d = document.createElement('div');
+    d.className = 'msg msg-agent';
+    d.innerHTML = '<div class="msg-head"><span class="msg-label msg-label-agent">Captain</span></div><div class="msg-body"></div>';
+    const body = d.querySelector('.msg-body');
+    setTurnImageTarget(body);
+    attachImageToBody(body, key);
+    area.appendChild(d);
+  }
+  area.scrollTop = area.scrollHeight;
+}
+function embedChatImages(root) {
+  const bodies = [];
+  if (root && root.classList && root.classList.contains('msg-body') && !root.classList.contains('user-body')) {
+    bodies.push(root);
+  } else if (root && root.querySelectorAll) {
+    root.querySelectorAll('.msg-body:not(.user-body)').forEach(b => bodies.push(b));
+  }
+  bodies.forEach(body => {
+    const paths = new Set(extractImagePathsFromText(body.textContent || ''));
+    paths.forEach(key => attachImageToBody(body, key));
+  });
 }
 
 /* —— 产物内联预览 —— */
@@ -6235,13 +6736,31 @@ async function openArtifact(path) {
   const title = document.getElementById('artifact-title');
   if (!ov || !body || !title) return;
   ov.classList.add('open');
+  body.style.cssText = '';
   body.innerHTML = '<div style="padding:20px;color:var(--muted)" data-i18n="loading">加载中…</div>';
+  title.textContent = path.split('/').pop() || '产物预览';
+  if (isImageArtifact(path)) {
+    body.innerHTML = '';
+    body.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:12px;min-height:200px;background:var(--surface2)';
+    const img = document.createElement('img');
+    img.style.cssText = 'max-width:100%;max-height:min(80vh,720px);object-fit:contain;display:block';
+    loadInlineImage(img, path);
+    body.appendChild(img);
+    return;
+  }
   try {
     const r = await fetch('/api/artifact?path=' + encodeURIComponent(path));
     const d = await r.json();
     if (!d.ok) { body.innerHTML = `<div style="padding:20px;color:var(--red)">${escHtml(d.error||'读取失败')}</div>`; return; }
     title.textContent = d.name || '产物预览';
-    if (d.kind === 'html') {
+    if (d.kind === 'image') {
+      body.innerHTML = '';
+      body.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:12px;min-height:200px;background:var(--surface2)';
+      const img = document.createElement('img');
+      img.style.cssText = 'max-width:100%;max-height:min(80vh,720px);object-fit:contain;display:block';
+      loadInlineImage(img, path);
+      body.appendChild(img);
+    } else if (d.kind === 'html') {
       const ifr = document.createElement('iframe');
       ifr.setAttribute('sandbox', 'allow-scripts');
       ifr.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
@@ -6310,7 +6829,7 @@ async function loadArtifactsList(q) {
 }
 
 /* 把助理消息里的产物路径变成可点预览链接 */
-const _ARTIFACT_RE = /([\w./~-]+\.(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json))/g;
+const _ARTIFACT_RE = /((?:产物\/)?[^\s"'<>]+\.(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json|png|jpe?g|webp|gif|svg))/g;
 function _linkifyArtifacts(root) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll('.msg-body:not(.user-body)').forEach(el => {
@@ -6354,11 +6873,16 @@ const _artifacts = new Set();
 function normalizeArtifactRel(path, output) {
   let p = String(path || '').trim();
   if (!p && output) {
-    const m = String(output).match(/到\s+(.+?)\s*$/);
+    const out = String(output);
+    const m = out.match(/(?:已生成图片|saved to)[:：]\s*(.+?)\s*$/i)
+      || out.match(/到\s+(.+?)\s*$/);
     if (m) p = m[1].trim();
   }
   if (!p) return '';
   p = p.replace(/\\/g, '/');
+  const prod = p.indexOf('产物/');
+  if (prod >= 0) p = p.slice(prod);
+  p = p.replace(/[，。；、！？）)\]]+$/g, '');
   const idx = p.indexOf('/uploads/');
   if (idx >= 0) return p.slice(idx + 1);
   if (p.startsWith('/')) return p;
@@ -6409,7 +6933,8 @@ function renderWorkbench() {
     ? items.map(p => {
         const name = p.split('/').pop();
         const sub = p.includes('/') ? `<span style="font-size:10px;color:var(--dim);display:block">${escHtml(p)}</span>` : '';
-        return `<div class="wb-file" role="button" tabindex="0" data-artifact-path="${escAttr(p)}"><span>📄</span><span>${escHtml(name)}${sub}</span></div>`;
+        const icon = isImageArtifact(p) ? '🖼️' : '📄';
+        return `<div class="wb-file" role="button" tabindex="0" data-artifact-path="${escAttr(p)}"><span>${icon}</span><span>${escHtml(name)}${sub}</span></div>`;
       }).join('')
     : `<div class="wb-empty">${escHtml(t('wbNoArtifacts'))}</div>`;
 }

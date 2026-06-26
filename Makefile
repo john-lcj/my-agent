@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 PY := .venv/bin/python
 
-.PHONY: help setup web cli test eval docker-build docker-up docker-down docker-logs clean
+.PHONY: help setup config web cli test eval compare docker-build docker-up docker-down docker-logs clean
 
 help:  ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -12,7 +12,10 @@ setup:  ## 创建 .venv 并安装全部依赖(首次使用)
 	python3 -m venv .venv
 	$(PY) -m pip install -q --upgrade pip
 	$(PY) -m pip install -e ".[all]"
-	@echo "✓ 安装完成。`make web` 启动网页,`make cli` 进终端对话。"
+	@echo "✓ 依赖装好了。下一步跑 `make config` 配置 key,再 `make web` 启动。"
+
+config:  ## 配置向导(交互式填 .env:模型/文生图/搜索/令牌)
+	$(PY) scripts/setup_wizard.py
 
 web:  ## 启动 Web 聊天界面 → http://127.0.0.1:8000
 	$(PY) -m uvicorn server.app:app --host 127.0.0.1 --port 8000
@@ -23,8 +26,11 @@ cli:  ## 终端对话(MockLLM 零配置可跑)
 test:  ## 跑回归测试
 	$(PY) -m pytest -q tests/test_regression.py
 
-eval:  ## 真实模型质量评测(需 DEEPSEEK_API_KEY,见 README)
-	$(PY) -m eval.run_real --model deepseek-v4-flash
+eval:  ## 真实模型质量评测(40 用例,需 DEEPSEEK_API_KEY)
+	$(PY) scripts/run_evals.py
+
+compare:  ## 多模型对照评测(flash vs pro,出质量×延迟表)
+	$(PY) scripts/compare_models.py
 
 docker-build:  ## 构建 Docker 镜像
 	docker build -t my-agent .

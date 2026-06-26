@@ -331,8 +331,20 @@ class Agent:
                     error=f"工具 {call.name} 执行超过 {self.step_timeout:.0f}s 超时(可能卡住),已中断该步。")
             except Exception as exc:
                 result = CapabilityResult(ok=False, error=str(exc))
-            emit(EventType.CAPABILITY_RESULT,
-                 {"ok": result.ok, "output": result.output, "error": result.error})
+            cap_payload = {"ok": result.ok, "output": result.output, "error": result.error,
+                           "name": call.name}
+            if result.ok and call.name == "image.generate" and result.output:
+                import re as _re
+                _m = _re.search(r"已生成图片[:：]\s*(.+)", str(result.output).strip())
+                if _m:
+                    _ap = _m.group(1).strip().replace("\\", "/")
+                    _i = _ap.find("产物/")
+                    if _i >= 0:
+                        _ap = _ap[_i:]
+                    _ap = _ap.rstrip("，。；、！？）)]")
+                    if _ap:
+                        cap_payload["artifact_path"] = _ap
+            emit(EventType.CAPABILITY_RESULT, cap_payload)
             if tr is not None:
                 tr.result(result.ok, result.output or "", result.error or "")
             self._audit(ctx, call, decision.value, result.ok,

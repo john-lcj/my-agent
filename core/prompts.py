@@ -66,13 +66,15 @@ _CHAT_MODE_PROMPT = """【当前模式 · Chat 顾问】
 - 你在对话里交付:回答、解释、起草文本/代码片段直接贴在回复里,默认**不主动写入工作区文件**。
 - 需要改文件或跑命令时,先向主人确认;能在对话里说清的就别动盘。
 - 可以追问澄清、给出几个选项与权衡;简洁直接,不啰嗦。
-- 适合:问答、解释、查资料、看一眼文件、出主意。"""
+- 适合:问答、解释、查资料、看一眼文件、出主意。
+- 若用 image.generate 生图:图会保存到 `产物/` 并在聊天界面内联显示;回复里写上 `产物/xxx.png`,别说界面看不了。"""
 
 _COWORK_MODE_PROMPT = """【当前模式 · Cowork 执行】
 - 你在工作区交付成果:产物落盘成文件,对话里只简报进度。少废话,先计划后执行。
 - **多步任务先用 plan.update 列出待办清单**,再一步步做;每开始/完成一步就再调 plan.update 更新该步状态(doing/done)。
 - 全自动执行(只有硬边界会被拦),不必为常规读写反复请示。
 - **交付的产物文件统一写到工作区下的 `产物/` 目录**(如 `产物/报告.md`、`产物/data.csv`),按需再分子目录;**不要把产物散落在代码目录里**。写前先 `mkdir -p 产物`。
+- **image.generate 生图**会保存到 `产物/` 并在 Web 聊天界面**内联显示**;回复里带上 `产物/xxx.png` 路径即可,勿说界面看不了图。
 - 【交付前自检 · preflight】产出后:回读关键产物确认内容无误、能跑的脚本真跑一遍看输出、对照待办逐项核对;有问题自己补,别把没验证的当完成。
 - 【遇阻不死磕】某一步失败:换条路(换工具/换数据源/换方法),并用 plan.update 把该步标 failed 或调整后续计划;实在做不成就如实写清缺口上报,不假装完成。
 - 【记住登录凭据】主人给账号密码时,用 secret.save 存进加密保险库(密码加密落盘);**绝不把密码写进对话、文件、日志或长期记忆明文**。下次登录直接用,不必再问。
@@ -107,6 +109,12 @@ def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
     if persona is not None:
         lines.append(persona.to_prompt())
         lines.append("")
+    # 分人群预设(office/coder/general):按使用者身份追加做事侧重(只调口味,不改安全铁律)。
+    from core.presets import preset_block
+    _pb = preset_block()
+    if _pb:
+        lines.append(_pb)
+        lines.append("")
     lines.append(_PRINCIPLES_TEMPLATE)
     lines.append(WORK_CONSTITUTION)
     lines.append(runtime_env_block())
@@ -130,6 +138,11 @@ def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
         )
     has_web = any(c.get("name", "").startswith("web.") for c in capability_specs)
     has_exa = any(c.get("name") == "exa.search" for c in capability_specs)
+    if any(c.get("name") == "image.generate" for c in capability_specs):
+        lines.append(
+            "- image.generate 生图会落盘到 `产物/` 并在 Web 聊天界面内联显示;"
+            "回复里写清 `产物/xxx.png` 路径即可,勿说界面无法看图。"
+        )
     if has_web or has_exa:
         exa_hint = ("**调研/找资料/找最新进展优先用 exa.search**(语义检索、更相关);"
                     if has_exa else "")

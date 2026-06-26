@@ -36,6 +36,14 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 websockets>=12.0
 
+# Office 文档生成/解析(docx_writer/pptx_writer/xlsx_writer/pdf_extract 等 skill):
+# 不装则这些 skill 报"需要 python-docx/openpyxl/…",其余能力不受影响。
+python-docx>=1.1.0      # 生成 Word
+python-pptx>=0.6.23     # 生成 PPT
+openpyxl>=3.1.0         # 生成/读 Excel
+pypdf>=4.0.0            # 读 PDF 文本
+pdfplumber>=0.11.0      # 读 PDF 表格(pdf_extract 兜底)
+
 # 回归测试:
 pytest>=8.0.0
 

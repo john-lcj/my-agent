@@ -36,6 +36,15 @@ def test_artifacts_list_and_search():
         # 搜索
         j2 = c.get("/api/artifacts?q=report", headers=h).json()
         assert {i["name"] for i in j2["items"]} == {"report.md"}
+        # 图片 raw 端点
+        png = os.path.join(d, "pic.png")
+        with open(png, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+        rel = "pic.png"
+        r = c.get(f"/api/artifact/raw?path={rel}", headers=h)
+        assert r.status_code == 200 and r.headers["content-type"].startswith("image/")
+        meta = c.get(f"/api/artifact?path={rel}", headers=h).json()
+        assert meta.get("kind") == "image"
     finally:
         os.environ.pop("AGENT_WORKSPACE_ROOT", None)
         os.environ.pop("AGENT_API_TOKEN", None)

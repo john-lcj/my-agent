@@ -2,7 +2,8 @@
 
 image.ocr      复用已配置的视觉模型(VISION_MODEL),把扫描件/截图/表格图转成文字,
                尽量保留版面与表格结构。无需额外 key。
-image.generate 文生图:支持两种后端,由 IMAGE_PROVIDER 决定(不配则按线索自动判断):
+image.generate 文生图:支持三种后端,由 IMAGE_PROVIDER 决定(不配则按线索自动判断):
+               · zhipu   —— 智谱 CogView(cogview-3-flash 免费、国内直连),返回 url 再下载;
                · runware —— Runware REST(任务数组/imageInference),IMAGE_MODEL 默认 runware:100@1;
                · openai  —— OpenAI 兼容的 images.generate 端点。
                公共配置:IMAGE_API_KEY(留空回退 OPENAI_API_KEY)/ IMAGE_MODEL / IMAGE_BASE_URL。
@@ -119,7 +120,7 @@ class ImageGenerate:
 
     @staticmethod
     def _provider() -> str:
-        """优先看 IMAGE_PROVIDER;没配则按线索猜(runware 模型id 或 base_url)。默认 openai。"""
+        """优先看 IMAGE_PROVIDER;没配则按线索猜(模型id / base_url)。默认 openai。"""
         p = os.environ.get("IMAGE_PROVIDER", "").strip().lower()
         if p:
             return p
@@ -127,6 +128,8 @@ class ImageGenerate:
         base = os.environ.get("IMAGE_BASE_URL", "").strip().lower()
         if model.startswith("runware:") or "runware" in base:
             return "runware"
+        if model.startswith("cogview") or "bigmodel" in base or "zhipu" in base:
+            return "zhipu"
         return "openai"
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -142,6 +145,8 @@ class ImageGenerate:
         try:
             if provider == "runware":
                 raw, ext = await self._gen_runware(prompt, api_key, args)
+            elif provider == "zhipu":
+                raw, ext = await self._gen_zhipu(prompt, api_key, args)
             else:
                 raw, ext = await self._gen_openai(prompt, api_key, args)
         except Exception as e:
@@ -170,6 +175,31 @@ class ImageGenerate:
             size=str(args.get("size", "1024x1024")) or "1024x1024",
             response_format="b64_json", n=1)
         return base64.b64decode(resp.data[0].b64_json), "png"
+
+    async def _gen_zhipu(self, prompt: str, api_key: str, args: dict) -> tuple[bytes, str]:
+        """智谱 CogView(含免费的 cogview-3-flash):POST /v4/images/generations,
+        返回 data[].url,再下载图片字节。国内直连、免费,不用充值。"""
+        import httpx
+        base = (os.environ.get("IMAGE_BASE_URL", "").strip()
+                or "https://open.bigmodel.cn/api/paas/v4/images/generations")
+        model = os.environ.get("IMAGE_MODEL", "").strip() or "cogview-3-flash"
+        w, h = _parse_size(args.get("size", "1024x1024"))
+        body = {"model": model, "prompt": prompt, "size": f"{w}x{h}"}
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(base, json=body, headers=headers)
+            j = r.json()
+            if isinstance(j, dict) and j.get("error"):
+                err = j["error"]
+                msg = err.get("message") if isinstance(err, dict) else str(err)
+                raise RuntimeError(msg or f"HTTP {r.status_code}")
+            r.raise_for_status()
+            data = (j or {}).get("data") or []
+            if not data or not data[0].get("url"):
+                raise RuntimeError(f"无图片返回:{str(j)[:200]}")
+            img = await client.get(data[0]["url"])
+            img.raise_for_status()
+            return img.content, "png"
 
     async def _gen_runware(self, prompt: str, api_key: str, args: dict) -> tuple[bytes, str]:
         """Runware REST:POST 任务数组到 /v1,要 base64 直接落盘(省二次下载、少出站)。"""

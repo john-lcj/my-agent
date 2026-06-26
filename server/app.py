@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from typing import List, Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from config import Config, load_env
 from core.bootstrap import build_agent_bundle
@@ -32,6 +32,7 @@ from channels.config_store import ChannelConfigStore
 from core.persona import load_persona
 from memory.factory import build_longterm
 from memory.session_store import SessionStore
+from memory.feedback_store import FeedbackStore
 from scheduler.store import ScheduledTask, TaskStore
 from scheduler.scheduler import Scheduler
 from server.events import to_wire
@@ -45,6 +46,7 @@ _FRONTEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 # ── 跨连接共享的单例:持久化会话、长期记忆、人设、频道配置、定时任务 ──────────
 _session_store = SessionStore(db_path=f"{Config.LOG_DIR}/sessions.db")
+_feedback_store = FeedbackStore(db_path=f"{Config.LOG_DIR}/feedback.db")
 _session_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -72,6 +74,11 @@ _persona = load_persona()
 from memory.template_store import TemplateStore
 from memory.secrets_vault import SecretsVault
 _template_store = TemplateStore(db_path=f"{Config.LOG_DIR}/templates.db")
+try:  # 首次种入内置职场模板(幂等,不覆盖用户后续增删改)
+    from core.office_templates import BUILTIN_OFFICE_TEMPLATES
+    _template_store.seed_once(BUILTIN_OFFICE_TEMPLATES)
+except Exception as _te:
+    print(f"[templates] 内置模板种入跳过: {_te}")
 from memory.share_store import ShareStore
 _share_store = ShareStore(path=f"{Config.LOG_DIR}/shares.json")
 try:
@@ -109,13 +116,17 @@ def _resolve_in_workspace(path: str) -> tuple:
     raw = (path or "").strip()
     if not raw:
         return False, "", "缺少 path"
+    root = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
+    if root:
+        root = os.path.realpath(os.path.expanduser(root))
+    if not os.path.isabs(raw):
+        base = root or os.getcwd()
+        raw = os.path.join(base, raw)
     real = os.path.realpath(os.path.expanduser(raw))
     low = real.lower()
     if any(s in low for s in (".env", ".ssh", "id_rsa", "credentials", "model_keys.json")):
         return False, "", "敏感路径,拒绝读取"
-    root = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
     if root:
-        root = os.path.realpath(os.path.expanduser(root))
         if real != root and not real.startswith(root + os.sep):
             return False, "", "路径在工作区之外"
     return True, real, ""
@@ -1213,6 +1224,29 @@ def create_app():
         _session_store.delete_session(session_id)
         return JSONResponse({"ok": True})
 
+    @app.post("/api/feedback")
+    async def post_feedback(request: Request) -> JSONResponse:
+        body = await request.json()
+        sid = str(body.get("session_id", "")).strip()
+        key = str(body.get("msg_key", "")).strip()
+        try:
+            rating = int(body.get("rating", 0))
+        except (TypeError, ValueError):
+            rating = 0
+        if not sid or not key or rating not in (0, 1, -1):
+            return JSONResponse({"ok": False, "error": "参数无效"}, status_code=400)
+        _feedback_store.upsert(sid, key, rating)
+        return JSONResponse({"ok": True, "rating": rating})
+
+    @app.get("/api/feedback")
+    async def get_feedback(session_id: str = "", msg_key: str = "") -> JSONResponse:
+        sid = (session_id or "").strip()
+        key = (msg_key or "").strip()
+        if not sid or not key:
+            return JSONResponse({"ok": False, "error": "缺少参数"}, status_code=400)
+        r = _feedback_store.get(sid, key)
+        return JSONResponse({"ok": True, "rating": r})
+
     @app.post("/api/rollback")
     async def rollback_last(request: Request) -> JSONResponse:
         body = await request.json()
@@ -1393,6 +1427,26 @@ def create_app():
         return JSONResponse({"sessions": _session_store.search_sessions(q)})
 
     # ── 产物预览 / 文件上传 ────────────────────────────────────────────────────
+    _IMAGE_RAW_EXTS = frozenset({"png", "jpg", "jpeg", "webp", "gif", "svg"})
+    _IMAGE_RAW_MAX = 10 * 1024 * 1024
+
+    @app.get("/api/artifact/raw")
+    async def read_artifact_raw(path: str = ""):
+        """返回工作区内图片二进制,供聊天内联 <img> 与预览。"""
+        ok, real, reason = _resolve_in_workspace(path)
+        if not ok:
+            return JSONResponse({"ok": False, "error": reason}, status_code=400)
+        if not os.path.isfile(real):
+            return JSONResponse({"ok": False, "error": "文件不存在"}, status_code=400)
+        ext = os.path.splitext(real)[1].lower().lstrip(".")
+        if ext not in _IMAGE_RAW_EXTS:
+            return JSONResponse({"ok": False, "error": "非图片类型"}, status_code=400)
+        size = os.path.getsize(real)
+        if size > _IMAGE_RAW_MAX:
+            return JSONResponse({"ok": False, "error": "图片过大(>10MB)"}, status_code=400)
+        media = f"image/{'jpeg' if ext == 'jpg' else ext}"
+        return FileResponse(real, media_type=media, filename=os.path.basename(real))
+
     @app.get("/api/artifact")
     async def read_artifact(path: str = "") -> JSONResponse:
         ok, real, reason = _resolve_in_workspace(path)
@@ -1401,6 +1455,9 @@ def create_app():
         if not os.path.isfile(real) or os.path.getsize(real) > 2 * 1024 * 1024:
             return JSONResponse({"ok": False, "error": "文件不存在或过大(>2MB)"}, status_code=400)
         ext = os.path.splitext(real)[1].lower().lstrip(".")
+        if ext in _IMAGE_RAW_EXTS:
+            return JSONResponse({"ok": True, "kind": "image", "ext": ext,
+                                 "name": os.path.basename(real), "content": ""})
         kind = ("html" if ext in ("html", "htm") else "markdown" if ext == "md"
                 else "code" if ext in ("py", "js", "ts", "css", "json", "sh", "yaml", "yml") else "text")
         try:
@@ -1632,6 +1689,9 @@ def create_app():
             )
 
         def serialize_history() -> list:
+            sid = ctx.session_id
+            if sid and _session_store.session_exists(sid):
+                return _serialize_session_messages(sid)
             out = []
             for m in ctx.messages:
                 if m.role.value == "system":
@@ -1641,17 +1701,27 @@ def create_app():
             return out
 
         def _serialize_session_messages(session_id: str) -> list:
-            """只读加载某会话历史,不改动当前 WS 上的 ctx(供切换会话时后台任务继续跑)。"""
-            from core.context import Context
-            peek = Context()
-            peek.bind_session(_session_store, session_id, create=False)
+            """只读加载某会话历史(含消息 id),不改动当前 WS 上的 ctx。"""
             out = []
-            for m in peek.messages:
-                if m.role.value == "system":
-                    continue
-                out.append({"role": m.role.value, "content": m.content,
-                            "name": m.name})
+            for row in _session_store.list_messages_meta(session_id):
+                out.append({
+                    "id": row["id"],
+                    "role": row["role"],
+                    "content": row["content"],
+                    "name": row.get("name"),
+                    "ts": row.get("ts"),
+                })
             return out
+
+        async def _reload_ctx_from_db(session_id: str) -> None:
+            ctx.messages = list(header_msgs)
+            ctx.store = None
+            ctx.bind_session(_session_store, session_id, create=False)
+
+        async def _push_history(session_id: str) -> None:
+            await ws.send_json({"type": "history",
+                                "payload": {"session_id": session_id,
+                                            "messages": _serialize_session_messages(session_id)}})
 
         async def bind_and_send_history(session_id: str) -> None:
             ctx.messages = list(header_msgs)
@@ -1902,6 +1972,37 @@ def create_app():
                                         "payload": {"ok": bool(notes), "notes": notes}})
                 elif msg.get("type") == "user":
                     channel.feed_user(msg.get("text", ""))
+                elif msg.get("type") == "regenerate":
+                    sid = str(msg.get("session_id") or ctx.session_id or "").strip()
+                    uid = msg.get("user_msg_id")
+                    if not sid:
+                        continue
+                    if uid is None:
+                        uid = _session_store.last_user_message_id(sid)
+                    if not uid:
+                        continue
+                    row = _session_store.message_at(sid, int(uid))
+                    if not row or row.get("role") != "user":
+                        continue
+                    async with _session_lock(sid):
+                        _session_store.truncate_after(sid, int(uid))
+                        await _reload_ctx_from_db(sid)
+                        await _push_history(sid)
+                    channel.feed_user(row["content"])
+                elif msg.get("type") == "edit_user":
+                    sid = str(msg.get("session_id") or ctx.session_id or "").strip()
+                    mid = msg.get("msg_id")
+                    text = str(msg.get("text", "")).strip()
+                    if not sid or mid is None or not text:
+                        continue
+                    row = _session_store.message_at(sid, int(mid))
+                    if not row or row.get("role") != "user":
+                        continue
+                    async with _session_lock(sid):
+                        _session_store.truncate_from(sid, int(mid))
+                        await _reload_ctx_from_db(sid)
+                        await _push_history(sid)
+                    channel.feed_user(text)
                 elif msg.get("type") == "approval":
                     approved = bool(msg.get("approved"))
                     if approved and msg.get("grant_task", True):

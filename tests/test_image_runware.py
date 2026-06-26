@@ -91,3 +91,37 @@ def test_missing_key_is_honest(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     res = asyncio.run(ImageGenerate().invoke({"prompt": "x"}, ctx=None))
     assert not res.ok and "API_KEY" in res.error
+
+
+def test_provider_detection_zhipu(monkeypatch):
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    monkeypatch.setenv("IMAGE_MODEL", "cogview-3-flash")
+    assert ImageGenerate._provider() == "zhipu"      # 按模型id猜
+
+
+class _ImgResp:
+    content = base64.b64decode(_PNG_B64)
+    def raise_for_status(self):
+        pass
+
+
+class _ZhipuClient(_FakeClient):
+    async def post(self, url, json=None, headers=None):
+        assert headers["Authorization"].startswith("Bearer ")
+        assert json["model"].startswith("cogview")
+        return _FakeResp({"data": [{"url": "https://img.example/abc.png"}]})
+    async def get(self, url):
+        return _ImgResp()
+
+
+def test_zhipu_generate_saves_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("IMAGE_PROVIDER", "zhipu")
+    monkeypatch.setenv("IMAGE_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_MODEL", "cogview-3-flash")
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _ZhipuClient)
+    res = asyncio.run(ImageGenerate().invoke({"prompt": "日出", "name": "日出.png"}, ctx=None))
+    assert res.ok, res.error
+    out = tmp_path / "产物" / "日出.png"
+    assert out.is_file() and out.read_bytes() == base64.b64decode(_PNG_B64)

@@ -28,7 +28,31 @@ class TemplateStore:
             )
             """
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS template_meta (key TEXT PRIMARY KEY, val TEXT)")
         self._conn.commit()
+
+    def seed_once(self, builtins: list[dict], marker: str = "office_v1") -> int:
+        """首次种入内置模板(幂等):种过一次就不再种,保护用户后续的增删改。返回新增条数。"""
+        seeded = self._conn.execute(
+            "SELECT val FROM template_meta WHERE key='seeded'").fetchone()
+        done = set((seeded["val"] if seeded else "").split(","))
+        if marker in done:
+            return 0
+        n = 0
+        for t in builtins:
+            exists = self._conn.execute(
+                "SELECT 1 FROM templates WHERE id=?", (t["id"],)).fetchone()
+            if not exists:
+                self.save(t["title"], t["content"], t.get("category", ""), tid=t["id"])
+                n += 1
+        done.add(marker)
+        self._conn.execute(
+            "INSERT INTO template_meta (key, val) VALUES ('seeded', ?) "
+            "ON CONFLICT(key) DO UPDATE SET val=excluded.val",
+            (",".join(sorted(x for x in done if x)),))
+        self._conn.commit()
+        return n
 
     def list(self) -> list[dict]:
         rows = self._conn.execute(
