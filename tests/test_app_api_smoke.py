@@ -34,6 +34,22 @@ def test_health_and_manifest():
     assert c.get("/manifest.json", headers=_H).status_code == 200
 
 
+def test_frontend_assets_served():
+    # 前端拆分后:index + 三个静态资源都要能服务,且通配没遮蔽 /healthz
+    c = _client()
+    if c is None:
+        return
+    assert c.get("/").status_code == 200
+    for asset, mime in [("/styles.css", "text/css"),
+                        ("/app.js", "javascript"),
+                        ("/app.boot.js", "javascript")]:
+        r = c.get(asset, headers=_H)
+        assert r.status_code == 200, f"{asset} → {r.status_code}"
+        assert mime in r.headers.get("content-type", "")
+    # 显式路由不应抢掉 /healthz
+    assert c.get("/healthz").status_code == 200
+
+
 def test_readonly_endpoints_reachable():
     c = _client()
     if c is None:

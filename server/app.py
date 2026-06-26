@@ -938,30 +938,8 @@ def create_app():
         return JSONResponse({"ok": True, "path": os.path.relpath(path, ws)})
 
     # ── 主动建议:它主动想到的事,你接受(→去做)或忽略 ─────────────────────────
-    @app.get("/api/suggestions")
-    async def list_suggestions() -> JSONResponse:
-        from memory.suggestions_store import SuggestionsStore
-        st = SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json")
-        return JSONResponse({"suggestions": st.pending()})
-
-    @app.post("/api/suggestions/{sid}/accept")
-    async def accept_suggestion(sid: str) -> JSONResponse:
-        from memory.suggestions_store import SuggestionsStore
-        st = SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json")
-        rec = st.set_status(sid, "accepted")
-        if rec is None:
-            return JSONResponse({"ok": False, "error": "建议不存在"}, status_code=404)
-        tid = ""
-        if rec.get("action"):   # 有可执行指令 → 进后台任务队列去做
-            tid = _daemon_enqueue(rec["action"], source="suggestion", mode="coworker")
-        return JSONResponse({"ok": True, "task_id": tid})
-
-    @app.post("/api/suggestions/{sid}/dismiss")
-    async def dismiss_suggestion(sid: str) -> JSONResponse:
-        from memory.suggestions_store import SuggestionsStore
-        st = SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json")
-        ok = st.set_status(sid, "dismissed") is not None
-        return JSONResponse({"ok": ok})
+    from server.routers.suggestions import register_suggestions
+    register_suggestions(app, _daemon_enqueue)
 
     @app.get("/api/proactive/preview")
     async def proactive_preview() -> JSONResponse:
@@ -992,20 +970,8 @@ def create_app():
             })
         return JSONResponse({"connectors": out})
 
-    @app.get("/")
-    async def index() -> HTMLResponse:
-        index_path = os.path.join(_FRONTEND, "index.html")
-        if not os.path.isfile(index_path):
-            return HTMLResponse(
-                "<h1>前端文件缺失</h1>"
-                f"<p>找不到 <code>{index_path}</code>。</p>"
-                "<p>请在完整项目目录启动服务,例如:</p>"
-                "<pre>cd \"~/Desktop/my agent\"\n"
-                "python3 -m uvicorn server.app:app --host 127.0.0.1 --port 8000</pre>",
-                status_code=503,
-            )
-        with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+    from server.routers.frontend import register_frontend
+    register_frontend(app, _FRONTEND)
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
