@@ -485,7 +485,12 @@ function handle(ev) {
     chatEvent('err', t('errLabel'), p.message||'');
     setTaskRunning(false);
   }
-  else if (etype === 'plan_update') { if (typeof wbHandlePlan === 'function') wbHandlePlan(p); }
+  else if (etype === 'plan_update') {
+    if (typeof wbHandlePlan === 'function') wbHandlePlan(p);
+    if (typeof _snapshotPlan === 'function' && typeof _saveWorkbench === 'function') {
+      _saveWorkbench({ plan: _snapshotPlan() });   // 进度快照按会话持久化
+    }
+  }
   else if (etype === 'status_bar') { updateStatusBar(p); }
   else if (etype === 'task_done') {
     removeThinking();
@@ -3315,7 +3320,7 @@ const I18N = {
     wbFiles: '工作目录',
     wbFilesHint: '点「+」绑定目录，浏览工作区文件',
     wbFilesEmptyDir: '此目录为空',
-    wbArtifacts: '本轮产物',
+    wbArtifacts: '产物',
     wbArtifactsHint: 'Captain 写入或生成的文件，点即可预览',
     wbFilesDefault: '工作区根目录',
     wbFilesUp: '上一级',
@@ -3957,7 +3962,10 @@ function setWorkMode(mode, opts = {}) {
   try {
     const app = document.getElementById('app');
     if (app) app.classList.toggle('wb-open', workMode === 'coworker');
-    if (workMode === 'coworker') loadFiles(typeof _filesDir !== 'undefined' ? _filesDir : '');
+    // 只有真正绑定了文件夹才显示工作目录内容;没选则留空(不自动列工作区根)
+    if (workMode === 'coworker' && (_filesDir || _coworkWorkspaceDir)) {
+      loadFiles(_filesDir || _coworkWorkspaceDir);
+    }
     updateWorkbenchToggle();
   } catch {}
 
@@ -3997,6 +4005,7 @@ function setWorkMode(mode, opts = {}) {
     clearChat();
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(wsInitPayload()));
     syncChatTopbarTitle();
+    if (typeof restoreWorkbench === 'function') restoreWorkbench();   // 恢复该会话的工作目录+产物
   } else {
     const sub = document.querySelector('#chat-empty .welcome-sub');
     if (sub) sub.textContent = t(`welcome_${workMode}`);
@@ -4012,6 +4021,7 @@ function initWorkMode() {
   if (saved === 'code') localStorage.setItem('captain-work-mode', 'chat');
   sessionId = loadSessionIdForMode(workMode);
   setWorkMode(workMode, { reloadHistory: false });
+  if (typeof restoreWorkbench === 'function') restoreWorkbench();   // 初次加载也恢复工作台
 }
 
 function initLanguage() {
@@ -4335,6 +4345,7 @@ async function confirmCoworkFolder() {
   loadFiles(dir);
   updateCoworkFolderChip(dir);
   refreshWorkbenchMeta();
+  if (typeof _saveWorkbench === 'function') _saveWorkbench({ workspace_dir: dir });   // 按会话固定
   if (_currentProject) {
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(_currentProject)}`, {
@@ -4397,6 +4408,7 @@ async function onFolderPicked(input) {
   if (app) app.classList.add('wb-open');
   loadFiles(uploadDir);
   updateCoworkFolderChip(uploadDir);
+  if (typeof _saveWorkbench === 'function') _saveWorkbench({ workspace_dir: uploadDir });   // 按会话固定
   // 不再往输入框注入「[已上传文件夹: ...]」——文件夹已在工作台显示,无需污染每条对话的输入框
   if (skip > 0) alert(t('folderUploadPartial').replace('{ok}', String(ok)).replace('{skip}', String(skip)));
   else if (ok > 0) alert(t('folderUploadDone').replace('{ok}', String(ok)));

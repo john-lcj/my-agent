@@ -1387,6 +1387,36 @@ def create_app():
         ok = _session_store.set_project(sid, b.get("project_id") or None)
         return JSONResponse({"ok": ok})
 
+    @app.get("/api/sessions/{sid}/workbench")
+    async def get_workbench(sid: str) -> JSONResponse:
+        """读会话级工作台状态:工作目录 + 累计产物(重进对话用来恢复右侧面板)。"""
+        meta = _session_store.get_meta(sid)
+        return JSONResponse({"workspace_dir": meta.get("workspace_dir", ""),
+                             "artifacts": meta.get("artifacts", []),
+                             "plan": meta.get("plan", [])})
+
+    @app.post("/api/sessions/{sid}/workbench")
+    async def save_workbench(sid: str, request: Request) -> JSONResponse:
+        """保存/合并会话级工作台状态。workspace_dir 直接覆盖;artifacts 累积去重。"""
+        b = await request.json()
+        patch = {}
+        if "workspace_dir" in b:
+            patch["workspace_dir"] = str(b.get("workspace_dir") or "")
+        if isinstance(b.get("artifacts"), list):
+            cur = _session_store.get_meta(sid).get("artifacts", [])
+            merged = list(cur)
+            for a in b["artifacts"]:
+                a = str(a)
+                if a and a not in merged:
+                    merged.append(a)
+            patch["artifacts"] = merged[-200:]   # 上限,防无限膨胀
+        if isinstance(b.get("plan"), list):
+            patch["plan"] = b["plan"][:200]      # 执行进度快照(全量覆盖)
+        meta = _session_store.merge_meta(sid, patch)
+        return JSONResponse({"ok": True, "workspace_dir": meta.get("workspace_dir", ""),
+                             "artifacts": meta.get("artifacts", []),
+                             "plan": meta.get("plan", [])})
+
     @app.get("/api/sessions/search")
     async def search_sessions(q: str = "") -> JSONResponse:
         return JSONResponse({"sessions": _session_store.search_sessions(q)})

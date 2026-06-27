@@ -113,6 +113,30 @@ class SessionStore:
         self._conn.commit()
         return cur.rowcount > 0
 
+    def get_meta(self, session_id: str) -> dict:
+        """读会话级杂项状态(工作目录、产物清单等),存在 sessions.meta(JSON)。"""
+        import json
+        row = self._conn.execute(
+            "SELECT meta FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not row or not row["meta"]:
+            return {}
+        try:
+            return json.loads(row["meta"]) or {}
+        except Exception:
+            return {}
+
+    def merge_meta(self, session_id: str, patch: dict) -> dict:
+        """合并若干字段进会话 meta(浅合并),返回合并后的完整 meta。会话不存在则自动建。"""
+        import json
+        self.ensure_session(session_id)
+        meta = self.get_meta(session_id)
+        meta.update(patch or {})
+        self._conn.execute(
+            "UPDATE sessions SET meta = ? WHERE id = ?",
+            (json.dumps(meta, ensure_ascii=False), session_id))
+        self._conn.commit()
+        return meta
+
     def search_sessions(self, query: str, limit: int = 30) -> list[dict]:
         """跨会话标题与消息内容搜索,返回去重的会话列表。"""
         q = (query or "").strip()

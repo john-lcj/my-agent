@@ -913,6 +913,55 @@ function _addArtifact(path) {
   if (_artifacts.has(path)) return;
   _artifacts.add(path);
   renderWorkbench();
+  _saveWorkbench({ artifacts: [path] });   // 按会话累积持久化
+}
+
+/* —— 工作台状态(工作目录+产物)按会话持久化:重进对话能恢复 —— */
+async function _saveWorkbench(patch) {
+  try {
+    if (!sessionId || sessionId.endsWith('-pending')) return;
+    await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/workbench', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch || {}) });
+  } catch (e) {}
+}
+function _snapshotPlan() {
+  return Array.from(document.querySelectorAll('#wb-plan .wbn')).map(r => ({
+    id: r.dataset.wbnode || '',
+    text: (r.querySelector('.tx') ? r.querySelector('.tx').textContent : '') || '',
+    done: r.classList.contains('done'),
+  }));
+}
+function _restorePlan(nodes) {
+  const box = document.getElementById('wb-plan');
+  if (!box || !nodes || !nodes.length) return;
+  box.innerHTML = nodes.map(n =>
+    `<div class="wbn${n.done ? ' done' : ''}" data-wbnode="${escHtml(n.id)}">` +
+    `<span class="st ${n.done ? 'ok' : ''}">${n.done ? '✓' : '○'}</span>` +
+    `<span class="tx">${escHtml(n.text)}</span></div>`).join('');
+  if (typeof refreshWbPlanEmpty === 'function') refreshWbPlanEmpty();
+  if (typeof _wbUpdateProgressFraction === 'function') _wbUpdateProgressFraction();
+}
+async function restoreWorkbench() {
+  try {
+    if (!sessionId || sessionId.endsWith('-pending')) return;
+    const d = await (await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/workbench')).json();
+    if (d.plan && d.plan.length) _restorePlan(d.plan);   // 恢复执行进度/待办
+    // 工作目录:有则恢复并展开工作台;没有则保持空(未选文件夹不硬塞内容)
+    if (d.workspace_dir) {
+      _coworkWorkspaceDir = d.workspace_dir;
+      if (typeof updateCoworkFolderChip === 'function') updateCoworkFolderChip(d.workspace_dir);
+      if (typeof loadFiles === 'function') loadFiles(d.workspace_dir);
+      const app = document.getElementById('app'); if (app) app.classList.add('wb-open');
+    } else {
+      _coworkWorkspaceDir = '';
+    }
+    // 产物:用该会话累计的产物覆盖内存集合
+    _artifacts.clear();
+    (d.artifacts || []).forEach(p => _artifacts.add(p));
+    renderWorkbench();
+    if (typeof refreshWorkbenchMeta === 'function') refreshWorkbenchMeta();
+  } catch (e) {}
 }
 function renderWorkbench() {
   const box = document.getElementById('wb-artifacts');
