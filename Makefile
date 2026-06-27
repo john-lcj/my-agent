@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 PY := .venv/bin/python
 
-.PHONY: help setup config web cli test cov eval compare browser docker-build docker-up docker-down docker-logs clean
+.PHONY: help setup config update web cli test cov eval compare browser docker-build docker-up docker-down docker-logs clean
 
 help:  ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -16,6 +16,9 @@ setup:  ## 创建 .venv 并安装全部依赖(首次使用)
 
 config:  ## 配置向导(交互式填 .env:模型/文生图/搜索/令牌)
 	$(PY) scripts/setup_wizard.py
+
+update:  ## 同步更新:拉最新代码 + 更新依赖 + 重启(其它电脑用)
+	bash scripts/update.sh
 
 web:  ## 启动 Web 聊天界面 → http://127.0.0.1:8000
 	$(PY) -m uvicorn server.app:app --host 127.0.0.1 --port 8000
