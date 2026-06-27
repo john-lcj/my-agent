@@ -81,6 +81,29 @@ except Exception as _te:
     print(f"[templates] 内置模板种入跳过: {_te}")
 from memory.share_store import ShareStore
 _share_store = ShareStore(path=f"{Config.LOG_DIR}/shares.json")
+from memory.mission_store import MissionStore
+_mission_store = MissionStore(db_path=f"{Config.LOG_DIR}/missions.db")
+
+
+async def _mission_execute(prompt: str) -> str:
+    """无人值守执行一个 mission 子任务:建 headless agent 跑这段文字;需确认的一律拒(不阻塞)。"""
+    from core.types import Identity
+    actor = Identity(subject_id="mission", agent_name="main", channel="mission")
+    agent, ctx = _build_scheduler_agent(actor)
+    ctx.coworker = True
+    ctx.mem_scope = "mission|"
+
+    async def _deny(call, decision, reason=""):
+        return False
+
+    return await agent.run(prompt, ctx, _deny)
+
+
+def _start_mission(mid: str) -> None:
+    """后台顺序推进一个 mission(fire-and-forget);执行细节注入给路由层。"""
+    import asyncio
+    from core.mission_runner import run_mission
+    asyncio.create_task(run_mission(_mission_store, mid, _mission_execute))
 try:
     _vault = SecretsVault(db_path=f"{Config.LOG_DIR}/vault.db",
                           key_file=f"{Config.LOG_DIR}/.vault_key")
@@ -940,6 +963,9 @@ def create_app():
     # ── 主动建议:它主动想到的事,你接受(→去做)或忽略 ─────────────────────────
     from server.routers.suggestions import register_suggestions
     register_suggestions(app, _daemon_enqueue)
+
+    from server.routers.mission import register_missions
+    register_missions(app, _mission_store, _start_mission)
 
     @app.get("/api/proactive/preview")
     async def proactive_preview() -> JSONResponse:

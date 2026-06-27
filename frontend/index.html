@@ -34,9 +34,9 @@
           <span data-i18n="navSuggestions">主动建议</span>
           <span id="sug-badge" style="margin-left:auto;background:var(--accent);color:#fff;font-size:11px;border-radius:99px;padding:1px 7px">0</span>
         </button>
-        <button class="sb-nav-item" id="btn-writing" onclick="openWriting()" data-modes="chat coworker">
-          <span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
-          <span data-i18n="navWriting">写作</span>
+        <button class="sb-nav-item" id="btn-mission" onclick="openMission()" data-modes="chat coworker">
+          <span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+          <span data-i18n="navMission">任务</span>
         </button>
         <div class="sb-proj-nav" id="sb-proj-nav" data-modes="chat coworker">
           <button type="button" class="sb-nav-item sb-proj-toggle" id="btn-nav-projects"
@@ -631,30 +631,28 @@
 
 <script src="/app.js"></script>
 
-<!-- ══ 专注写作 ════════════════════════════════════════════ -->
-<div class="overlay" id="writing-overlay">
-  <div class="writing-modal">
-    <div class="writing-top">
-      <input id="writing-title" class="field-input" data-i18n-placeholder="writingTitle" placeholder="标题" style="max-width:240px"/>
-      <span id="writing-wc" style="color:var(--dim);font-size:12px"></span>
-      <span style="flex:1"></span>
-      <button class="btn-sm" onclick="writingSave()" data-i18n="writingSaveBtn">保存到产物</button>
-      <button class="btn-sm" onclick="writingExport()" data-i18n="writingExportBtn">导出</button>
-      <button class="btn-sm" onclick="closeWriting()" data-i18n="writingClose">关闭</button>
+<!-- ══ 任务 Mission ════════════════════════════════════════════ -->
+<div class="overlay" id="mission-overlay">
+  <div class="modal" style="width:min(720px,94vw);padding:16px 18px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <strong style="font-size:15px" data-i18n="missionTitle">任务 · Mission</strong>
+      <span style="color:var(--dim);font-size:12px;flex:1" data-i18n="missionTagline">交代目标,它自己拆解、顺序执行、卡住时通知你</span>
+      <button class="btn-sm" onclick="refreshMissions()" data-i18n="missionRefresh">刷新</button>
+      <button class="btn-sm" onclick="closeMission()" data-i18n="missionClose">关闭</button>
     </div>
-    <textarea id="writing-area" oninput="wcUpdate()" data-i18n-placeholder="writingPh"
-              placeholder="开始写…（选中一段文字,用下方按钮让 Captain 润色/改写;不选则作用于全文）"></textarea>
-    <div class="writing-assist">
-      <button class="btn-sm" onclick="writingAssist('润色,使表达更自然流畅、更精炼','replace')">润色</button>
-      <button class="btn-sm" onclick="writingAssist('在已有内容基础上自然地续写一段','append')">续写</button>
-      <button class="btn-sm" onclick="writingAssist('精简压缩,保留核心要点','replace')">缩写</button>
-      <button class="btn-sm" onclick="writingAssist('适当扩写,补充细节与例子','replace')">扩写</button>
-      <button class="btn-sm" onclick="writingAssist('翻译成地道的英文','replace')">译英</button>
-      <input id="writing-inst" class="field-input" data-i18n-placeholder="writingInstPh" placeholder="或输入自定义指令…"
-             style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter'){writingAssist(this.value.trim(),'replace');}"/>
-      <button class="btn-sm primary" onclick="writingAssist(document.getElementById('writing-inst').value.trim(),'replace')" data-i18n="writingApply">应用</button>
-      <span id="writing-status" style="font-size:12px;color:var(--dim)"></span>
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px">
+      <textarea id="mission-goal" class="field-input" rows="2" style="flex:1;resize:vertical"
+                data-i18n-placeholder="missionGoalPh"
+                placeholder="交代一个目标,例如:写一份德国市场分析,保存成 Word"></textarea>
+      <select id="mission-attn" class="field-input" style="max-width:130px">
+        <option value="0" data-i18n="missionAttn0">自己决定</option>
+        <option value="1" data-i18n="missionAttn1">轻通知</option>
+        <option value="2" selected data-i18n="missionAttn2">邮件告知</option>
+        <option value="3" data-i18n="missionAttn3">必须确认</option>
+      </select>
+      <button class="btn-sm primary" onclick="createMission()" data-i18n="missionCreate">交给它</button>
     </div>
+    <div id="mission-list" style="overflow:auto;max-height:55vh"></div>
   </div>
 </div>
 

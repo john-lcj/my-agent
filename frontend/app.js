@@ -1609,69 +1609,80 @@ async function dismissSug(id) {
 }
 document.addEventListener('DOMContentLoaded', () => { refreshSugBadge(); setInterval(refreshSugBadge, 90000); });
 
-/* ── 专注写作模式 ── */
-function openWriting() {
-  document.getElementById('writing-overlay')?.classList.add('open');
-  wcUpdate();
+/* ── 任务 Mission ── 交代目标 → 它自己拆解、顺序执行、卡住时通知 ── */
+let _missionTimer = null;
+const _MISSION_STATUS = {
+  created:   { t: '已创建', c: '#888' },
+  planning:  { t: '规划中', c: '#c89b3c' },
+  executing: { t: '执行中', c: '#3c8cc8' },
+  blocked:   { t: '已卡住', c: '#c85a3c' },
+  waiting_user: { t: '等你回应', c: '#c85a3c' },
+  completed: { t: '已完成', c: '#3cb371' },
+  failed:    { t: '失败', c: '#c84444' },
+  cancelled: { t: '已取消', c: '#888' },
+};
+function _mEsc(s) { const d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
+
+function openMission() {
+  document.getElementById('mission-overlay')?.classList.add('open');
   try { applyI18n(); } catch (e) {}
-  setTimeout(() => document.getElementById('writing-area')?.focus(), 60);
+  refreshMissions();
+  if (_missionTimer) clearInterval(_missionTimer);
+  _missionTimer = setInterval(refreshMissions, 4000);   // 轮询进度
+  setTimeout(() => document.getElementById('mission-goal')?.focus(), 60);
 }
-function closeWriting() { document.getElementById('writing-overlay')?.classList.remove('open'); }
-function wcUpdate() {
-  const v = (document.getElementById('writing-area')?.value) || '';
-  const el = document.getElementById('writing-wc');
-  if (el) el.textContent = v.length + ' 字';
+function closeMission() {
+  document.getElementById('mission-overlay')?.classList.remove('open');
+  if (_missionTimer) { clearInterval(_missionTimer); _missionTimer = null; }
 }
-async function writingAssist(instruction, mode) {
-  instruction = (instruction || '').trim();
-  if (!instruction) return;
-  const ta = document.getElementById('writing-area');
-  const st = document.getElementById('writing-status');
-  if (!ta) return;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  const sel = ta.value.slice(start, end);
-  const target = sel || ta.value;
-  if (!target.trim() && mode !== 'append') { if (st) st.textContent = '没有可处理的文字'; return; }
-  if (st) st.textContent = '处理中…';
+async function createMission() {
+  const goal = (document.getElementById('mission-goal')?.value || '').trim();
+  if (!goal) return;
+  const attn = parseInt(document.getElementById('mission-attn')?.value || '2', 10);
   try {
-    const d = await (await fetch('/api/writing/assist', {
+    const d = await (await fetch('/api/mission', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: target, instruction }) })).json();
-    if (!d.ok) { if (st) st.textContent = '失败:' + (d.error || ''); return; }
-    const out = d.text || '';
-    if (mode === 'append') {
-      const pos = end || ta.value.length;
-      const before = ta.value.slice(0, pos);
-      ta.value = before + (before.endsWith('\n') || !before ? '' : '\n\n') + out + ta.value.slice(pos);
-    } else if (sel) {
-      ta.value = ta.value.slice(0, start) + out + ta.value.slice(end);
-    } else {
-      ta.value = out;
-    }
-    wcUpdate();
-    const inst = document.getElementById('writing-inst'); if (inst) inst.value = '';
-    if (st) st.textContent = '已应用';
-  } catch (e) { if (st) st.textContent = '失败(网络)'; }
+      body: JSON.stringify({ goal, attention_level: attn }) })).json();
+    if (d.ok) { const g = document.getElementById('mission-goal'); if (g) g.value = ''; refreshMissions(); }
+  } catch (e) {}
 }
-async function writingSave() {
-  const title = ((document.getElementById('writing-title')?.value) || '未命名稿').trim();
-  const content = (document.getElementById('writing-area')?.value) || '';
-  const st = document.getElementById('writing-status');
-  if (st) st.textContent = '保存中…';
+async function cancelMission(mid) {
+  try { await fetch('/api/mission/' + mid + '/cancel', { method: 'POST' }); refreshMissions(); } catch (e) {}
+}
+async function refreshMissions() {
+  const box = document.getElementById('mission-list');
+  if (!box) return;
   try {
-    const d = await (await fetch('/api/writing/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content }) })).json();
-    if (st) st.textContent = d.ok ? ('已保存到 ' + d.path) : ('保存失败:' + (d.error || ''));
-  } catch (e) { if (st) st.textContent = '保存失败(网络)'; }
+    const d = await (await fetch('/api/missions')).json();
+    const list = d.missions || [];
+    if (!list.length) { box.innerHTML = '<div style="color:var(--dim);padding:16px">还没有任务。上面交代一个目标试试。</div>'; return; }
+    box.innerHTML = list.map(_missionCard).join('');
+  } catch (e) {}
 }
-function writingExport() {
-  const title = ((document.getElementById('writing-title')?.value) || '稿件').trim();
-  const blob = new Blob([(document.getElementById('writing-area')?.value) || ''], { type: 'text/markdown' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = title.replace(/[^\w一-鿿.-]/g, '_') + '.md';
-  a.click();
+function _missionCard(m) {
+  const s = _MISSION_STATUS[m.status] || { t: m.status, c: '#888' };
+  const tasks = m.tasks || [];
+  const done = tasks.filter(t => t.status === 'done').length;
+  const prog = tasks.length ? `${done}/${tasks.length}` : '—';
+  const terminal = ['completed', 'failed', 'cancelled'].includes(m.status);
+  const taskRows = tasks.map(t => {
+    const mark = t.status === 'done' ? '✓' : (t.status === 'failed' ? '✗' : (t.status === 'pending' ? '○' : '…'));
+    return `<div style="font-size:12px;color:var(--dim);padding:1px 0">${mark} ${_mEsc(t.text)}</div>`;
+  }).join('');
+  const blocked = (m.status === 'blocked' || m.status === 'waiting_user') && m.blocked_reason
+    ? `<div style="font-size:12px;color:#c85a3c;margin-top:4px">⚠ ${_mEsc(m.blocked_reason)}</div>` : '';
+  const arts = (m.artifacts || []).length
+    ? `<div style="font-size:12px;color:var(--dim);margin-top:4px">产物:${m.artifacts.map(_mEsc).join('、')}</div>` : '';
+  return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;padding:1px 8px;border-radius:10px;color:#fff;background:${s.c}">${s.t}</span>
+      <strong style="flex:1">${_mEsc(m.goal)}</strong>
+      <span style="font-size:12px;color:var(--dim)">${prog}</span>
+      ${terminal ? '' : `<button class="btn-sm" onclick="cancelMission('${m.id}')">取消</button>`}
+    </div>
+    ${taskRows ? `<div style="margin-top:6px">${taskRows}</div>` : ''}
+    ${blocked}${arts}
+  </div>`;
 }
 
 /* ── 分享 / 导出 ── */
@@ -3072,6 +3083,9 @@ const I18N = {
     navSuggestions: '主动建议', sugAccept: '接受并去做', sugGotIt: '知道了', sugDismiss: '忽略', sugEmpty: '暂无主动建议',
     shareTitle: '分享/导出当前对话', artifactPublish: '发布并复制链接',
     navWriting: '写作', writingTitle: '标题', writingSaveBtn: '保存到产物', writingExportBtn: '导出',
+    navMission: '任务', missionTitle: '任务 · Mission', missionTagline: '交代目标,它自己拆解、顺序执行、卡住时通知你',
+    missionRefresh: '刷新', missionClose: '关闭', missionCreate: '交给它', missionGoalPh: '交代一个目标,例如:写一份德国市场分析,保存成 Word',
+    missionAttn0: '自己决定', missionAttn1: '轻通知', missionAttn2: '邮件告知', missionAttn3: '必须确认',
     writingClose: '关闭', writingApply: '应用',
     writingPh: '开始写…（选中一段文字,用下方按钮让 Captain 润色/改写;不选则作用于全文）',
     writingInstPh: '或输入自定义指令…',
@@ -3437,6 +3451,9 @@ const I18N = {
     navSuggestions: 'Suggestions', sugAccept: 'Accept & do it', sugGotIt: 'Got it', sugDismiss: 'Dismiss', sugEmpty: 'No suggestions yet',
     shareTitle: 'Share / export this conversation', artifactPublish: 'Publish & copy link',
     navWriting: 'Write', writingTitle: 'Title', writingSaveBtn: 'Save to outputs', writingExportBtn: 'Export',
+    navMission: 'Missions', missionTitle: 'Missions', missionTagline: 'Give it a goal — it plans, executes in order, and pings you when blocked',
+    missionRefresh: 'Refresh', missionClose: 'Close', missionCreate: 'Hand it over', missionGoalPh: 'Give a goal, e.g. write a Germany market analysis and save as Word',
+    missionAttn0: 'Decide itself', missionAttn1: 'Notify', missionAttn2: 'Email me', missionAttn3: 'Must confirm',
     writingClose: 'Close', writingApply: 'Apply',
     writingPh: 'Start writing… (select text and use the buttons to have Captain polish/rewrite; no selection = whole doc)',
     writingInstPh: 'or type a custom instruction…',
