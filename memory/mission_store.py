@@ -33,11 +33,17 @@ class MissionStore:
                 tasks TEXT NOT NULL DEFAULT '[]',        -- [{id,text,status,result}]
                 artifacts TEXT NOT NULL DEFAULT '[]',    -- [路径]
                 notifications TEXT NOT NULL DEFAULT '[]', -- [{ts,level,message}]
+                context TEXT NOT NULL DEFAULT '[]',       -- [用户补充的资料/决策,供卡住后恢复]
                 created_at REAL NOT NULL DEFAULT 0,
                 updated_at REAL NOT NULL DEFAULT 0
             )
             """
         )
+        # 旧库迁移:补 context 列(忽略已存在)
+        try:
+            self._conn.execute("ALTER TABLE missions ADD COLUMN context TEXT NOT NULL DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
         self._conn.commit()
 
     # ── 基础 CRUD ──────────────────────────────────────────────
@@ -131,6 +137,18 @@ class MissionStore:
         self._save_field(mid, "artifacts", arts)
         return self.get(mid)
 
+    def add_context(self, mid: str, note: str) -> dict:
+        """记录用户为解卡补充的资料/决策(恢复执行时拼进任务上下文)。"""
+        m = self.get(mid)
+        if m is None:
+            raise KeyError(mid)
+        ctx = m.get("context") or []
+        note = (note or "").strip()
+        if note:
+            ctx.append({"ts": time.time(), "note": note})
+        self._save_field(mid, "context", ctx)
+        return self.get(mid)
+
     def add_notification(self, mid: str, level: int, message: str) -> dict:
         m = self.get(mid)
         if m is None:
@@ -150,7 +168,7 @@ class MissionStore:
     @staticmethod
     def _hydrate(row: sqlite3.Row) -> dict:
         d = dict(row)
-        for f in ("tasks", "artifacts", "notifications"):
+        for f in ("tasks", "artifacts", "notifications", "context"):
             try:
                 d[f] = json.loads(d.get(f) or "[]")
             except Exception:

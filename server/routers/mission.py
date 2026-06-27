@@ -11,7 +11,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
-def register_missions(app, store, start_mission: Callable[[str], None]) -> None:
+def register_missions(app, store, start_mission: Callable[[str], None],
+                      resume_mission: Callable[[str, str], None] | None = None) -> None:
     @app.get("/api/missions")
     async def list_missions() -> JSONResponse:
         return JSONResponse({"missions": store.list()})
@@ -42,6 +43,23 @@ def register_missions(app, store, start_mission: Callable[[str], None]) -> None:
             return JSONResponse({"ok": True, "mission": store.get(m["id"]),
                                  "warn": f"已创建但未能启动后台执行:{e}"})
         return JSONResponse({"ok": True, "mission": store.get(m["id"])})
+
+    @app.post("/api/mission/{mid}/resume")
+    async def resume_mission_route(mid: str, request: Request) -> JSONResponse:
+        m = store.get(mid)
+        if m is None:
+            return JSONResponse({"ok": False, "error": "mission 不存在"}, status_code=404)
+        if m["status"] not in ("blocked", "waiting_user"):
+            return JSONResponse({"ok": False, "error": "该任务当前不处于卡住/等待状态"}, status_code=400)
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        info = str(b.get("info", "")).strip()
+        if resume_mission is None:
+            return JSONResponse({"ok": False, "error": "恢复未接线"}, status_code=503)
+        resume_mission(mid, info)
+        return JSONResponse({"ok": True})
 
     @app.post("/api/mission/{mid}/cancel")
     async def cancel_mission(mid: str) -> JSONResponse:

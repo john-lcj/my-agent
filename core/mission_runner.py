@@ -17,8 +17,32 @@ from core.mission import MissionStatus
 
 ExecuteFn = Callable[[str], Awaitable[str]]
 EmitFn = Optional[Callable[[str, dict], None]]
+NotifyFn = Optional[Callable[[dict, str], None]]   # (mission, reason) → 通知用户(如发邮件)
 
 _MAX_TASKS = 8
+
+# 卡住协议:让子任务在"缺资料/需授权/需决策、无法继续"时,用固定前缀回报,而不是瞎编。
+_BLOCK_PROTOCOL = (
+    "\n\n【重要】如果缺少必要的资料/授权/付款/决策,导致你无法真正完成这一步,"
+    "不要编造或假装完成——只回一行,以 `NEED_INPUT:` 开头,后面简短说明缺什么、要主人提供什么。"
+    "例如:NEED_INPUT: 缺德国营业执照扫描件,请上传后我继续。"
+)
+_NEED = "NEED_INPUT:"
+
+
+def _need_input(result: str) -> str:
+    """若子任务回报卡住,返回卡住原因;否则空串。"""
+    s = (result or "").strip()
+    if s.startswith(_NEED):
+        return s[len(_NEED):].strip() or "需要你补充信息"
+    return ""
+
+
+def _context_preamble(mission: dict) -> str:
+    notes = [c.get("note", "") for c in (mission.get("context") or []) if c.get("note")]
+    if not notes:
+        return ""
+    return "主人已补充的资料/决策(执行时请利用):\n" + "\n".join(f"- {n}" for n in notes) + "\n\n"
 
 
 def _plan_prompt(goal: str) -> str:
@@ -58,8 +82,12 @@ async def plan_mission(store, mid: str, execute: ExecuteFn) -> list[dict]:
 
 
 async def run_mission(store, mid: str, execute: ExecuteFn,
-                      emit: EmitFn = None) -> dict:
-    """完整推进一个 mission:规划 → 顺序执行子任务 → 完成/失败。返回最终 mission。"""
+                      emit: EmitFn = None, notify: NotifyFn = None) -> dict:
+    """完整推进一个 mission:规划 → 顺序执行子任务 → 完成/失败/卡住。返回最终 mission。
+
+    子任务回报 `NEED_INPUT:` 时 → 置 BLOCKED + 调 notify(发邮件找主人)+ 暂停(任务保留 pending)。
+    主人补料后用 resume_mission 恢复:补充信息进 context,从卡住的任务继续。
+    """
     def _emit(kind: str, payload: dict) -> None:
         if emit:
             try:
@@ -102,7 +130,19 @@ async def run_mission(store, mid: str, execute: ExecuteFn,
             break
         _emit("task.started", {"task_id": t["id"], "text": t["text"]})
         try:
-            result = await execute(t["text"])
+            prompt = _context_preamble(cur) + t["text"] + _BLOCK_PROTOCOL
+            result = await execute(prompt)
+            reason = _need_input(result)
+            if reason:   # 卡住:置 BLOCKED + 通知,任务保留 pending,等恢复
+                store.set_status(mid, MissionStatus.BLOCKED.value, reason=reason)
+                store.add_notification(mid, cur.get("attention_level", 2), reason)
+                if notify:
+                    try:
+                        notify(store.get(mid), reason)
+                    except Exception:
+                        pass
+                _emit("mission.blocked", {"task_id": t["id"], "reason": reason})
+                return store.get(mid)
             store.update_task(mid, t["id"], status="done", result=(result or "")[:4000])
             _emit("task.done", {"task_id": t["id"]})
         except Exception as e:
@@ -115,3 +155,17 @@ async def run_mission(store, mid: str, execute: ExecuteFn,
     store.set_status(mid, MissionStatus.COMPLETED.value)
     _emit("mission.completed", {})
     return store.get(mid)
+
+
+async def resume_mission(store, mid: str, execute: ExecuteFn, info: str = "",
+                         emit: EmitFn = None, notify: NotifyFn = None) -> dict:
+    """主人补料后恢复一个卡住的 mission:补充信息进 context → 置 EXECUTING → 从卡住的任务继续。"""
+    m = store.get(mid)
+    if m is None:
+        raise KeyError(mid)
+    if m["status"] not in (MissionStatus.BLOCKED.value, MissionStatus.WAITING_USER.value):
+        return m   # 只恢复卡住/等待中的
+    if (info or "").strip():
+        store.add_context(mid, info)
+    store.set_status(mid, MissionStatus.EXECUTING.value)
+    return await run_mission(store, mid, execute, emit=emit, notify=notify)

@@ -1649,6 +1649,16 @@ async function createMission() {
 async function cancelMission(mid) {
   try { await fetch('/api/mission/' + mid + '/cancel', { method: 'POST' }); refreshMissions(); } catch (e) {}
 }
+async function resumeMission(mid) {
+  const info = prompt('补充它需要的资料/决策(留空则直接重试):') ;
+  if (info === null) return;   // 取消
+  try {
+    await fetch('/api/mission/' + mid + '/resume', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ info: (info || '').trim() }) });
+    refreshMissions();
+  } catch (e) {}
+}
 async function refreshMissions() {
   const box = document.getElementById('mission-list');
   if (!box) return;
@@ -1678,6 +1688,7 @@ function _missionCard(m) {
       <span style="font-size:11px;padding:1px 8px;border-radius:10px;color:#fff;background:${s.c}">${s.t}</span>
       <strong style="flex:1">${_mEsc(m.goal)}</strong>
       <span style="font-size:12px;color:var(--dim)">${prog}</span>
+      ${(m.status === 'blocked' || m.status === 'waiting_user') ? `<button class="btn-sm primary" onclick="resumeMission('${m.id}')">补充并恢复</button>` : ''}
       ${terminal ? '' : `<button class="btn-sm" onclick="cancelMission('${m.id}')">取消</button>`}
     </div>
     ${taskRows ? `<div style="margin-top:6px">${taskRows}</div>` : ''}

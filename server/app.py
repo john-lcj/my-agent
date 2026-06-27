@@ -99,11 +99,34 @@ async def _mission_execute(prompt: str) -> str:
     return await agent.run(prompt, ctx, _deny)
 
 
+def _mission_notify(mission: dict, reason: str) -> None:
+    """mission 卡住时通知主人(best-effort 发邮件;没配邮件就只留在通知记录里)。"""
+    import asyncio
+    goal = mission.get("goal", "")
+    mid = mission.get("id", "")
+    subject = f"[Mission 卡住] {goal[:40]}"
+    body = (f"任务「{goal}」卡住了,需要你:\n\n{reason}\n\n"
+            f"补充后在 Captain 的「任务」面板点该任务的「补充并恢复」继续(mission id: {mid})。")
+    try:
+        asyncio.create_task(_deliver_result("email", "", subject, body))
+    except Exception:
+        pass
+
+
 def _start_mission(mid: str) -> None:
     """后台顺序推进一个 mission(fire-and-forget);执行细节注入给路由层。"""
     import asyncio
     from core.mission_runner import run_mission
-    asyncio.create_task(run_mission(_mission_store, mid, _mission_execute))
+    asyncio.create_task(run_mission(_mission_store, mid, _mission_execute,
+                                    notify=_mission_notify))
+
+
+def _resume_mission(mid: str, info: str = "") -> None:
+    """主人补料后恢复一个卡住的 mission(fire-and-forget)。"""
+    import asyncio
+    from core.mission_runner import resume_mission
+    asyncio.create_task(resume_mission(_mission_store, mid, _mission_execute,
+                                       info=info, notify=_mission_notify))
 try:
     _vault = SecretsVault(db_path=f"{Config.LOG_DIR}/vault.db",
                           key_file=f"{Config.LOG_DIR}/.vault_key")
@@ -965,7 +988,7 @@ def create_app():
     register_suggestions(app, _daemon_enqueue)
 
     from server.routers.mission import register_missions
-    register_missions(app, _mission_store, _start_mission)
+    register_missions(app, _mission_store, _start_mission, _resume_mission)
 
     @app.get("/api/proactive/preview")
     async def proactive_preview() -> JSONResponse:
