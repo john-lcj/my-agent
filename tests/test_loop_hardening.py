@@ -37,6 +37,9 @@ class _Registry:
     def specs(self):
         return [{"name": "noop", "description": "", "schema": {}, "risk": 1}]
 
+    def specs_for(self, user_text: str):
+        return self.specs()
+
     def get(self, name):
         class C:
             risk = Risk.READ
