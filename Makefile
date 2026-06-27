@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 PY := .venv/bin/python
 
-.PHONY: help setup config web cli test cov eval compare docker-build docker-up docker-down docker-logs clean
+.PHONY: help setup config web cli test cov eval compare browser docker-build docker-up docker-down docker-logs clean
 
 help:  ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -36,6 +36,12 @@ eval:  ## 真实模型质量评测(40 用例,需 DEEPSEEK_API_KEY)
 
 compare:  ## 多模型对照评测(flash vs pro,出质量×延迟表)
 	$(PY) scripts/compare_models.py
+
+browser:  ## 安装浏览器自动化能力(Playwright 包 + Chromium 内核,装进 .venv)
+	$(PY) -m pip install playwright
+	$(PY) -m playwright install chromium
+	@echo "✓ 浏览器能力就绪。重启服务后 browser.* 可用:"
+	@echo "  lsof -ti:8000 | xargs kill -9 2>/dev/null; make web"
 
 docker-build:  ## 构建 Docker 镜像
 	docker build -t my-agent .
