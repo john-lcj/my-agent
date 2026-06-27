@@ -916,13 +916,33 @@ function _addArtifact(path) {
   _saveWorkbench({ artifacts: [path] });   // 按会话累积持久化
 }
 
-/* —— 工作台状态(工作目录+产物)按会话持久化:重进对话能恢复 —— */
+/* —— 工作台状态按会话持久化 ——
+   主存储:localStorage(按 sessionId 隔离,刷新必活、无异步/鉴权坑);服务端只做最佳努力同步。 */
+function _wbKey(sid) { return 'wb:' + (sid || sessionId || ''); }
+function _wbLoad(sid) {
+  try { return JSON.parse(localStorage.getItem(_wbKey(sid)) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function _wbStore(sid, rec) {
+  try { localStorage.setItem(_wbKey(sid), JSON.stringify(rec)); } catch (e) {}
+}
 async function _saveWorkbench(patch) {
-  try {
-    if (!sessionId || sessionId.endsWith('-pending')) return;
-    await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/workbench', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch || {}) });
+  if (!sessionId) return;
+  patch = patch || {};
+  const rec = _wbLoad(sessionId);
+  if ('workspace_dir' in patch) rec.workspace_dir = patch.workspace_dir || '';
+  if (Array.isArray(patch.artifacts)) {
+    rec.artifacts = rec.artifacts || [];
+    patch.artifacts.forEach(a => { if (a && !rec.artifacts.includes(a)) rec.artifacts.push(a); });
+  }
+  if (Array.isArray(patch.plan)) rec.plan = patch.plan;
+  _wbStore(sessionId, rec);                              // 本地立即持久化(刷新可恢复)
+  try {                                                  // 服务端最佳努力同步(跨设备),失败不影响本地
+    if (!sessionId.endsWith('-pending')) {
+      fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/workbench', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch) });
+    }
   } catch (e) {}
 }
 function _snapshotPlan() {
@@ -943,25 +963,38 @@ function _restorePlan(nodes) {
   if (typeof _wbUpdateProgressFraction === 'function') _wbUpdateProgressFraction();
 }
 async function restoreWorkbench() {
-  try {
-    if (!sessionId || sessionId.endsWith('-pending')) return;
-    const d = await (await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/workbench')).json();
-    if (d.plan && d.plan.length) _restorePlan(d.plan);   // 恢复执行进度/待办
-    // 工作目录:有则恢复并展开工作台;没有则保持空(未选文件夹不硬塞内容)
-    if (d.workspace_dir) {
-      _coworkWorkspaceDir = d.workspace_dir;
-      if (typeof updateCoworkFolderChip === 'function') updateCoworkFolderChip(d.workspace_dir);
-      if (typeof loadFiles === 'function') loadFiles(d.workspace_dir);
-      const app = document.getElementById('app'); if (app) app.classList.add('wb-open');
-    } else {
-      _coworkWorkspaceDir = '';
-    }
-    // 产物:用该会话累计的产物覆盖内存集合
-    _artifacts.clear();
-    (d.artifacts || []).forEach(p => _artifacts.add(p));
-    renderWorkbench();
+  if (!sessionId) return;
+  const sid = sessionId;
+  let rec = _wbLoad(sid);                                 // 先读本地(主存储)
+  const empty = !rec.workspace_dir && !(rec.artifacts && rec.artifacts.length) && !(rec.plan && rec.plan.length);
+  if (empty && !sid.endsWith('-pending')) {              // 本地没有 → 回服务端拿(换浏览器/设备)
+    try {
+      const d = await (await fetch('/api/sessions/' + encodeURIComponent(sid) + '/workbench')).json();
+      if (sessionId !== sid) return;                      // 期间又切走了,放弃,避免串台
+      rec = { workspace_dir: d.workspace_dir || '', artifacts: d.artifacts || [], plan: d.plan || [] };
+      if (!empty || rec.workspace_dir || rec.artifacts.length || rec.plan.length) _wbStore(sid, rec);
+    } catch (e) {}
+  }
+  if (sessionId !== sid) return;
+  // —— 无论有没有内容,都把右侧面板重置成"这个会话"的状态,杜绝 A/B 串台 ——
+  _artifacts.clear();
+  (rec.artifacts || []).forEach(p => _artifacts.add(p));
+  renderWorkbench();
+  const planBox = document.getElementById('wb-plan');
+  if (rec.plan && rec.plan.length) { _restorePlan(rec.plan); }
+  else if (planBox) { planBox.innerHTML = ''; if (typeof refreshWbPlanEmpty === 'function') refreshWbPlanEmpty(); }
+  if (rec.workspace_dir) {
+    _coworkWorkspaceDir = rec.workspace_dir;
+    if (typeof updateCoworkFolderChip === 'function') updateCoworkFolderChip(rec.workspace_dir);
+    if (typeof loadFiles === 'function') loadFiles(rec.workspace_dir);
+    const app = document.getElementById('app'); if (app) app.classList.add('wb-open');
+  } else {
+    _coworkWorkspaceDir = '';
+    _filesDir = '';
+    const fb = document.getElementById('wb-files');
+    if (fb) fb.innerHTML = '<div class="wb-empty">' + escHtml(t('wbFilesHint')) + '</div>';
     if (typeof refreshWorkbenchMeta === 'function') refreshWorkbenchMeta();
-  } catch (e) {}
+  }
 }
 function renderWorkbench() {
   const box = document.getElementById('wb-artifacts');
