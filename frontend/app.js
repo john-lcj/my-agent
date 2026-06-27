@@ -439,7 +439,9 @@ function handle(ev) {
       }
       if (capName === 'image.generate' && p.ok
           && typeof appendChatImage === 'function') {
-        const rel = normalizeArtifactRel((cap && cap.args)?.name, p.output)
+        // 优先从 output(含完整 产物/ 路径)解析;否则才退回用文件名参数,避免丢 产物/ 前缀
+        const rel = normalizeArtifactRel('', p.output)
+          || normalizeArtifactRel((cap && cap.args)?.name, p.output)
           || normalizeArtifactRel('', p.artifact_path || '');
         if (rel) {
           registerWorkbenchArtifact(rel, p.output);
