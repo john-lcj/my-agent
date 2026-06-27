@@ -990,6 +990,9 @@ def create_app():
     from server.routers.mission import register_missions
     register_missions(app, _mission_store, _start_mission, _resume_mission)
 
+    from server.routers.preview import register_preview
+    register_preview(app, _resolve_in_workspace)
+
     @app.get("/api/proactive/preview")
     async def proactive_preview() -> JSONResponse:
         """预览主动引擎"现在会看到的上下文",方便主人理解它据什么判断。"""

@@ -609,6 +609,11 @@ function isImageArtifact(path) { return _IMAGE_EXT_RE.test(String(path || '')); 
 function artifactRawUrl(path) {
   return '/api/artifact/raw?path=' + encodeURIComponent(path);
 }
+function previewUrl(path) {
+  // /preview/<工作区相对路径>:每段单独编码,保留 / 以便相对资源解析
+  const clean = String(path || '').replace(/\\/g, '/').replace(/^\.?\//, '');
+  return '/preview/' + clean.split('/').map(encodeURIComponent).join('/');
+}
 async function loadInlineImage(imgEl, path) {
   if (!imgEl || !path) return;
   try {
@@ -734,11 +739,22 @@ async function openArtifact(path) {
       loadInlineImage(img, path);
       body.appendChild(img);
     } else if (d.kind === 'html') {
+      // 真实预览:用 /preview 服务文件,相对资源(css/图片)能解析、能在新标签打开
+      const url = previewUrl(path);
+      body.innerHTML = '';
+      body.style.cssText = 'display:flex;flex-direction:column;height:100%';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center';
+      bar.innerHTML = '<span style="font-size:12px;color:var(--dim);flex:1">网页预览</span>';
+      const open = document.createElement('a');
+      open.href = url; open.target = '_blank'; open.rel = 'noopener';
+      open.className = 'btn-sm'; open.textContent = '↗ 在新标签打开';
+      bar.appendChild(open);
       const ifr = document.createElement('iframe');
-      ifr.setAttribute('sandbox', 'allow-scripts');
-      ifr.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
-      ifr.srcdoc = d.content;
-      body.innerHTML = ''; body.appendChild(ifr);
+      ifr.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      ifr.style.cssText = 'width:100%;flex:1;border:0;background:#fff';
+      ifr.src = url;
+      body.appendChild(bar); body.appendChild(ifr);
     } else if (d.kind === 'markdown') {
       body.innerHTML = '<div class="md" style="padding:18px">' + renderMD(d.content) + '</div>';
     } else {
