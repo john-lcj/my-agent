@@ -47,3 +47,4 @@ report/
 .coverage.*
 htmlcov/
 coverage.xml
+scripts/
