@@ -33,7 +33,20 @@ detect_os() {
     esac
 }
 
-# ── 检测 Python ───────────────────────────────────────────────
+# ── 确保 Homebrew 存在（macOS）───────────────────────────────
+ensure_brew() {
+    if ! command -v brew &>/dev/null; then
+        info "未检测到 Homebrew，正在安装（需要输入密码）..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Apple Silicon 路径
+        [[ -f /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
+        # Intel 路径
+        [[ -f /usr/local/bin/brew ]] && eval "$(/usr/local/bin/brew shellenv)"
+        success "Homebrew 安装完成"
+    fi
+}
+
+# ── 检测 / 自动安装 Python ────────────────────────────────────
 detect_python() {
     for cmd in python3.12 python3.11 python3.10 python3; do
         if command -v "$cmd" &>/dev/null; then
@@ -46,18 +59,50 @@ detect_python() {
             fi
         fi
     done
-    die "需要 Python $MIN_PYTHON+，请先安装：https://www.python.org/downloads/"
+
+    warn "未找到 Python 3.10+，尝试自动安装..."
+    if [[ "$OS" == "macos" ]]; then
+        ensure_brew
+        brew install python@3.11
+        PYTHON_CMD="$(brew --prefix)/bin/python3.11"
+        [[ -x "$PYTHON_CMD" ]] || PYTHON_CMD="python3.11"
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get install -y python3.11 python3.11-venv python3-pip
+        PYTHON_CMD="python3.11"
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y python311 python311-pip
+        PYTHON_CMD="python3.11"
+    else
+        die "无法自动安装 Python，请手动安装 Python 3.10+：https://www.python.org/downloads/"
+    fi
+
+    if ! command -v "$PYTHON_CMD" &>/dev/null; then
+        die "Python 安装失败，请手动安装：https://www.python.org/downloads/"
+    fi
+    success "Python 已安装：$($PYTHON_CMD --version)"
 }
 
-# ── 检测 git ──────────────────────────────────────────────────
+# ── 检测 / 自动安装 git ───────────────────────────────────────
 detect_git() {
-    if ! command -v git &>/dev/null; then
-        if [[ "$OS" == "macos" ]]; then
-            die "请先安装 git：xcode-select --install"
-        else
-            die "请先安装 git：sudo apt install git  /  sudo yum install git"
-        fi
+    if command -v git &>/dev/null; then
+        return 0
     fi
+    warn "未找到 git，尝试自动安装..."
+    if [[ "$OS" == "macos" ]]; then
+        # macOS: xcode-select --install 会弹窗，优先用 brew
+        ensure_brew
+        brew install git
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get install -y git
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y git
+    else
+        die "无法自动安装 git，请手动安装后重试"
+    fi
+    command -v git &>/dev/null || die "git 安装失败，请手动安装后重试"
+    success "git 已安装：$(git --version)"
 }
 
 # ── 下载或更新代码 ────────────────────────────────────────────
