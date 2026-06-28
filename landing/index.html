@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Captain — 跑在你电脑上的私人 AI Agent</title>
+<meta name="description" content="Captain 是一款本地运行的 AI Agent，能读写你的文件、执行命令、定时运行任务，数据永不离开你的电脑。"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0d0f; --surface: #16161a; --border: #252530;
+    --txt: #e8e8f0; --dim: #8888a0; --accent: #7c6cf0; --accent2: #a89cf5;
+    --green: #3ecf8e; --radius: 12px; --max: 1120px;
+  }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  .container { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  section { padding: 96px 0; }
+
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 100;
+    background: rgba(13,13,15,.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); }
+  .nav-inner { max-width: var(--max); margin: 0 auto; padding: 0 24px;
+    height: 60px; display: flex; align-items: center; gap: 32px; }
+  .nav-logo { font-weight: 700; font-size: 18px; letter-spacing: -.5px; }
+  .nav-logo span { color: var(--accent2); }
+  .nav-links { display: flex; gap: 24px; margin-left: auto; }
+  .nav-links a { color: var(--dim); font-size: 14px; transition: color .15s; }
+  .nav-links a:hover { color: var(--txt); }
+  .nav-cta { background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 7px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .nav-cta:hover { opacity: .85; }
+
+  /* hero */
+  .hero { padding: 120px 0 100px; text-align: center;
+    background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124,108,240,.18) 0%, transparent 70%); }
+  .badge { display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 14px; font-size: 12px; color: var(--dim); margin-bottom: 28px; }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  h1 { font-size: clamp(36px,6vw,72px); font-weight: 800; letter-spacing: -2px;
+    line-height: 1.1; margin-bottom: 24px; }
+  h1 em { font-style: normal; color: var(--accent2); }
+  .hero-sub { font-size: clamp(16px,2.5vw,20px); color: var(--dim);
+    max-width: 560px; margin: 0 auto 44px; line-height: 1.65; }
+  .hero-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    padding: 14px 32px; font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s, transform .1s; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+  .btn-secondary { background: transparent; color: var(--txt);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 32px; font-size: 16px; font-weight: 500; cursor: pointer;
+    transition: border-color .15s, transform .1s; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-secondary:hover { border-color: var(--accent2); transform: translateY(-1px); }
+  .hero-hint { margin-top: 20px; font-size: 13px; color: var(--dim); }
+
+  /* terminal */
+  .terminal { margin: 72px auto 0; max-width: 680px;
+    background: #0a0a0c; border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; box-shadow: 0 32px 80px rgba(0,0,0,.6); }
+  .term-bar { background: #111114; padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); }
+  .term-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .term-title { margin: 0 auto; font-size: 12px; color: var(--dim); }
+  .term-body { padding: 20px 22px; font-family: "JetBrains Mono","Fira Code",monospace;
+    font-size: 13px; line-height: 1.8; }
+  .tc { color: var(--dim); } .tu { color: #7ec8e3; }
+  .ta { color: var(--accent2); } .tg { color: var(--green); } .ty { color: #f0c040; }
+
+  /* sections */
+  .section-label { font-size: 12px; font-weight: 600; letter-spacing: 1.5px;
+    color: var(--accent2); text-transform: uppercase; margin-bottom: 12px; text-align: center; }
+  h2 { font-size: clamp(28px,4vw,44px); font-weight: 800; letter-spacing: -1px;
+    line-height: 1.15; text-align: center; margin-bottom: 16px; }
+  .section-sub { text-align: center; color: var(--dim); font-size: 17px;
+    max-width: 520px; margin: 0 auto 64px; line-height: 1.6; }
+
+  /* features */
+  .features-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 20px; }
+  .feat-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px; transition: border-color .2s, transform .2s; }
+  .feat-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .feat-icon { width: 44px; height: 44px; border-radius: 10px;
+    background: rgba(124,108,240,.15); display: flex; align-items: center;
+    justify-content: center; font-size: 22px; margin-bottom: 16px; }
+  .feat-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .feat-card p { color: var(--dim); font-size: 14px; line-height: 1.65; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 32px; }
+  .step { text-align: center; }
+  .step-num { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--accent);
+    color: var(--accent2); display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; margin: 0 auto 16px; }
+  .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .step p { color: var(--dim); font-size: 14px; line-height: 1.6; }
+
+  /* pricing */
+  #pricing { background: radial-gradient(ellipse 60% 40% at 50% 100%,rgba(124,108,240,.1) 0%,transparent 70%); }
+  .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,360px));
+    gap: 20px; justify-content: center; }
+  .price-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 32px; position: relative; }
+  .price-card.pro { border-color: var(--accent);
+    background: linear-gradient(135deg,#16161a 0%,#1a1830 100%); }
+  .price-popular { position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+    padding: 3px 14px; border-radius: 20px; }
+  .price-name { font-size: 14px; font-weight: 600; color: var(--dim); margin-bottom: 12px; }
+  .price-val { font-size: 48px; font-weight: 800; letter-spacing: -2px; margin-bottom: 4px; }
+  .price-val sup { font-size: 22px; vertical-align: super; }
+  .price-val sub { font-size: 14px; font-weight: 400; color: var(--dim); }
+  .price-alt { font-size: 13px; color: var(--dim); margin-bottom: 28px; }
+  .price-features { list-style: none; margin-bottom: 32px; }
+  .price-features li { display: flex; align-items: flex-start; gap: 10px;
+    font-size: 14px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .price-features li:last-child { border-bottom: none; }
+  .chk { color: var(--green); font-size: 15px; flex-shrink: 0; margin-top: 2px; }
+  .cross { color: #555; font-size: 15px; flex-shrink: 0; margin-top: 2px; }
+  .price-btn { width: 100%; padding: 13px; border-radius: 10px; font-size: 15px;
+    font-weight: 600; cursor: pointer; border: none; transition: opacity .15s, transform .1s; }
+  .price-btn:hover { opacity: .85; transform: translateY(-1px); }
+  .price-btn.free { background: var(--border); color: var(--txt); }
+  .price-btn.pro { background: var(--accent); color: #fff; }
+
+  /* modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; z-index: 999;
+    background: rgba(0,0,0,.7); align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 36px; max-width: 480px; width: 90%; }
+  .modal-box h3 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .modal-box p { color: var(--dim); font-size: 14px; margin-bottom: 20px; }
+  .install-cmd { background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; font-family: monospace; font-size: 13px; color: var(--accent2);
+    word-break: break-all; line-height: 1.7; margin-bottom: 16px; position: relative; }
+  .copy-btn { position: absolute; top: 10px; right: 10px; background: var(--accent);
+    border: none; color: #fff; border-radius: 6px; padding: 4px 10px;
+    font-size: 12px; cursor: pointer; }
+  .install-steps { margin-bottom: 24px; }
+  .install-steps li { color: var(--dim); font-size: 14px; margin-bottom: 8px; padding-left: 4px; }
+  .install-steps li b { color: var(--txt); }
+  .pay-tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+  .pay-tab { padding: 7px 20px; border-radius: 8px; border: 1px solid var(--border);
+    background: none; color: var(--dim); font-size: 13px; cursor: pointer; transition: all .15s; }
+  .pay-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .qr-placeholder { width: 180px; height: 180px; background: #fff; border-radius: 12px;
+    margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #999; flex-direction: column; gap: 8px; }
+  .pay-amount { font-size: 28px; font-weight: 800; color: var(--accent2); margin-bottom: 6px; text-align:center; }
+  .pay-hint { font-size: 12px; color: var(--dim); margin-bottom: 20px; text-align:center; }
+  .modal-close-btn { background: none; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 8px; padding: 8px 20px; cursor: pointer; font-size: 13px; display:block; margin:0 auto; }
+  .modal-close-btn:hover { color: var(--txt); }
+
+  /* faq */
+  .faq-list { max-width: 680px; margin: 0 auto; }
+  .faq-item { border-bottom: 1px solid var(--border); padding: 20px 0; cursor: pointer; }
+  .faq-q { display: flex; justify-content: space-between; align-items: center;
+    font-size: 16px; font-weight: 600; }
+  .faq-arrow { color: var(--dim); transition: transform .2s; font-size: 18px; }
+  .faq-item.open .faq-arrow { transform: rotate(45deg); }
+  .faq-a { color: var(--dim); font-size: 14px; line-height: 1.7;
+    max-height: 0; overflow: hidden; transition: max-height .3s, padding .3s; }
+  .faq-item.open .faq-a { max-height: 300px; padding-top: 12px; }
+
+  /* footer */
+  footer { border-top: 1px solid var(--border); padding: 40px 0;
+    text-align: center; color: var(--dim); font-size: 13px; }
+  footer a { color: var(--dim); margin: 0 12px; }
+  footer a:hover { color: var(--txt); }
+
+  @media (max-width: 640px) {
+    section { padding: 64px 0; } .hero { padding: 80px 0 64px; }
+    .nav-links { display: none; } h1 { letter-spacing: -1px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="nav-logo">⚡ <span>Captain</span></div>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#how">安装</a>
+      <a href="#pricing">定价</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <button class="nav-cta" onclick="openPayModal()">获取 Pro</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="container">
+    <div class="badge"><span class="badge-dot"></span>现已开放 · v1.0 Beta · macOS</div>
+    <h1>跑在你电脑上的<br/><em>私人 AI Agent</em></h1>
+    <p class="hero-sub">读你的文件、执行你的任务、记住你的偏好。<br/>数据永远在你本机，不上传，不共享。</p>
+    <div class="hero-btns">
+      <button class="btn-primary" onclick="openInstallModal()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        免费安装
+      </button>
+      <button class="btn-secondary" onclick="openPayModal()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        购买 Pro
+      </button>
+    </div>
+    <p class="hero-hint">macOS 支持 · Windows 即将支持 · MIT 开源</p>
+    <div class="terminal">
+      <div class="term-bar">
+        <div class="term-dot" style="background:#ff5f57"></div>
+        <div class="term-dot" style="background:#febc2e"></div>
+        <div class="term-dot" style="background:#28c840"></div>
+        <div class="term-title">Captain — 本地 AI Agent</div>
+      </div>
+      <div class="term-body">
+        <div><span class="tc">你  </span><span class="tu">帮我把 Downloads 里上个月的发票整理汇总，生成报销表</span></div>
+        <div style="margin-top:10px"><span class="tc">⚡  </span><span class="ta">正在扫描 ~/Downloads ...</span></div>
+        <div><span class="tc">    </span><span class="ta">找到 23 个 PDF，识别金额中</span></div>
+        <div><span class="tc">    </span><span class="tg">✓ 已生成 报销汇总_2025-06.xlsx</span></div>
+        <div style="margin-top:10px"><span class="tc">你  </span><span class="tu">顺手发邮件给财务，附上这个文件</span></div>
+        <div style="margin-top:6px"><span class="tc">⚡  </span><span class="ty">发送邮件给 finance@company.com？</span></div>
+        <div><span class="tc">    </span><span class="tu">确认</span></div>
+        <div><span class="tc">    </span><span class="tg">✓ 邮件已发送</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">核心能力</div>
+    <h2>不只是聊天，它真的能<em style="color:var(--accent2)">动手</em></h2>
+    <p class="section-sub">完整的工具链——操作文件、跑代码、上网查资料、定时执行任务。</p>
+    <div class="features-grid">
+      <div class="feat-card"><div class="feat-icon">📁</div><h3>文件 & 代码操作</h3><p>读写本地文件、执行 shell 命令、批量重命名、代码审查修改——所有操作在你的电脑上完成，不经过任何云端。</p></div>
+      <div class="feat-card"><div class="feat-icon">⏰</div><h3>定时任务 & 监控</h3><p>每天早上自动出简报、监控某个网页变化就发通知、定期备份重要文件——设定一次，持续运行。</p></div>
+      <div class="feat-card"><div class="feat-icon">🧠</div><h3>长期记忆</h3><p>记住你的偏好、过往交代过的背景信息、项目上下文，不用每次重新交代。越用越懂你。</p></div>
+      <div class="feat-card"><div class="feat-icon">🔌</div><h3>Skill 插件</h3><p>一键安装外贸助手、数据分析、文案生成等专属插件，对话中用 /skill名 直接调用。</p></div>
+      <div class="feat-card"><div class="feat-icon">🌐</div><h3>联网 & 信息收集</h3><p>搜索最新资讯、抓取指定网页、整合多个来源生成摘要报告，比你自己查快 10 倍。</p></div>
+      <div class="feat-card"><div class="feat-icon">🔒</div><h3>数据完全本地</h3><p>对话历史、文件、密钥——全部存在你自己的电脑。没有云端同步，没有数据收集，没有广告。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how" style="background:var(--surface)">
+  <div class="container">
+    <div class="section-label">安装流程</div>
+    <h2>三步开始使用</h2>
+    <p class="section-sub">终端运行一行命令，5 分钟内完成安装。</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><h3>运行安装脚本</h3><p>终端粘贴一行 curl 命令，自动下载代码、配置环境、生成配置文件。</p></div>
+      <div class="step"><div class="step-num">2</div><h3>填写 API Key</h3><p>在 .env 里填入你的 DeepSeek / OpenAI API Key，直接对接大模型，我们不做中间商。</p></div>
+      <div class="step"><div class="step-num">3</div><h3>打开浏览器使用</h3><p>运行 bash captain.sh 启动，浏览器打开 localhost:8765 即可开始对话。</p></div>
+    </div>
+    <div style="text-align:center;margin-top:48px">
+      <button class="btn-primary" onclick="openInstallModal()" style="font-size:15px">查看安装命令</button>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="container">
+    <div class="section-label">定价</div>
+    <h2>简单透明，按需选择</h2>
+    <p class="section-sub">LLM API 费用由你的 Key 直接承担，我们不加价。DeepSeek 日常用不超过 ¥5/月。</p>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">FREE</div>
+        <div class="price-val">¥<span>0</span></div>
+        <div class="price-alt">永久免费</div>
+        <ul class="price-features">
+          <li><span class="chk">✓</span> 核心 AI 对话</li>
+          <li><span class="chk">✓</span> 文件读写</li>
+          <li><span class="chk">✓</span> 长期记忆 & 偏好学习</li>
+          <li><span class="chk">✓</span> 每日 100 条对话</li>
+          <li><span class="cross">✗</span> Shell 命令执行</li>
+          <li><span class="cross">✗</span> 定时任务 & 监控</li>
+          <li><span class="cross">✗</span> Skill 插件</li>
+          <li><span class="cross">✗</span> 浏览器自动化</li>
+        </ul>
+        <button class="price-btn free" onclick="openInstallModal()">免费安装</button>
+      </div>
+      <div class="price-card pro">
+        <div class="price-popular">最受欢迎</div>
+        <div class="price-name">PRO</div>
+        <div class="price-val"><sup>¥</sup>199<sub>/年</sub></div>
+        <div class="price-alt">或 ¥29/月 · 约 ¥0.55/天</div>
+        <ul class="price-features">
+          <li><span class="chk">✓</span> 全部 Free 功能</li>
+          <li><span class="chk">✓</span> Shell 命令 & 脚本执行</li>
+          <li><span class="chk">✓</span> 定时任务 & 变化监控</li>
+          <li><span class="chk">✓</span> Skill 插件系统</li>
+          <li><span class="chk">✓</span> 浏览器自动化</li>
+          <li><span class="chk">✓</span> <b>无限</b>对话次数</li>
+          <li><span class="chk">✓</span> 最多 2 台设备激活</li>
+          <li><span class="chk">✓</span> 优先邮件支持</li>
+        </ul>
+        <button class="price-btn pro" onclick="openPayModal()">立即购买 Pro</button>
+      </div>
+    </div>
+    <p style="text-align:center;color:var(--dim);font-size:13px;margin-top:24px">
+      付款后 5 分钟内邮件收到授权码 · 7 天不满意全额退款
+    </p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="container">
+    <div class="section-label">常见问题</div>
+    <h2>FAQ</h2>
+    <div class="faq-list">
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">我的对话数据会上传到你们服务器吗？<span class="faq-arrow">+</span></div><div class="faq-a">不会。Captain 完全在你的本机运行，对话历史、文件、密钥都存在本地。我们的服务器只做授权码验证，不接触任何对话内容。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">需要我自己的 LLM API Key 吗？<span class="faq-arrow">+</span></div><div class="faq-a">是的。你需要自备 DeepSeek / OpenAI / Anthropic 等的 API Key，填在本地 .env 文件里。推荐 DeepSeek，价格极低，日常使用成本不超过 ¥5/月。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">目前主力支持 macOS，Windows 版本正在开发中，预计 1-2 个月内发布。Linux 服务器也可以运行（无 GUI 功能）。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">Pro 授权可以换电脑用吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。Pro 支持最多 2 台设备同时激活。换新电脑时，联系我们注销旧设备即可重新激活。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">不满意可以退款吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。购买后 7 天内发邮件申请全额退款，无需理由。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">是开源的吗？<span class="faq-arrow">+</span></div><div class="faq-a">核心代码在 GitHub 开源（MIT 协议），可自行搭建。Pro 授权是对商业使用的支持，开源代码本身不受限制。</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p style="margin-bottom:12px">
+      <a href="https://github.com/john-lcj/my-agent" target="_blank">GitHub</a>
+      <a href="mailto:support@captain-ai.com">联系我们</a>
+      <a href="#pricing">定价</a>
+    </p>
+    <p>© 2025 Captain · MIT License · 数据永远在你手里</p>
+  </div>
+</footer>
+
+<!-- 安装弹窗 -->
+<div class="modal-overlay" id="install-modal" onclick="if(event.target===this)closeInstallModal()">
+  <div class="modal-box">
+    <h3>安装 Captain</h3>
+    <p>在终端运行以下命令，自动完成安装（macOS / Linux）：</p>
+    <div class="install-cmd" id="install-cmd-box">
+      curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash
+      <button class="copy-btn" onclick="copyInstall()">复制</button>
+    </div>
+    <ol class="install-steps">
+      <li>运行命令后，编辑 <b>~/captain/.env</b>，填入你的 DeepSeek API Key</li>
+      <li>运行 <b>bash ~/captain/captain.sh</b> 启动服务</li>
+      <li>浏览器打开 <b>http://localhost:8765</b> 开始使用</li>
+    </ol>
+    <p style="font-size:13px;color:var(--dim);margin-bottom:20px">
+      需要 Python 3.10+ 和 git。没有 API Key？→
+      <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent2)">DeepSeek 注册</a>（新用户免费额度）
+    </p>
+    <button class="modal-close-btn" onclick="closeInstallModal()">关闭</button>
+  </div>
+</div>
+
+<!-- 购买弹窗 -->
+<div class="modal-overlay" id="pay-modal" onclick="if(event.target===this)closePayModal()">
+  <div class="modal-box" style="text-align:center">
+    <h3>购买 Captain Pro</h3>
+    <p>扫码付款，5 分钟内邮件收到授权码</p>
+    <div class="pay-tabs">
+      <button class="pay-tab active" onclick="switchPayTab('year',this)">年付 ¥199</button>
+      <button class="pay-tab" onclick="switchPayTab('month',this)">月付 ¥29</button>
+    </div>
+    <div class="qr-placeholder">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="2" height="2"/>
+        <rect x="18" y="14" width="3" height="3"/><rect x="14" y="19" width="7" height="2"/>
+      </svg>
+      <span style="font-size:11px">替换为收款码图片</span>
+    </div>
+    <div class="pay-amount" id="pay-amount">¥199</div>
+    <div class="pay-hint" id="pay-hint">年付 · 微信/支付宝均可<br/>付款备注你的邮箱，授权码自动发送</div>
+    <button class="modal-close-btn" onclick="closePayModal()">关闭</button>
+  </div>
+</div>
+
+<script>
+function openInstallModal() { document.getElementById('install-modal').classList.add('open'); }
+function closeInstallModal() { document.getElementById('install-modal').classList.remove('open'); }
+function copyInstall() {
+  const cmd = 'curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash';
+  navigator.clipboard.writeText(cmd).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = '已复制'; setTimeout(() => btn.textContent = '复制', 2000);
+  });
+}
+function openPayModal() { document.getElementById('pay-modal').classList.add('open'); }
+function closePayModal() { document.getElementById('pay-modal').classList.remove('open'); }
+function switchPayTab(plan, el) {
+  document.querySelectorAll('.pay-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pay-amount').textContent = plan === 'year' ? '¥199' : '¥29';
+  document.getElementById('pay-hint').innerHTML = plan === 'year'
+    ? '年付 · 微信/支付宝均可<br/>付款备注你的邮箱，授权码自动发送'
+    : '月付 · 微信/支付宝均可<br/>付款备注你的邮箱，授权码自动发送';
+}
+function toggleFaq(el) { el.classList.toggle('open'); }
+</script>
+</body>
+</html>
