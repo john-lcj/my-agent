@@ -73,27 +73,43 @@ class SecretsVault:
                 url TEXT NOT NULL DEFAULT '',
                 note TEXT NOT NULL DEFAULT '',
                 ciphertext BLOB NOT NULL DEFAULT '',
-                updated_at REAL NOT NULL DEFAULT 0
+                updated_at REAL NOT NULL DEFAULT 0,
+                description TEXT NOT NULL DEFAULT '',
+                scope TEXT NOT NULL DEFAULT ''
             )
             """
         )
+        # 旧库迁移：补 description / scope 列（已有列的 ALTER TABLE 会报错，静默忽略）
+        for col in ("description TEXT NOT NULL DEFAULT ''",
+                    "scope TEXT NOT NULL DEFAULT ''"):
+            try:
+                self._conn.execute(f"ALTER TABLE secrets ADD COLUMN {col}")
+            except Exception:
+                pass
         self._conn.commit()
 
     def save(self, name: str, secret: str = "", username: str = "",
-             url: str = "", note: str = "") -> None:
-        """保存一条凭据:secret(密码/密钥)加密存,其余明文存。重名覆盖。"""
+             url: str = "", note: str = "",
+             description: str = "", scope: str = "") -> None:
+        """保存一条凭据:secret(密码/密钥)加密存,其余明文存。重名覆盖。
+
+        description: 这个 key 的用途说明（如"腾讯云主账号"）
+        scope:       权限范围（如"CVM 管理、COS 读写"）
+        """
         name = (name or "").strip()
         if not name:
             raise ValueError("name 不能为空")
         cipher = self._fernet.encrypt((secret or "").encode()) if secret else b""
         self._conn.execute(
-            "INSERT INTO secrets (name, username, url, note, ciphertext, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO secrets "
+            "(name, username, url, note, ciphertext, updated_at, description, scope) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(name) DO UPDATE SET username=excluded.username, url=excluded.url, "
-            "note=excluded.note, "
+            "note=excluded.note, description=excluded.description, scope=excluded.scope, "
             "ciphertext=CASE WHEN length(excluded.ciphertext)>0 THEN excluded.ciphertext ELSE secrets.ciphertext END, "
             "updated_at=excluded.updated_at",
-            (name, username or "", url or "", note or "", cipher, time.time()),
+            (name, username or "", url or "", note or "", cipher, time.time(),
+             description or "", scope or ""),
         )
         self._conn.commit()
 
@@ -116,15 +132,16 @@ class SecretsVault:
         return row["username"] if row else ""
 
     def list(self) -> list[dict]:
-        """列出凭据元信息(name/username/url/note/updated_at)—— **不含密码**。"""
+        """列出凭据元信息(name/username/url/note/description/scope/updated_at)—— **不含密码**。"""
         rows = self._conn.execute(
-            "SELECT name, username, url, note, updated_at, length(ciphertext) AS has_secret "
+            "SELECT name, username, url, note, description, scope, updated_at, "
+            "length(ciphertext) AS has_secret "
             "FROM secrets ORDER BY updated_at DESC"
         ).fetchall()
         return [
             {"name": r["name"], "username": r["username"], "url": r["url"],
-             "note": r["note"], "updated_at": r["updated_at"],
-             "has_secret": bool(r["has_secret"])}
+             "note": r["note"], "description": r["description"], "scope": r["scope"],
+             "updated_at": r["updated_at"], "has_secret": bool(r["has_secret"])}
             for r in rows
         ]
 

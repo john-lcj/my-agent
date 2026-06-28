@@ -82,6 +82,10 @@ class Agent:
         def emit(etype: EventType, payload: dict) -> None:
             self.bus.publish(Event(type=etype, payload=payload, trace_id=trace_id))
 
+        # 记录本轮任务文本，供 _run_loop 内各步做能力路由（按需发 specs 子集）。
+        self._current_user_text = user_text
+
+        self._inject_credentials_manifest(ctx)
         self._inject_memories(user_text, ctx)
         self._inject_experience(user_text, ctx)
         self._inject_skill_suggestion(user_text, ctx)
@@ -161,7 +165,9 @@ class Agent:
                 import time as _t
                 _mt0 = _t.time()
                 step = await self.llm.next_step(
-                    ctx.llm_view(), self.registry.specs(), emit_token=emit_token,
+                    ctx.llm_view(),
+                    self.registry.specs_for(getattr(self, "_current_user_text", "")),
+                    emit_token=emit_token,
                 )
                 _mdt = _t.time() - _mt0
                 self._model_ms_total = getattr(self, "_model_ms_total", 0.0) + _mdt
@@ -547,7 +553,10 @@ class Agent:
                 parts.append(str(getattr(m, "content", "") or ""))
                 for tc in (getattr(m, "tool_calls", None) or []):
                     parts.append(f"{getattr(tc, 'name', '')}{getattr(tc, 'args', '')}")
-            parts.append(json.dumps(self.registry.specs(), ensure_ascii=False))
+            parts.append(json.dumps(
+                self.registry.specs_for(getattr(self, "_current_user_text", "")),
+                ensure_ascii=False,
+            ))
             self.budget.charge("\n".join(parts), getattr(self.llm, "name", ""))
         except Exception:
             pass  # 计费失败不应阻断主流程
@@ -688,6 +697,46 @@ class Agent:
             return
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[过往经验"))]
+        ctx.add_system(block)
+
+    def _inject_credentials_manifest(self, ctx: Context) -> None:
+        """把 vault 里保存的凭据元信息（不含密钥值）注入 system 消息。
+
+        让 agent 每轮都知道"手里有哪些 key、能做什么"，不再遗忘。
+        只注入有描述或权限信息的凭据（纯 name 的不注入，避免干扰）。
+        """
+        vault = getattr(ctx, "vault", None)
+        if vault is None:
+            return
+        try:
+            rows = vault.list()
+        except Exception:
+            return
+        if not rows:
+            return
+        # 只展示有元信息的条目
+        lines: list[str] = []
+        for r in rows:
+            name = r.get("name", "")
+            desc = r.get("description", "").strip()
+            scope = r.get("scope", "").strip()
+            if not desc and not scope:
+                continue   # 没有描述的纯 key，不注入（减少噪音）
+            line = f"- {name}"
+            if desc:
+                line += f"（{desc}）"
+            if scope:
+                line += f"：{scope}"
+            lines.append(line)
+        if not lines:
+            return
+        block = (
+            "[可用凭据 — 执行部署/API/登录任务前请优先使用这些已保存的 key，无需再问用户]\n"
+            + "\n".join(lines)
+            + "\n→ 需要实际密钥值时调用 secret.list 获取名称，再用 secret:<name> 引用。"
+        )
+        ctx.messages = [m for m in ctx.messages
+                        if not (m.role == Role.SYSTEM and m.content.startswith("[可用凭据"))]
         ctx.add_system(block)
 
     def _inject_journal(self, ctx: Context) -> None:
