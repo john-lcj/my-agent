@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 # ── 配置默认值（全部动态读取，测试时可随时覆盖 env）────────────────────────
-_DEFAULT_SERVER     = "https://license.captain-ai.com"
+_DEFAULT_SERVER     = "https://license.irestart-your-life.club"
 _DEFAULT_CACHE_TTL  = 7 * 86400
 _DEFAULT_GRACE      = 3 * 86400
 _DEFAULT_CACHE      = os.path.expanduser("~/.captain/.license_cache")
@@ -126,7 +126,14 @@ class LicenseStatus:
 def check_license(key: Optional[str] = None) -> LicenseStatus:
     """
     检查授权状态。key 优先级：参数 > 环境变量 > 缓存中的 key。
+
+    开发模式：设置 CAPTAIN_DEV_PRO=1 直接返回 Pro，无需授权服务器。
     """
+    # 开发/自用绕过：本地不需要授权服务器
+    if os.environ.get("CAPTAIN_DEV_PRO", "").strip() == "1":
+        return LicenseStatus(valid=True, plan="pro",
+                             expires_at=time.time() + 365 * 86400)
+
     key = (key or os.environ.get(LICENSE_KEY_ENV, "")).strip().upper() or None
     mid = get_machine_id()
     cache = _read_cache()
