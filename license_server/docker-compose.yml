@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  license:
+    build: .
+    container_name: captain-license
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - license_data:/data
+    environment:
+      # !! 修改为你自己的强随机字符串 !!
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me-to-strong-secret}
+      - DB_PATH=/data/license.db
+      - PORT=8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  license_data:
+    driver: local
