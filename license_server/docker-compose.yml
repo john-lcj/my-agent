@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   license:
     build: .
@@ -14,6 +12,15 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me-to-strong-secret}
       - DB_PATH=/data/license.db
       - PORT=8080
+      # ── 邮件（填写后自动发码）──────────────────────
+      - SMTP_HOST=${SMTP_HOST:-smtp.qq.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-Captain AI}
+      # ── 支付平台密钥（选填，填了才验签）────────────
+      - HUPI_KEY=${HUPI_KEY:-}    # 虎皮椒 app_secret
+      - MZF_KEY=${MZF_KEY:-}      # 码支付 key
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
       interval: 30s

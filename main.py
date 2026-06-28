@@ -138,10 +138,11 @@ async def main() -> None:
         from license_client.gates import init_gates
         _lic = check_license()
         init_gates(_lic)
-        if not _lic.valid and not _lic.offline:
+        _has_key = bool(os.environ.get("CAPTAIN_LICENSE_KEY", "").strip())
+        if _has_key and not _lic.valid and not _lic.offline:
+            # 配置了 key 但验证失败才提示，未配置 key 时静默运行
             from channels.cli_style import print_system
-            print_system(f"⚠️  未激活: {_lic.error}")
-            print_system("运行 captain activate <授权码> 激活 Pro，或继续使用 Free 版（功能受限）。")
+            print_system(f"⚠️  授权验证失败: {_lic.error}")
         elif _lic.is_pro and _lic.days_left() is not None and _lic.days_left() < 14:
             from channels.cli_style import print_system
             print_system(f"⚠️  Pro 授权还剩 {_lic.days_left()} 天，请及时续费。")

@@ -152,25 +152,19 @@ async function _refreshQuotaBar() {
   } catch {}
 }
 
-/* 启动时检查登录态 */
+/* 启动时检查登录态 + 授权状态 */
 async function _authInit() {
-  const tok = getAuthToken();
-  if (!tok) {
-    /* 检查服务器是否需要登录（AUTH_SECRET 已设置）*/
-    try {
-      const r = await fetch('/api/auth/me');
-      if (r.status === 401) { _authOverlayVisible(true); return; }
-      /* 单机模式：/api/auth/me 200 但没 token → 无需登录 */
-    } catch { /* 网络错误，放行继续 */ }
-    return;
-  }
+  /* 单机模式：读取本地授权状态，更新徽章 */
   try {
     const r = await fetch('/api/auth/me');
-    const d = await r.json();
-    if (!d.ok) { clearAuthToken(); _authOverlayVisible(true); return; }
-    _authUser = d.user;
-    _updateUserBadge(d.user);
-  } catch {}
+    if (r.ok) {
+      const d = await r.json();
+      if (d.ok && d.user) {
+        _authUser = d.user;
+        _updateUserBadge(d.user);
+      }
+    }
+  } catch { /* 服务未启动，忽略 */ }
 }
 
 /* WS 重连（携带新 token）*/

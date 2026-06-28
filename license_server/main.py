@@ -1,10 +1,14 @@
 """Captain 授权服务器 — 极简 FastAPI，部署在一台小 VPS。
 
 端点:
-  POST /api/license/generate  管理员批量生成 key（需 ADMIN_TOKEN）
-  POST /api/license/activate  激活 key（绑定机器码 + 邮箱）
-  POST /api/license/check     本地 app 验证授权状态
-  GET  /healthz               健康检查
+  POST /api/license/generate        管理员批量生成 key（需 ADMIN_TOKEN）
+  POST /api/license/activate        激活 key（绑定机器码 + 邮箱）
+  POST /api/license/check           本地 app 验证授权状态
+  GET  /api/license/list            管理员查看所有 key
+  POST /api/payment/hupi_callback   虎皮椒支付回调（自动发码）
+  POST /api/payment/mzf_callback    码支付回调（自动发码）
+  POST /api/payment/manual_issue    管理员手动补发（需 ADMIN_TOKEN）
+  GET  /healthz                     健康检查
 """
 from __future__ import annotations
 
@@ -231,3 +235,185 @@ async def list_keys(request: Request) -> JSONResponse:
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     return JSONResponse({"ok": True, "ts": time.time()})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  支付回调 — 自动发码
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 支付金额 → 套餐映射（单位：元）
+_AMOUNT_MAP: dict[str, tuple[str, int]] = {
+    "29":  ("pro", 1),    # ¥29  → Pro 月付
+    "199": ("pro", 12),   # ¥199 → Pro 年付
+}
+# 允许误差（支付平台有时会多/少几分）
+_AMOUNT_TOLERANCE = 0.5
+
+
+def _match_plan(amount_str: str) -> Optional[tuple[str, int]]:
+    """根据金额字符串返回 (plan, months) 或 None。"""
+    try:
+        paid = float(amount_str)
+    except (ValueError, TypeError):
+        return None
+    for k, v in _AMOUNT_MAP.items():
+        if abs(paid - float(k)) <= _AMOUNT_TOLERANCE:
+            return v
+    return None
+
+
+def _auto_issue(email: str, plan: str, months: int, note: str = "") -> Optional[str]:
+    """生成 key、写库、发邮件，返回 key 或 None（失败）。"""
+    now    = time.time()
+    key    = _gen_key(plan)
+    exp    = now + months * 30 * 86400
+    conn   = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO license_keys(key,plan,months,max_devices,created_at,expires_at,note) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (key, plan, months, MAX_DEVICES, now, exp, note),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 异步发邮件（放后台线程，不阻塞响应）
+    import threading
+    def _send():
+        try:
+            from mailer import send, render_key_email
+            subj, html, text = render_key_email(key, plan, months, exp)
+            send(email, subj, html, text)
+        except Exception as e:
+            print(f"[payment] 邮件发送失败: {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+    print(f"[payment] 自动发码 → {email} | {key} | {plan}/{months}mo")
+    return key
+
+
+def _hupi_verify(params: dict, key: str) -> bool:
+    """验证虎皮椒签名。
+    签名算法：将参数按 key 升序排列拼接后加 key，MD5。
+    """
+    sign = params.pop("sign", "")
+    sign_type = params.pop("sign_type", "MD5")
+    sorted_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()) if v != "")
+    raw = sorted_str + key
+    expected = hashlib.md5(raw.encode()).hexdigest()
+    return hmac.compare_digest(sign.lower(), expected.lower())
+
+
+# ── 虎皮椒回调 ────────────────────────────────────────────────────────────────
+# 文档：https://www.xunhupay.com/doc/api/notify.html
+@app.post("/api/payment/hupi_callback")
+async def hupi_callback(request: Request) -> str:
+    """虎皮椒支付成功回调。需在虎皮椒后台配置回调地址。"""
+    hupi_key = os.environ.get("HUPI_KEY", "")
+    try:
+        form = dict(await request.form())
+    except Exception:
+        form = await request.json()
+
+    # 验签（配置了 HUPI_KEY 才验）
+    if hupi_key:
+        params_copy = dict(form)
+        if not _hupi_verify(params_copy, hupi_key):
+            print(f"[hupi] 签名验证失败: {form}")
+            return "fail"
+
+    trade_status = form.get("trade_status", "")
+    if trade_status != "TRADE_SUCCESS":
+        return "success"   # 其他状态直接返回 success，告诉虎皮椒不要重发
+
+    email      = str(form.get("email") or form.get("buyer_email") or "").strip().lower()
+    amount_str = str(form.get("total_fee") or form.get("money") or "0")
+    out_trade_no = str(form.get("out_trade_no") or "")
+
+    # 幂等：同一 out_trade_no 不重复发码
+    conn = get_conn()
+    dup = conn.execute(
+        "SELECT key FROM license_keys WHERE note=?", (f"hupi:{out_trade_no}",)
+    ).fetchone()
+    conn.close()
+    if dup:
+        print(f"[hupi] 重复回调，跳过: {out_trade_no}")
+        return "success"
+
+    plan_info = _match_plan(amount_str)
+    if not plan_info:
+        print(f"[hupi] 未匹配到套餐，金额={amount_str}")
+        return "success"
+
+    plan, months = plan_info
+    if not email:
+        print(f"[hupi] 无买家邮箱，out_trade_no={out_trade_no}")
+        return "success"
+
+    _auto_issue(email, plan, months, note=f"hupi:{out_trade_no}")
+    return "success"
+
+
+# ── 码支付回调 ────────────────────────────────────────────────────────────────
+# 文档：https://codepay.fateqq.com/
+@app.post("/api/payment/mzf_callback")
+async def mzf_callback(request: Request) -> str:
+    """码支付（FateQQ/码支付）回调。"""
+    mzf_key = os.environ.get("MZF_KEY", "")
+    try:
+        form = dict(await request.form())
+    except Exception:
+        form = await request.json()
+
+    # 码支付签名：price+istype+tradeno+key → MD5
+    sign      = form.get("sign", "")
+    price     = str(form.get("price", ""))
+    istype    = str(form.get("istype", ""))
+    tradeno   = str(form.get("tradeno", ""))
+    if mzf_key:
+        raw      = f"{price}{istype}{tradeno}{mzf_key}"
+        expected = hashlib.md5(raw.encode()).hexdigest()
+        if not hmac.compare_digest(sign.lower(), expected.lower()):
+            print(f"[mzf] 签名验证失败")
+            return "fail"
+
+    email      = str(form.get("param") or "").strip().lower()   # 买家在备注填邮箱
+    amount_str = price
+
+    # 幂等
+    conn = get_conn()
+    dup = conn.execute(
+        "SELECT key FROM license_keys WHERE note=?", (f"mzf:{tradeno}",)
+    ).fetchone()
+    conn.close()
+    if dup:
+        return "success"
+
+    plan_info = _match_plan(amount_str)
+    if not plan_info or not email:
+        print(f"[mzf] 跳过: amount={amount_str} email={email}")
+        return "success"
+
+    plan, months = plan_info
+    _auto_issue(email, plan, months, note=f"mzf:{tradeno}")
+    return "success"
+
+
+# ── 管理员手动补发 ────────────────────────────────────────────────────────────
+@app.post("/api/payment/manual_issue")
+async def manual_issue(request: Request) -> JSONResponse:
+    """管理员手动向指定邮箱补发授权码。"""
+    if not _require_admin(request):
+        return JSONResponse({"ok": False, "error": "未授权"}, status_code=403)
+    b      = await request.json()
+    email  = (b.get("email") or "").strip().lower()
+    plan   = b.get("plan", "pro")
+    months = int(b.get("months", 12))
+    note   = b.get("note", "manual")
+
+    if not email:
+        return JSONResponse({"ok": False, "error": "缺少 email"}, status_code=400)
+
+    key = _auto_issue(email, plan, months, note=note)
+    return JSONResponse({"ok": True, "key": key, "email": email})

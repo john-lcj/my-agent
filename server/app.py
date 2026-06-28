@@ -1035,6 +1035,39 @@ def create_app():
             "time": time.strftime("%Y-%m-%d %H:%M:%S"),
         })
 
+    @app.get("/api/license/status")
+    async def license_status() -> JSONResponse:
+        """返回本地授权状态，供前端显示 Free/Pro 徽章。"""
+        try:
+            from license_client.client import check_license
+            s = check_license()
+            return JSONResponse({
+                "ok":       True,
+                "valid":    s.valid,
+                "plan":     s.plan,
+                "is_pro":   s.is_pro,
+                "days_left": s.days_left(),
+                "offline":  s.offline,
+            })
+        except Exception:
+            return JSONResponse({"ok": True, "valid": False, "plan": "free", "is_pro": False})
+
+    @app.get("/api/auth/me")
+    async def auth_me() -> JSONResponse:
+        """兼容前端 _authInit()：单机模式直接返回本地授权状态作为用户信息。"""
+        try:
+            from license_client.client import check_license
+            s = check_license()
+            return JSONResponse({
+                "ok":   True,
+                "user": {
+                    "email": "local",
+                    "plan":  s.plan if s.valid else "free",
+                },
+            })
+        except Exception:
+            return JSONResponse({"ok": True, "user": {"email": "local", "plan": "free"}})
+
     @app.get("/api/stats")
     async def stats() -> JSONResponse:
         """可观测:运行时长 + 各项计数,供监控/排障(受 /api/* 鉴权)。"""
