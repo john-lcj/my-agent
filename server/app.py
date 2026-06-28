@@ -1068,6 +1068,36 @@ def create_app():
         except Exception:
             return JSONResponse({"ok": True, "user": {"email": "local", "plan": "free"}})
 
+    @app.post("/api/system/update")
+    async def system_update() -> JSONResponse:
+        """拉取最新代码并重装依赖，完成后提示用户重启。"""
+        import subprocess, sys
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        venv_pip = os.path.join(root, ".venv", "bin", "pip")
+        if not os.path.exists(venv_pip):
+            venv_pip = sys.executable.replace("python", "pip")
+        try:
+            pull = subprocess.run(
+                ["git", "-C", root, "pull", "--ff-only"],
+                capture_output=True, text=True, timeout=60
+            )
+            if pull.returncode != 0:
+                return JSONResponse({"ok": False, "error": pull.stderr.strip()}, status_code=500)
+            req = os.path.join(root, "requirements.txt")
+            if os.path.exists(req):
+                subprocess.run(
+                    [venv_pip, "install", "-q", "-r", req],
+                    capture_output=True, timeout=120
+                )
+            already_latest = "Already up to date" in pull.stdout or "Already up to date" in pull.stderr
+            return JSONResponse({
+                "ok": True,
+                "already_latest": already_latest,
+                "log": pull.stdout.strip(),
+            })
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
     @app.get("/api/stats")
     async def stats() -> JSONResponse:
         """可观测:运行时长 + 各项计数,供监控/排障(受 /api/* 鉴权)。"""

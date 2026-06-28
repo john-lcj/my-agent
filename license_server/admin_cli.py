@@ -19,6 +19,21 @@ import os
 import sys
 import urllib.request
 
+# 自动加载同目录 .env（无需安装 python-dotenv）
+def _load_dotenv():
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if not os.path.exists(env_file):
+        return
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+_load_dotenv()
+
 SERVER = os.environ.get("LICENSE_SERVER", "http://localhost:8080")
 TOKEN  = os.environ.get("ADMIN_TOKEN", "")
 

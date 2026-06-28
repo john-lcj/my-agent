@@ -4246,6 +4246,34 @@ function modKey(e) {
   return navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
 }
 
+async function doUpdate() {
+  const btn = document.getElementById('btn-update');
+  const status = document.getElementById('update-status');
+  btn.disabled = true;
+  btn.textContent = '更新中…';
+  status.textContent = '';
+  try {
+    const r = await fetch('/api/system/update', { method: 'POST' });
+    const d = await r.json();
+    if (!d.ok) {
+      status.style.color = 'var(--danger, #e55)';
+      status.textContent = '失败：' + (d.error || '未知错误');
+    } else if (d.already_latest) {
+      status.style.color = 'var(--muted)';
+      status.textContent = '✓ 已是最新版本';
+    } else {
+      status.style.color = '#3ecf8e';
+      status.textContent = '✓ 更新成功，请重启 Captain';
+    }
+  } catch (e) {
+    status.style.color = 'var(--danger, #e55)';
+    status.textContent = '网络错误，请重试';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬆ 检查并更新';
+  }
+}
+
 function openShortcuts() {
   document.getElementById('shortcuts-overlay')?.classList.add('open');
   renderShortcutsList();
