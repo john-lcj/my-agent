@@ -769,6 +769,85 @@
   </div>
 </div>
 
+<!-- ══ 登录 / 注册浮层 ════════════════════════════════════════════ -->
+<div class="overlay" id="auth-overlay" style="z-index:9999;display:none;align-items:center;justify-content:center">
+  <div class="modal" style="width:min(420px,96vw);padding:0;overflow:hidden">
+    <!-- 标签切换 -->
+    <div style="display:flex;border-bottom:1px solid var(--border)">
+      <button id="auth-tab-login"  class="auth-tab active" onclick="switchAuthTab('login')">登录</button>
+      <button id="auth-tab-reg"    class="auth-tab"        onclick="switchAuthTab('register')">注册</button>
+    </div>
+    <!-- 登录表单 -->
+    <div id="auth-form-login" style="padding:28px 24px">
+      <div class="field-group">
+        <div class="field-label">邮箱</div>
+        <input class="field-input" id="auth-login-email" type="email" placeholder="your@email.com" autocomplete="email"/>
+      </div>
+      <div class="field-group" style="margin-top:10px">
+        <div class="field-label">密码</div>
+        <input class="field-input" id="auth-login-pwd" type="password" placeholder="••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+      <div id="auth-login-err" style="color:#e05;font-size:12px;margin-top:6px;display:none"></div>
+      <button class="btn-sm primary" style="width:100%;margin-top:16px;padding:10px" onclick="doLogin()">登录</button>
+    </div>
+    <!-- 注册表单 -->
+    <div id="auth-form-register" style="padding:28px 24px;display:none">
+      <div class="field-group">
+        <div class="field-label">邮箱</div>
+        <input class="field-input" id="auth-reg-email" type="email" placeholder="your@email.com" autocomplete="email"/>
+      </div>
+      <div class="field-group" style="margin-top:10px">
+        <div class="field-label">密码 <span style="color:var(--dim);font-size:11px">（至少 6 位）</span></div>
+        <input class="field-input" id="auth-reg-pwd" type="password" placeholder="••••••" autocomplete="new-password"
+               onkeydown="if(event.key==='Enter')doRegister()"/>
+      </div>
+      <div id="auth-reg-err" style="color:#e05;font-size:12px;margin-top:6px;display:none"></div>
+      <button class="btn-sm primary" style="width:100%;margin-top:16px;padding:10px" onclick="doRegister()">注册并开始使用</button>
+      <p style="font-size:11px;color:var(--dim);margin-top:10px;text-align:center">
+        注册即表示同意服务条款 · 免费账号每日 50,000 tokens
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 用量 / 账户角标 ════════════════════════════════════════════ -->
+<div id="user-badge" style="position:fixed;bottom:12px;right:14px;z-index:800;display:none;
+     background:var(--surface);border:1px solid var(--border);border-radius:20px;
+     padding:4px 10px 4px 8px;font-size:11px;color:var(--dim);cursor:pointer;
+     display:flex;align-items:center;gap:6px" onclick="openUserMenu()">
+  <span id="user-plan-badge" style="background:var(--accent);color:#000;border-radius:10px;
+        padding:1px 6px;font-size:10px;font-weight:600">FREE</span>
+  <span id="user-email-short">—</span>
+  <span id="user-quota-bar" style="width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+    <span id="user-quota-fill" style="display:block;height:100%;width:0%;background:var(--accent);border-radius:2px"></span>
+  </span>
+</div>
+
+<!-- ══ 用户菜单 ════════════════════════════════════════════════════ -->
+<div id="user-menu" style="position:fixed;bottom:44px;right:14px;z-index:900;display:none;
+     background:var(--surface);border:1px solid var(--border);border-radius:10px;
+     padding:8px;min-width:200px;box-shadow:0 4px 20px rgba(0,0,0,.4)">
+  <div id="user-menu-info" style="padding:6px 8px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--border);margin-bottom:6px"></div>
+  <div style="padding:4px 0">
+    <div class="field-group" style="padding:0 8px;margin-bottom:6px">
+      <input class="field-input" id="redeem-code-input" placeholder="兑换码" style="font-size:12px"/>
+    </div>
+    <button class="btn-sm" style="width:calc(100%-16px);margin:0 8px" onclick="doRedeem()">兑换升级 Pro</button>
+  </div>
+  <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
+    <button class="btn-sm" style="width:100%;color:var(--dim)" onclick="doLogout()">退出登录</button>
+  </div>
+</div>
+
+<style>
+.auth-tab {
+  flex:1; padding:12px; background:none; border:none; cursor:pointer;
+  color:var(--dim); font-size:14px; transition:color .15s;
+}
+.auth-tab.active { color:var(--txt); border-bottom:2px solid var(--accent); margin-bottom:-1px; }
+</style>
+
 <script src="/app.boot.js"></script>
 </body>
 </html>

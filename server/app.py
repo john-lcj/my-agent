@@ -41,12 +41,15 @@ from server.usage_stats import load_usage
 from server.commands_api import list_slash_commands
 from server.runtime_config import RuntimeConfigStore
 from server.model_keys import ModelKeyStore, PROVIDER_KEY_ENV
+from server.auth import get_current_user_optional, create_token
+from memory.user_store import UserStore
 
 _FRONTEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
 
 # ── 跨连接共享的单例:持久化会话、长期记忆、人设、频道配置、定时任务 ──────────
 _session_store = SessionStore(db_path=f"{Config.LOG_DIR}/sessions.db")
 _feedback_store = FeedbackStore(db_path=f"{Config.LOG_DIR}/feedback.db")
+_user_store = UserStore(db_path=f"{Config.LOG_DIR}/users.db")
 _session_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -727,6 +730,13 @@ def create_app():
 
     app = FastAPI(title="my-agent", lifespan=_lifespan)
 
+    # ── 挂载用户 store 到 app.state，供路由器使用 ──────────────────────────────
+    app.state.user_store = _user_store
+
+    # ── 注册认证路由 ────────────────────────────────────────────────────────────
+    from server.routers.auth_api import router as _auth_router
+    app.include_router(_auth_router)
+
     # ── 控制面鉴权(security-by-default)─────────────────────────────────────────
     # /api/* 是完整控制面(改配置、删会话、回滚、录入模型 key……)。
     # 策略:本机(loopback)请求照常放行,保持本地零配置体验;非本机访问 /api/*
@@ -1075,8 +1085,17 @@ def create_app():
         })
 
     @app.get("/api/sessions")
-    async def list_sessions(project_id: str = "") -> JSONResponse:
-        return JSONResponse({"sessions": _session_store.list_sessions(project_id=project_id or None)})
+    async def list_sessions(request: Request, project_id: str = "") -> JSONResponse:
+        cu = get_current_user_optional(request)
+        uid = cu["sub"] if cu else None
+        return JSONResponse({"sessions": _session_store.list_sessions(
+            project_id=project_id or None, user_id=uid)})
+
+    @app.get("/api/sessions/search")
+    async def search_sessions(request: Request, q: str = "") -> JSONResponse:
+        cu = get_current_user_optional(request)
+        uid = cu["sub"] if cu else None
+        return JSONResponse({"sessions": _session_store.search_sessions(q, user_id=uid)})
 
     # ── 分享 / 导出 ────────────────────────────────────────────────────────────
     def _session_pairs(sid: str) -> list[dict]:
@@ -1640,17 +1659,42 @@ def create_app():
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
-        # /ws 能驱动 agent 跑 shell / 写文件,敏感程度等同 /api/*。
-        # 本机(loopback)放行,保持本地零配置;非本机连接需 AGENT_API_TOKEN
-        # (通过 ?token= 查询参数或 X-Agent-Token 头携带),否则直接拒绝握手。
+        # 鉴权策略：
+        #   本机(loopback)+ 未设 AUTH_SECRET → 单机模式，免登录
+        #   远程 / 已设 AUTH_SECRET → 需携带用户 JWT(?token= 或 X-Auth-Token)
+        #   兼容旧的 AGENT_API_TOKEN（设备级 token）
         client_host = ws.client.host if ws.client else ""
-        if _is_proxied(ws.headers) or not _is_loopback(client_host):
-            token = os.environ.get("AGENT_API_TOKEN", "").strip()
-            provided = ws.query_params.get("token") or ws.headers.get("x-agent-token", "")
-            if not token or not hmac.compare_digest(provided, token):
-                await ws.close(code=1008)  # 1008 = policy violation
-                return
+        is_remote   = _is_proxied(ws.headers) or not _is_loopback(client_host)
+        _ws_user_id: Optional[str] = None
+
+        import os as _os
+        auth_secret_set = bool(_os.environ.get("AUTH_SECRET", "").strip()
+                               and _os.environ.get("AUTH_SECRET") != "captain-dev-secret-change-me-in-prod")
+
+        if is_remote or auth_secret_set:
+            # 优先尝试用户 JWT
+            from server.auth import decode_token as _decode_token
+            jwt_tok = ws.query_params.get("token") or ws.headers.get("x-auth-token", "")
+            if jwt_tok:
+                try:
+                    payload = _decode_token(jwt_tok)
+                    _ws_user_id = payload.get("sub")
+                except Exception:
+                    pass
+
+            if not _ws_user_id:
+                # 降级到旧式 AGENT_API_TOKEN（设备级）
+                api_token = _os.environ.get("AGENT_API_TOKEN", "").strip()
+                provided  = ws.query_params.get("token") or ws.headers.get("x-agent-token", "")
+                if not api_token or not hmac.compare_digest(provided, api_token):
+                    await ws.close(code=1008)
+                    return
+
         await ws.accept()
+        # 用量配额检查（有用户身份时）
+        _ws_quota_ok = True
+        if _ws_user_id and _user_store.quota_exceeded(_ws_user_id):
+            _ws_quota_ok = False
         channel = WebChannel()
         ws_model: List[Optional[str]] = [None]
         ws_mode: list = [""]   # coworker=Cowork(全自动确认,入口不 triage,复杂调 escalate_dag)
@@ -1859,10 +1903,24 @@ def create_app():
                             ):
                                 from core.types import Message as _M
                                 ctx.messages.insert(0, _M(role=Role.SYSTEM, content=block))
-                    if await _handle_slash(text):
+                    # 用量配额检查
+                    if _ws_user_id and _user_store.quota_exceeded(_ws_user_id):
+                        channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={
+                            "text": "⚠️ 今日用量已达上限。升级到 Pro 套餐可无限使用。请输入兑换码或联系客服升级。",
+                            "source": "system",
+                        }))
+                    elif await _handle_slash(text):
                         pass
                     else:
                         await coord_holder[0].run(text, ctx, channel.confirm)
+                        # 记录 token 用量
+                        if _ws_user_id:
+                            try:
+                                used = getattr(ctx, "tokens_used", 0) or 0
+                                if used:
+                                    _user_store.record_tokens(_ws_user_id, used)
+                            except Exception:
+                                pass
                         if _pref_mining_enabled():
                             # 后台沉淀偏好 + 经验 + 协作日志,均不阻塞回复
                             asyncio.create_task(_mine_preferences(list(ctx.messages)))

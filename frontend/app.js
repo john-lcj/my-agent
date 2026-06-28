@@ -1,25 +1,187 @@
-/* ══ 访问令牌(远程访问 /ws 与 /api/* 时需要;本机可留空)════════════ */
+/* ══════════════════════════════════════════════════════════════════
+   AUTH — 用户登录态管理
+   token 存 localStorage('captainAuthToken')
+   所有 /api/* 请求自动带 Authorization: Bearer <token>
+   ══════════════════════════════════════════════════════════════════ */
+const _AUTH_KEY = 'captainAuthToken';
+function getAuthToken()     { try { return localStorage.getItem(_AUTH_KEY) || ''; } catch { return ''; } }
+function setAuthToken(t)    { try { t ? localStorage.setItem(_AUTH_KEY, t) : localStorage.removeItem(_AUTH_KEY); } catch {} }
+function clearAuthToken()   { setAuthToken(''); }
+
+/* 兼容旧 X-Agent-Token（设备级访问令牌）*/
 function getAccessToken() { try { return localStorage.getItem('agentApiToken') || ''; } catch { return ''; } }
-function setAccessToken(t) {
-  try { t ? localStorage.setItem('agentApiToken', t) : localStorage.removeItem('agentApiToken'); } catch {}
-}
-/* 给所有 /api/* 请求自动带上 X-Agent-Token(若已配置 token)。本机访问可不配。 */
+function setAccessToken(t) { try { t ? localStorage.setItem('agentApiToken', t) : localStorage.removeItem('agentApiToken'); } catch {} }
+
+/* 所有 /api/* 请求自动带鉴权头 */
 (function patchFetchWithToken() {
   const _fetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     try {
       const url = typeof input === 'string' ? input : (input && input.url) || '';
-      const tok = getAccessToken();
-      if (tok && url.indexOf('/api/') !== -1) {
+      if (url.indexOf('/api/') !== -1) {
         init = init || {};
         const h = new Headers(init.headers || {});
-        if (!h.has('X-Agent-Token')) h.set('X-Agent-Token', tok);
+        const userTok = getAuthToken();
+        const devTok  = getAccessToken();
+        if (userTok && !h.has('Authorization')) h.set('Authorization', 'Bearer ' + userTok);
+        if (devTok  && !h.has('X-Agent-Token'))  h.set('X-Agent-Token', devTok);
         init.headers = h;
       }
-    } catch (e) { /* 忽略,降级为原始请求 */ }
+    } catch (e) {}
     return _fetch(input, init);
   };
 })();
+
+/* ── Auth UI ──────────────────────────────────────────────────────── */
+let _authUser = null;
+
+function _authOverlayVisible(v) {
+  const el = document.getElementById('auth-overlay');
+  if (!el) return;
+  el.style.display = v ? 'flex' : 'none';
+}
+
+function switchAuthTab(tab) {
+  document.getElementById('auth-form-login').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('auth-form-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('auth-tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('auth-tab-reg').classList.toggle('active',   tab === 'register');
+}
+
+async function doLogin() {
+  const email = (document.getElementById('auth-login-email')?.value || '').trim();
+  const pwd   = document.getElementById('auth-login-pwd')?.value || '';
+  const errEl = document.getElementById('auth-login-err');
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/login', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pwd})});
+    const d = await r.json();
+    if (!d.ok) { errEl.textContent = d.error || '登录失败'; errEl.style.display=''; return; }
+    setAuthToken(d.token);
+    _authUser = d.user;
+    _authOverlayVisible(false);
+    _updateUserBadge(d.user);
+    _reconnectWs();
+    if (typeof loadSessions === 'function') loadSessions();
+  } catch(e) { errEl.textContent = '网络错误，请重试'; errEl.style.display=''; }
+}
+
+async function doRegister() {
+  const email = (document.getElementById('auth-reg-email')?.value || '').trim();
+  const pwd   = document.getElementById('auth-reg-pwd')?.value || '';
+  const errEl = document.getElementById('auth-reg-err');
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/register', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pwd})});
+    const d = await r.json();
+    if (!d.ok) { errEl.textContent = d.error || '注册失败'; errEl.style.display=''; return; }
+    setAuthToken(d.token);
+    _authUser = d.user;
+    _authOverlayVisible(false);
+    _updateUserBadge(d.user);
+    _reconnectWs();
+  } catch(e) { errEl.textContent = '网络错误，请重试'; errEl.style.display=''; }
+}
+
+function doLogout() {
+  clearAuthToken();
+  _authUser = null;
+  closeUserMenu();
+  const badge = document.getElementById('user-badge');
+  if (badge) badge.style.display = 'none';
+  _authOverlayVisible(true);
+}
+
+async function doRedeem() {
+  const code = (document.getElementById('redeem-code-input')?.value || '').trim();
+  if (!code) return;
+  try {
+    const r = await fetch('/api/auth/redeem', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({code})});
+    const d = await r.json();
+    if (!d.ok) { if (typeof toast==='function') toast('❌ ' + (d.error||'兑换失败')); return; }
+    setAuthToken(d.token);
+    _authUser = d.user;
+    _updateUserBadge(d.user);
+    closeUserMenu();
+    if (typeof toast==='function') toast('🎉 已升级到 ' + d.user.plan.toUpperCase() + '！');
+  } catch { if (typeof toast==='function') toast('网络错误'); }
+}
+
+function openUserMenu() {
+  const menu = document.getElementById('user-menu');
+  if (!menu) return;
+  const info = document.getElementById('user-menu-info');
+  if (info && _authUser) {
+    info.innerHTML = `<div>${_authUser.email}</div>
+      <div style="margin-top:2px">套餐: <b>${(_authUser.plan||'free').toUpperCase()}</b></div>`;
+  }
+  menu.style.display = menu.style.display === 'none' ? '' : 'none';
+}
+function closeUserMenu() {
+  const menu = document.getElementById('user-menu');
+  if (menu) menu.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#user-menu') && !e.target.closest('#user-badge')) closeUserMenu();
+});
+
+function _updateUserBadge(user) {
+  if (!user) return;
+  const badge   = document.getElementById('user-badge');
+  const planBdg = document.getElementById('user-plan-badge');
+  const emailEl = document.getElementById('user-email-short');
+  if (badge)   badge.style.display = 'flex';
+  if (planBdg) { planBdg.textContent = (user.plan||'free').toUpperCase();
+                 planBdg.style.background = user.plan==='pro' ? '#f0c040' : 'var(--accent)'; }
+  if (emailEl) emailEl.textContent = (user.email||'').split('@')[0];
+  _refreshQuotaBar();
+}
+
+async function _refreshQuotaBar() {
+  try {
+    const d = await (await fetch('/api/auth/me')).json();
+    if (!d.ok) return;
+    const fill = document.getElementById('user-quota-fill');
+    if (fill) fill.style.width = (d.usage?.pct || 0) + '%';
+    _authUser = d.user;
+  } catch {}
+}
+
+/* 启动时检查登录态 */
+async function _authInit() {
+  const tok = getAuthToken();
+  if (!tok) {
+    /* 检查服务器是否需要登录（AUTH_SECRET 已设置）*/
+    try {
+      const r = await fetch('/api/auth/me');
+      if (r.status === 401) { _authOverlayVisible(true); return; }
+      /* 单机模式：/api/auth/me 200 但没 token → 无需登录 */
+    } catch { /* 网络错误，放行继续 */ }
+    return;
+  }
+  try {
+    const r = await fetch('/api/auth/me');
+    const d = await r.json();
+    if (!d.ok) { clearAuthToken(); _authOverlayVisible(true); return; }
+    _authUser = d.user;
+    _updateUserBadge(d.user);
+  } catch {}
+}
+
+/* WS 重连（携带新 token）*/
+function _reconnectWs() {
+  if (typeof reconnectWebSocket === 'function') reconnectWebSocket();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  _authInit();
+  setInterval(_refreshQuotaBar, 60000);
+});
 
 /* ══ Skill 中文标签(id → 中文描述,用于调用时的友好提示)════════════ */
 const SKILL_LABELS = {};
@@ -253,9 +415,17 @@ function setWsConnected(on) {
   }
 }
 
+function reconnectWebSocket() {
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  connect();
+}
+
 function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  const _tok = getAccessToken();
+  // 优先用用户 JWT，降级用设备级 token
+  const _userTok = getAuthToken();
+  const _devTok  = getAccessToken();
+  const _tok = _userTok || _devTok;
   const _q = _tok ? `?token=${encodeURIComponent(_tok)}` : '';
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const sock = new WebSocket(`${proto}//${location.host}/ws${_q}`);
