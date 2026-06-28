@@ -132,6 +132,22 @@ def _collect_banner_meta() -> tuple[list[tuple[str, str]], list[tuple[str, str]]
 async def main() -> None:
     load_env()
 
+    # ── 授权检查 ────────────────────────────────────────────────────────────
+    try:
+        from license_client import check_license
+        from license_client.gates import init_gates
+        _lic = check_license()
+        init_gates(_lic)
+        if not _lic.valid and not _lic.offline:
+            from channels.cli_style import print_system
+            print_system(f"⚠️  未激活: {_lic.error}")
+            print_system("运行 captain activate <授权码> 激活 Pro，或继续使用 Free 版（功能受限）。")
+        elif _lic.is_pro and _lic.days_left() is not None and _lic.days_left() < 14:
+            from channels.cli_style import print_system
+            print_system(f"⚠️  Pro 授权还剩 {_lic.days_left()} 天，请及时续费。")
+    except Exception:
+        pass   # 授权模块加载失败不阻断启动
+
     experts_meta, skills_meta, expert_names = _collect_banner_meta()
     skill_names = {s[0] for s in skills_meta}
 

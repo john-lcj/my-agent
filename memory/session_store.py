@@ -72,40 +72,33 @@ class SessionStore:
             self._conn.execute("ALTER TABLE sessions ADD COLUMN meta TEXT")
         if "project_id" not in cols:
             self._conn.execute("ALTER TABLE sessions ADD COLUMN project_id TEXT")
-        if "user_id" not in cols:
-            self._conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT")
         self._conn.commit()
 
     # ── 会话级 ────────────────────────────────────────────────────────────────
-    def ensure_session(self, session_id: str, title: str = "", kind: str = "chat",
-                       user_id: Optional[str] = None) -> None:
+    def ensure_session(self, session_id: str, title: str = "", kind: str = "chat") -> None:
         now = time.time()
         if session_id.startswith("s-cowork-") and kind == "chat":
             kind = "coworker"
         self._conn.execute(
-            "INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at, kind, user_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, title, now, now, kind, user_id),
+            "INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at, kind) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, title, now, now, kind),
         )
         self._conn.commit()
 
-    def list_sessions(self, limit: int = 50, project_id: Optional[str] = None,
-                      user_id: Optional[str] = None) -> list[dict]:
-        where_parts = []
-        params: list = []
+    def list_sessions(self, limit: int = 50, project_id: Optional[str] = None) -> list[dict]:
         if project_id:
-            where_parts.append("project_id = ?")
-            params.append(project_id)
-        if user_id:
-            where_parts.append("user_id = ?")
-            params.append(user_id)
-        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-        params.append(limit)
-        rows = self._conn.execute(
-            f"SELECT id, title, created_at, updated_at, kind, project_id FROM sessions "
-            f"{where} ORDER BY updated_at DESC LIMIT ?",
-            params,
-        ).fetchall()
+            rows = self._conn.execute(
+                "SELECT id, title, created_at, updated_at, kind, project_id FROM sessions "
+                "WHERE project_id = ? ORDER BY updated_at DESC LIMIT ?",
+                (project_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, title, created_at, updated_at, kind, project_id FROM sessions "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_project_id(self, session_id: str) -> Optional[str]:
@@ -144,21 +137,18 @@ class SessionStore:
         self._conn.commit()
         return meta
 
-    def search_sessions(self, query: str, limit: int = 30,
-                        user_id: Optional[str] = None) -> list[dict]:
+    def search_sessions(self, query: str, limit: int = 30) -> list[dict]:
         """跨会话标题与消息内容搜索,返回去重的会话列表。"""
         q = (query or "").strip()
         if not q:
             return []
         like = f"%{q}%"
-        uid_clause = "AND s.user_id = ?" if user_id else ""
-        params = [like, like] + ([user_id] if user_id else []) + [limit]
         rows = self._conn.execute(
-            f"SELECT DISTINCT s.id, s.title, s.updated_at, s.kind, s.project_id "
-            f"FROM sessions s LEFT JOIN messages m ON m.session_id = s.id "
-            f"WHERE (s.title LIKE ? OR m.content LIKE ?) {uid_clause} "
-            f"ORDER BY s.updated_at DESC LIMIT ?",
-            params,
+            "SELECT DISTINCT s.id, s.title, s.updated_at, s.kind, s.project_id "
+            "FROM sessions s LEFT JOIN messages m ON m.session_id = s.id "
+            "WHERE s.title LIKE ? OR m.content LIKE ? "
+            "ORDER BY s.updated_at DESC LIMIT ?",
+            (like, like, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
