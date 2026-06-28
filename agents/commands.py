@@ -8,7 +8,8 @@ from typing import Literal, Optional
 
 from llm.model_registry import format_models_help, normalize_model_id
 
-_CMD = re.compile(r"^/([a-zA-Z][\w-]*)(?:\s+(.*))?$", re.S)
+# 支持 ASCII 与中文 skill 名（如 /外贸助手、/text_stats）
+_CMD = re.compile(r"^/([\w一-鿿][\w一-鿿.-]*)(?:\s+(.*))?$", re.S)
 
 SlashKind = Literal[
     "main",

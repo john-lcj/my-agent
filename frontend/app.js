@@ -1541,18 +1541,18 @@ function switchSettingsTab(tab, el) {
   document.querySelectorAll('#settings-overlay .settings-nav-item').forEach(n => {
     n.classList.toggle('active', el ? n === el : n.dataset.tab === tab);
   });
-  const map = { general: 'settings-general', channels: 'settings-channels', tasks: 'settings-tasks',
-                usage: 'settings-usage', keys: 'settings-keys', governance: 'settings-governance', about: 'settings-about' };
   document.querySelectorAll('#settings-overlay .settings-section').forEach(s => {
-    s.classList.toggle('active', s.id === map[tab]);
+    s.classList.toggle('active', s.id === 'settings-' + tab);
   });
   if (tab === 'tasks') refreshTasks();
   if (tab === 'governance') loadGovStats();
   if (tab === 'usage') loadUsageStats();
   if (tab === 'channels' || tab === 'general' || tab === 'keys') loadSettingsUI();
+  if (tab === 'goals') renderGoals();
+  if (tab === 'monitors') renderMonitors();
 }
 function openCustomize(tab) {
-  tab = tab || 'experts';
+  tab = tab || 'skills';
   document.getElementById('customize-overlay').classList.add('open');
   switchCustomizeTab(tab);
 }
@@ -1572,6 +1572,7 @@ function switchCustomizeTab(tab, el) {
   if (tab === 'schedules') renderSchedules();
   if (tab === 'connectors') renderConnectors();
   if (tab === 'prefs') renderPrefs();
+  if (tab === 'writing') renderWritingAssist();
 }
 
 /* ── 主动建议:它主动想到的事,你接受(→去做)或忽略 ── */
@@ -1781,10 +1782,12 @@ async function renderSchedules() {
   try {
     const d = await (await fetch('/api/tasks')).json();
     const rows = d.tasks || d || [];
+    const fmtTs = ts => ts ? new Date(ts * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
     box.innerHTML = (rows.length ? rows.map(t => `
       <div class="expert-card" style="margin-bottom:8px">
-        <h3>${escHtml(t.name || t.id)}</h3>
-        <div class="role">${escHtml(t.schedule_type || '')} ${escHtml(t.at_hhmm || '')} · ${escHtml((t.prompt||'').slice(0,80))}</div>
+        <h3>${escHtml(t.name || t.id)} <span style="font-size:11px;color:${t.enabled===false?'#888':'var(--accent)'}">${t.enabled===false?'已停用':'启用'}</span></h3>
+        <div class="role">${escHtml(t.schedule_type || '')} ${escHtml(t.at_hhmm || t.interval_sec ? '每'+t.interval_sec+'秒' : '')} · ${escHtml((t.prompt||'').slice(0,80))}</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">上次: ${fmtTs(t.last_run)} · 下次: ${fmtTs(t.next_run)}</div>
         <button class="btn-sm" style="margin-top:6px" onclick="delSchedule('${t.id}')" data-i18n="schDelete">删除</button>
       </div>`).join('') : `<div class="wb-empty" data-i18n="schEmpty">还没有定时任务</div>`);
     applyI18n();
@@ -1794,10 +1797,17 @@ async function saveSchedule() {
   const name = document.getElementById('sch-name').value.trim();
   const prompt = document.getElementById('sch-prompt').value.trim();
   if (!name || !prompt) return;
-  await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, prompt,
-      schedule_type: document.getElementById('sch-type').value,
-      at_hhmm: document.getElementById('sch-time').value})});
+  const schType = document.getElementById('sch-type').value;
+  const body = {
+    name, prompt,
+    schedule_type: schType,
+    at_hhmm: document.getElementById('sch-time').value,
+    task_type: 'scheduled',
+    interval_sec: schType === 'interval' ? parseInt(document.getElementById('sch-interval')?.value || '3600', 10) : null,
+    deliver: document.getElementById('sch-deliver')?.value || 'chat',
+    deliver_to: document.getElementById('sch-deliver-to')?.value || '',
+  };
+  await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   document.getElementById('sch-name').value=''; document.getElementById('sch-prompt').value='';
   renderSchedules();
 }
@@ -1865,6 +1875,155 @@ async function delPref(id) {
   renderPrefs();
 }
 
+/* ── 设置:目标 Goals ── */
+async function renderGoals() {
+  const box = document.getElementById('goal-list'); if (!box) return;
+  try {
+    const d = await (await fetch('/api/goals')).json();
+    const rows = d.goals || d || [];
+    box.innerHTML = rows.length ? rows.map(g => `
+      <div class="expert-card" style="margin-bottom:8px">
+        <div class="role" style="color:var(--txt)">${escHtml(g.text || g.content || g)}</div>
+        ${g.id != null ? `<button class="btn-sm" style="margin-top:6px" onclick="deleteGoal('${g.id}')">删除</button>` : ''}
+      </div>`).join('') : `<div class="wb-empty">还没有设置目标</div>`;
+  } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
+}
+async function saveGoal() {
+  const txt = (document.getElementById('goal-text')?.value || '').trim();
+  if (!txt) return;
+  try {
+    await fetch('/api/goals', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: txt})});
+    document.getElementById('goal-text').value = '';
+    renderGoals();
+  } catch {}
+}
+async function deleteGoal(id) {
+  try { await fetch('/api/goals/' + encodeURIComponent(id), {method:'DELETE'}); } catch {}
+  renderGoals();
+}
+
+/* ── 设置:监控 Monitors ── */
+async function renderMonitors() {
+  const box = document.getElementById('monitor-list'); if (!box) return;
+  try {
+    const d = await (await fetch('/api/monitors')).json();
+    const rows = d.monitors || d || [];
+    box.innerHTML = rows.length ? rows.map(m => `
+      <div class="expert-card" style="margin-bottom:8px">
+        <h3>${escHtml(m.name || m.id)}</h3>
+        <div class="role">${escHtml(m.source||'')} · ${escHtml(m.monitor_type||m.type||'')} · 每 ${escHtml(String(m.interval_sec||60))} 秒</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:2px">触发时: ${escHtml(m.action||'通知')}</div>
+        <button class="btn-sm" style="margin-top:6px" onclick="deleteMonitor('${m.id}')">删除</button>
+      </div>`).join('') : `<div class="wb-empty">还没有监控任务</div>`;
+  } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
+}
+async function saveMonitor() {
+  const name = (document.getElementById('mon-name')?.value || '').trim();
+  const source = (document.getElementById('mon-source')?.value || '').trim();
+  if (!name || !source) return;
+  const body = {
+    name,
+    source,
+    action: document.getElementById('mon-action')?.value || '',
+    monitor_type: document.getElementById('mon-type')?.value || 'keyword',
+    interval_sec: parseInt(document.getElementById('mon-interval')?.value || '60', 10),
+  };
+  try {
+    await fetch('/api/monitors', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    ['mon-name','mon-source','mon-action'].forEach(id => { const el = document.getElementById(id); if (el) el.value=''; });
+    renderMonitors();
+  } catch {}
+}
+async function deleteMonitor(id) {
+  try { await fetch('/api/monitors/' + encodeURIComponent(id), {method:'DELETE'}); } catch {}
+  renderMonitors();
+}
+
+/* ── 自定义:写作助手 ── */
+function renderWritingAssist() {
+  // Nothing to load from server; just ensure UI is clean
+  const resultBox = document.getElementById('writing-result');
+  const saveBtn = document.getElementById('writing-save-btn');
+  if (resultBox) resultBox.style.display = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
+}
+function setWritingInstruction(txt) {
+  const el = document.getElementById('writing-instruction');
+  if (el) { el.value = txt; el.focus(); }
+}
+async function runWritingAssist() {
+  const text = (document.getElementById('writing-text')?.value || '').trim();
+  const instruction = (document.getElementById('writing-instruction')?.value || '').trim();
+  if (!text) return;
+  const prompt = instruction ? `${instruction}:\n\n${text}` : text;
+  const resultBox = document.getElementById('writing-result');
+  const outputEl = document.getElementById('writing-output');
+  const saveBtn = document.getElementById('writing-save-btn');
+  if (outputEl) outputEl.value = '处理中…';
+  if (resultBox) resultBox.style.display = '';
+  try {
+    const d = await (await fetch('/api/writing/assist', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text, instruction}),
+    })).json();
+    const result = d.result || d.output || d.text || '';
+    if (outputEl) outputEl.value = result;
+    if (saveBtn) saveBtn.style.display = result ? '' : 'none';
+    // Fallback: if no backend endpoint, send to chat
+    if (!result && d.error) {
+      if (outputEl) outputEl.value = '（后端不支持独立写作接口，已将任务发送到对话）';
+      sendMessage(prompt);
+    }
+  } catch {
+    // No writing API — fallback to chat
+    if (outputEl) outputEl.value = '（已将任务发送到对话）';
+    sendMessage(prompt);
+  }
+}
+async function saveWritingResult() {
+  const output = (document.getElementById('writing-output')?.value || '').trim();
+  const title = (document.getElementById('writing-save-title')?.value || '').trim() || '写作结果.md';
+  if (!output) return;
+  try {
+    await fetch('/api/artifacts', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({filename: title, content: output})});
+    if (typeof toast === 'function') toast('已保存到产物: ' + title);
+  } catch { if (typeof toast === 'function') toast('保存失败'); }
+}
+function copyWritingOutput() {
+  const el = document.getElementById('writing-output');
+  if (!el) return;
+  try { navigator.clipboard.writeText(el.value); if (typeof toast === 'function') toast('已复制'); } catch {}
+}
+
+/* ── 设置:治理 Audit Log ── */
+async function loadAuditLog() {
+  const box = document.getElementById('audit-log-table'); if (!box) return;
+  box.innerHTML = '加载中…';
+  try {
+    const d = await (await fetch('/api/audit?limit=50')).json();
+    const rows = d.logs || d.entries || d || [];
+    if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无审计日志</div>'; return; }
+    box.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:var(--dim);text-align:left">
+        <th style="padding:4px 8px">时间</th><th style="padding:4px 8px">操作</th>
+        <th style="padding:4px 8px">裁决</th><th style="padding:4px 8px">风险</th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const ts = r.ts || r.timestamp || r.created_at;
+        const time = ts ? new Date(ts*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+        const dec = r.decision || r.verdict || '';
+        const color = dec==='allow'?'#3cb371':dec==='block'?'#c84444':'#c89b3c';
+        return `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:4px 8px;color:var(--dim)">${escHtml(time)}</td>
+          <td style="padding:4px 8px">${escHtml(r.action||r.tool||r.capability||'')}</td>
+          <td style="padding:4px 8px;color:${color}">${escHtml(dec)}</td>
+          <td style="padding:4px 8px;color:var(--dim)">${escHtml(r.risk||r.risk_level||'')}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
+}
 
 function govDecisionLabel(decision, labels) {
   const map = labels?.decisions || {};
@@ -2476,9 +2635,21 @@ function togglePinSession(id) {
   renderSessions(allSessions);
 }
 
-function onHistorySearch(q) {
+async function onHistorySearch(q) {
   historySearchQuery = (q || '').trim().toLowerCase();
-  renderSessions(allSessions);
+  if (!historySearchQuery) {
+    renderSessions(allSessions);
+    return;
+  }
+  try {
+    const d = await (await fetch('/api/sessions/search?q=' + encodeURIComponent(historySearchQuery))).json();
+    renderSessions(d.sessions || d || []);
+  } catch {
+    renderSessions(allSessions.filter(s => {
+      const title = (s.title || s.id || '').toLowerCase();
+      return title.includes(historySearchQuery);
+    }));
+  }
 }
 
 function sessionDayGroup(ts) {
@@ -4096,7 +4267,7 @@ function applySlashCommand(item) {
   inp.setSelectionRange(len, len);
 }
 
-const INSTANT_SLASH = new Set(['/skills', '/experts', '/rollback']);
+const INSTANT_SLASH = new Set(['/skills', '/skill', '/experts', '/rollback']);
 
 function slashSendsImmediately(text) {
   const t = text.trim().toLowerCase();

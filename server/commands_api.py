@@ -25,16 +25,20 @@ def list_slash_commands(roster_dir: str, skills_dirs: str | list[str] = "skills"
             "group": "模型",
         })
 
-    # 多 agent 专家命令已移除(单 agent 架构);只保留 /model 与 /skill。
+    # Skill 命令：两种格式都注册，保证自动补全和直接输入都能工作。
+    # - /skill <name> <args>：标准格式，走 parse_slash_command 的 "skill" 分支
+    # - /<name> <args>：快捷格式，走 "name in skills" 分支（支持 Unicode 名称）
     try:
         from skills.base import SkillRegistry
         reg = SkillRegistry(skills_dirs)
         reg.discover()
         for m in reg.available():
+            desc = m.description or m.name
+            # 快捷格式（优先展示）
             items.append({
-                "cmd": f"/{m.name}",
-                "label": m.description or m.name,
-                "hint": f"/{m.name} <参数>",
+                "cmd": f"/skill {m.name}",
+                "label": desc,
+                "hint": f"/skill {m.name} <参数>",
                 "group": "Skill",
             })
     except Exception:

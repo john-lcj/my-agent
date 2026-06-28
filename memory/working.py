@@ -15,7 +15,7 @@ from core.types import Message, Role
 
 
 class WorkingMemory:
-    def __init__(self, max_chars: int = 16000, keep_recent: int = 10) -> None:
+    def __init__(self, max_chars: int = 6000, keep_recent: int = 10) -> None:
         self.max_chars = max_chars
         self.keep_recent = keep_recent
 

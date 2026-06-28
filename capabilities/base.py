@@ -70,6 +70,14 @@ class CapabilityRegistry:
         self._specs_cache = cache
         return list(cache)
 
+    def specs_for(self, user_text: str) -> list[dict]:
+        """按任务文本做能力路由，返回相关能力子集（减少每步 token 消耗）。
+
+        多数对话只需要 ~15 个核心能力，不必把 ~45 个全发给模型。
+        """
+        from capabilities.routing import route
+        return route(user_text, self.specs())
+
     async def invoke(self, name: str, args: dict, ctx: Any) -> CapabilityResult:
         cap = self.get(name)
         if cap is None:

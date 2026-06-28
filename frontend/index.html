@@ -54,7 +54,7 @@
           <span class="nav-ic"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span>
           <span data-i18n="navArtifacts">Artifacts</span>
         </button>
-        <button class="sb-nav-item" data-modes="coworker" onclick="openCustomize('experts')">
+        <button class="sb-nav-item" data-modes="coworker" onclick="openCustomize('skills')">
           <span class="nav-ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
           <span data-i18n="navCustomize">Customize</span>
         </button>
@@ -311,6 +311,8 @@
         <div class="settings-nav-group" id="nav-group-advanced" data-i18n="navGroupAdvanced">高级</div>
         <div class="settings-nav-item" data-tab="channels" id="nav-channels" onclick="switchSettingsTab('channels', this)" data-i18n="navChannels">连接器</div>
         <div class="settings-nav-item" data-tab="tasks" id="nav-tasks" onclick="switchSettingsTab('tasks', this)" data-i18n="settingsTasks">定时任务</div>
+        <div class="settings-nav-item" data-tab="goals" id="nav-goals" onclick="switchSettingsTab('goals', this)">目标</div>
+        <div class="settings-nav-item" data-tab="monitors" id="nav-monitors" onclick="switchSettingsTab('monitors', this)">监控</div>
         <div class="settings-nav-item" data-tab="governance" id="nav-governance" onclick="switchSettingsTab('governance', this)" data-i18n="settingsGovernance">治理</div>
         <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)" data-i18n="settingsAbout">关于</div>
       </nav>
@@ -515,12 +517,51 @@
           <div style="font-size:12px;color:var(--dim);margin-bottom:8px" id="usage-daily-title" data-i18n="usageDailyTitle">按日明细</div>
           <div id="usage-daily-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
         </div>
+        <!-- 目标管理 -->
+        <div class="settings-section" id="settings-goals">
+          <h2>目标</h2>
+          <p class="settings-desc">长期目标与里程碑，Captain 会在规划时优先考量。</p>
+          <div class="field-group">
+            <input class="field-input" id="goal-text" placeholder="输入目标，如「今年完成外贸系统上线」"/>
+            <button class="btn-sm primary" style="margin-top:6px" onclick="saveGoal()">添加目标</button>
+          </div>
+          <div id="goal-list" style="margin-top:12px"></div>
+        </div>
+
+        <!-- 变化监控 -->
+        <div class="settings-section" id="settings-monitors">
+          <h2>监控</h2>
+          <p class="settings-desc">持续监测 URL 或文件变化，变化时自动执行指定动作。</p>
+          <div class="field-group">
+            <input class="field-input" id="mon-name" placeholder="监控名称（如「官网价格监控」）"/>
+            <input class="field-input" id="mon-source" style="margin-top:6px" placeholder="监控来源（URL 或文件路径）"/>
+            <textarea class="field-input" id="mon-action" rows="2" style="margin-top:6px;resize:vertical" placeholder="变化时执行的指令（如「发邮件告诉我价格变了」）"></textarea>
+            <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
+              <select class="field-input" id="mon-type" style="width:auto">
+                <option value="url">URL</option>
+                <option value="file">文件</option>
+              </select>
+              <input class="field-input" id="mon-interval" type="number" value="1800" min="60" style="width:100px"/>
+              <span style="font-size:12px;color:var(--muted)">秒/次</span>
+              <button class="btn-sm primary" onclick="saveMonitor()">添加监控</button>
+            </div>
+          </div>
+          <div id="monitor-list" style="margin-top:12px"></div>
+        </div>
+
+        <!-- 治理 -->
         <div class="settings-section" id="settings-governance">
           <h2 id="settings-governance-title" data-i18n="settingsGovernance">治理</h2>
           <p class="settings-desc" id="settings-governance-desc" data-i18n="settingsGovernanceDesc">近 7 天裁决分布</p>
         <div style="font-size:13px;color:var(--muted);margin-bottom:10px" id="gov-stats-hint" data-i18n="govStatsHint">近 7 天治理裁决统计(来自 trace)</div>
         <div id="gov-stats-summary" style="display:none;margin-bottom:12px"></div>
         <div id="gov-stats-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
+        <div style="margin-top:16px">
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px">审计日志（最近 50 条）
+            <button class="btn-sm" style="margin-left:8px" onclick="loadAuditLog()">刷新</button>
+          </div>
+          <div id="audit-log-table" style="font-size:11px;color:var(--muted)">点击刷新加载…</div>
+        </div>
         </div>
         <div class="settings-section" id="settings-about">
           <h2 id="settings-about-title" data-i18n="settingsAbout">关于</h2>
@@ -560,6 +601,7 @@
         <div class="settings-nav-item active" data-tab="skills" onclick="switchCustomizeTab('skills', this)" data-i18n="custTabSkills">Skill 插件</div>
         <div class="settings-nav-item" data-tab="templates" onclick="switchCustomizeTab('templates', this)" data-i18n="custTabTemplates">提示词模板</div>
         <div class="settings-nav-item" data-tab="schedules" onclick="switchCustomizeTab('schedules', this)" data-i18n="custTabSchedules">定时任务</div>
+        <div class="settings-nav-item" data-tab="writing" onclick="switchCustomizeTab('writing', this)">写作助手</div>
         <div class="settings-nav-item" data-tab="connectors" onclick="switchCustomizeTab('connectors', this)" data-i18n="custTabConnectors">连接器</div>
         <div class="settings-nav-item" data-tab="prefs" onclick="switchCustomizeTab('prefs', this)" data-i18n="custTabPrefs">偏好与人设</div>
       </nav>
@@ -616,6 +658,39 @@
           <div id="sec-list" style="margin-top:12px"></div>
           <div class="field-label" style="margin-top:16px" data-i18n="connServices">已接入的服务</div>
           <div id="conn-list" style="margin-top:6px"></div>
+        </div>
+
+        <!-- 写作助手 -->
+        <div class="settings-section" id="customize-writing">
+          <h2>写作助手</h2>
+          <p class="settings-desc">AI 辅助润色、续写、缩写、改写——处理结果可直接保存到产物目录。</p>
+          <div class="field-group">
+            <div class="field-label">文本内容</div>
+            <textarea class="field-input" id="writing-text" rows="6" style="resize:vertical" placeholder="粘贴或输入需要处理的文本…"></textarea>
+          </div>
+          <div class="field-group" style="margin-top:8px">
+            <div class="field-label">指令</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+              <button class="btn-sm" onclick="setWritingInstruction('润色，使表达更流畅自然')">润色</button>
+              <button class="btn-sm" onclick="setWritingInstruction('扩写，增加细节和例子使内容更丰富')">扩写</button>
+              <button class="btn-sm" onclick="setWritingInstruction('缩写，保留核心内容精简表达')">缩写</button>
+              <button class="btn-sm" onclick="setWritingInstruction('改写为正式商务风格')">商务化</button>
+              <button class="btn-sm" onclick="setWritingInstruction('续写，保持原有风格继续')">续写</button>
+            </div>
+            <input class="field-input" id="writing-instruction" placeholder="或自定义指令，如「翻译成英文」「改成第三人称」"/>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn-sm primary" onclick="runWritingAssist()">▶ 执行</button>
+            <button class="btn-sm" onclick="saveWritingResult()" id="writing-save-btn" style="display:none">💾 保存到产物</button>
+          </div>
+          <div id="writing-result" style="margin-top:12px;display:none">
+            <div class="field-label">处理结果</div>
+            <textarea class="field-input" id="writing-output" rows="6" style="resize:vertical"></textarea>
+            <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+              <input class="field-input" id="writing-save-title" placeholder="保存文件名（如 稿件.md）" style="flex:1"/>
+              <button class="btn-sm" onclick="copyWritingOutput()">复制</button>
+            </div>
+          </div>
         </div>
 
         <!-- 偏好与人设 -->
