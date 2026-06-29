@@ -49,12 +49,17 @@ function Download-File {
 
 # ── 检测 Python ───────────────────────────────────────────────
 function Find-Python {
+    # 刷新 PATH 后再检测
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("Path","User")
     foreach ($cmd in @("python", "python3", "py")) {
+        $gc = Get-Command $cmd -ErrorAction SilentlyContinue
+        if (-not $gc) { continue }
         try {
-            $ver = & $cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+            $ver = & $cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1
             if ($ver -match "^(\d+)\.(\d+)") {
                 if ([int]$Matches[1] -ge 3 -and [int]$Matches[2] -ge 10) {
-                    Write-Ok "检测到 Python $ver"
+                    Write-Ok "检测到 Python $ver ($($gc.Source))"
                     return $cmd
                 }
             }
@@ -78,7 +83,12 @@ function Install-Python {
 
 # ── 检测 Git ──────────────────────────────────────────────────
 function Find-Git {
-    try { $null = git --version 2>$null; return $true } catch { return $false }
+    # 先刷新 PATH，再用 Get-Command 检测（比 try{git} 更可靠）
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("Path","User")
+    $g = Get-Command git -ErrorAction SilentlyContinue
+    if ($g) { Write-Ok "检测到 Git: $($g.Source)"; return $true }
+    return $false
 }
 
 function Install-Git {
