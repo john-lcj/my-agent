@@ -791,10 +791,18 @@ def create_app():
     async def _api_auth(request: Request, call_next):
         if request.url.path.startswith("/api/"):
             client = request.client.host if request.client else ""
+            _DEFAULT_TOKEN = "change-me-to-random-string"
             if _is_proxied(request.headers) or not _is_loopback(client):
                 token = os.environ.get("AGENT_API_TOKEN", "").strip()
+                # 远程模式下使用默认 token → 拒绝服务，提示修改 .env
+                if not token or token == _DEFAULT_TOKEN:
+                    return JSONResponse(
+                        {"error": "insecure_config",
+                         "detail": "检测到远程访问但 AGENT_API_TOKEN 仍为默认值，请在 .env 中设置随机密钥后重启。"},
+                        status_code=503,
+                    )
                 provided = request.headers.get("x-agent-token", "")
-                if not token or not hmac.compare_digest(provided, token):
+                if not hmac.compare_digest(provided, token):
                     return JSONResponse(
                         {"error": "unauthorized",
                          "detail": "远程访问 /api/* 需设置 AGENT_API_TOKEN 并在 X-Agent-Token 头携带。"},
@@ -1214,12 +1222,30 @@ def create_app():
             ).stdout.strip()
             already_latest = (local == remote)
             if not already_latest:
+                # stash 用户对跟踪文件的本地改动（如手动编辑了 persona.yaml 的 agent 段）
+                # data/ 已在 .gitignore，不受 reset 影响；stash 只保护跟踪文件
+                stash = subprocess.run(
+                    [git_cmd, "-C", root, "stash", "--include-untracked", "--quiet"],
+                    capture_output=True, text=True, timeout=15, env=git_env
+                )
+                had_stash = "No local changes" not in (stash.stdout + stash.stderr)
+
                 reset = subprocess.run(
                     [git_cmd, "-C", root, "reset", "--hard", "FETCH_HEAD"],
                     capture_output=True, text=True, timeout=30, env=git_env
                 )
                 if reset.returncode != 0:
+                    # reset 失败：恢复 stash 后返回错误
+                    if had_stash:
+                        subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
+                                       capture_output=True, timeout=10, env=git_env)
                     return JSONResponse({"ok": False, "error": reset.stderr.strip()}, status_code=500)
+
+                # stash pop：冲突时 git 会保留两份（用户版不会丢失）
+                if had_stash:
+                    subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
+                                   capture_output=True, timeout=10, env=git_env)
+
             req_base = os.path.join(root, "requirements-base.txt")
             req_full = os.path.join(root, "requirements.txt")
             req = req_base if os.path.exists(req_base) else req_full
@@ -1237,14 +1263,20 @@ def create_app():
                     err = (pip_result.stderr or b"").decode(errors="replace").strip()
                     return JSONResponse({"ok": False, "error": f"pip install 失败: {err}"}, status_code=500)
             if not already_latest:
-                # 更新成功后延迟 1s 重启进程（Windows 兼容）
+                # 先 spawn 新进程，再退出旧进程（保证无 supervisor 时也能自重启）
                 async def _restart():
                     await asyncio.sleep(1)
+                    port = int(os.environ.get("AGENT_WEB_PORT", "8000"))
                     try:
-                        import signal
-                        os.kill(os.getpid(), signal.SIGTERM)
+                        subprocess.Popen(
+                            [sys.executable, "-m", "uvicorn", "server.app:app",
+                             "--host", "127.0.0.1", "--port", str(port)],
+                            cwd=root,
+                            start_new_session=True,
+                        )
                     except Exception:
-                        os._exit(0)
+                        pass
+                    os._exit(0)
                 asyncio.create_task(_restart())
             return JSONResponse({
                 "ok": True,
