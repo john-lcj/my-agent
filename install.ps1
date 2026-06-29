@@ -189,6 +189,47 @@ function Create-Launcher {
     Write-Ok "启动脚本: $bat"
 }
 
+# ── 7. 桌面快捷方式 ──────────────────────────────────────────
+function Create-Shortcut {
+    $bat = "$INSTALL_DIR\captain.bat"
+
+    # VBS 启动器：若服务未运行则先启动，然后打开浏览器
+    $vbs = "$INSTALL_DIR\captain_launch.vbs"
+    $vbsLines = @(
+        "Set WShell = CreateObject(""WScript.Shell"")",
+        "' 检测服务是否已在运行",
+        "bRunning = False",
+        "On Error Resume Next",
+        "Set oHTTP = CreateObject(""MSXML2.XMLHTTP"")",
+        "oHTTP.Open ""GET"", ""http://localhost:8000/healthz"", False",
+        "oHTTP.Send",
+        "If oHTTP.Status = 200 Then bRunning = True",
+        "On Error GoTo 0",
+        "' 未运行则启动 bat（显示服务日志窗口）",
+        "If Not bRunning Then",
+        "    WShell.Run Chr(34) & """ + $bat + """ & Chr(34), 1, False",
+        "    WScript.Sleep 3500",
+        "End If",
+        "' 打开浏览器",
+        "WShell.Run ""http://localhost:8000"""
+    )
+    [System.IO.File]::WriteAllLines($vbs, $vbsLines, [System.Text.Encoding]::ASCII)
+
+    # 桌面快捷方式
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $lnkPath = "$desktop\Captain.lnk"
+    $wsh = New-Object -ComObject WScript.Shell
+    $lnk = $wsh.CreateShortcut($lnkPath)
+    $lnk.TargetPath      = "wscript.exe"
+    $lnk.Arguments       = """$vbs"""
+    $lnk.WorkingDirectory = $INSTALL_DIR
+    $lnk.Description     = "Captain AI Agent — 启动并打开浏览器"
+    # 使用 Shell32 里的星形图标（外观醒目）
+    $lnk.IconLocation    = "%SystemRoot%\system32\shell32.dll,43"
+    $lnk.Save()
+    Write-Ok "桌面快捷方式已创建: $lnkPath"
+}
+
 # ── 完成提示 ──────────────────────────────────────────────────
 function Print-Done {
     Write-Host ""
@@ -201,11 +242,10 @@ function Print-Done {
     Write-Host "           $INSTALL_DIR\.env"
     Write-Host ""
     Write-Host "  第 2 步  " -NoNewline -ForegroundColor White
-    Write-Host "双击启动："
-    Write-Host "           $INSTALL_DIR\captain.bat"
+    Write-Host "双击桌面上的 Captain 图标启动"
     Write-Host ""
     Write-Host "  第 3 步  " -NoNewline -ForegroundColor White
-    Write-Host "浏览器打开 http://localhost:8000"
+    Write-Host "浏览器会自动打开 http://localhost:8000"
     Write-Host ""
     Write-Host "  购买 Pro  https://irestart-your-life.club/#pricing" -ForegroundColor Cyan
     Write-Host ""
@@ -221,12 +261,13 @@ Write-Host ""
 
 New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
 
-Setup-Python   # 1. 解压 Python，修复 _pth，装 pip
-Setup-Git      # 2. 解压 PortableGit
-Clone-OrUpdate # 3. 拉取应用代码
-Install-Deps   # 4. pip install requirements.txt → site-packages
-Setup-Env      # 5. 生成 .env 模板
+Setup-Python    # 1. 解压 Python，修复 _pth，装 pip
+Setup-Git       # 2. 解压 PortableGit
+Clone-OrUpdate  # 3. 拉取应用代码
+Install-Deps    # 4. pip install requirements.txt → site-packages
+Setup-Env       # 5. 生成 .env 模板
 Create-Launcher # 6. 生成 captain.bat
+Create-Shortcut # 7. 桌面快捷方式
 
 Print-Done
 Pause-Exit 0
