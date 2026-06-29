@@ -1102,9 +1102,15 @@ def create_app():
         if not os.path.exists(venv_pip):
             venv_pip = sys.executable.replace("python", "pip")
         try:
-            pull = subprocess.run(
-                ["git", "-C", root, "pull", "--ff-only", "origin", "main"],
+            fetch = subprocess.run(
+                ["git", "-C", root, "fetch", "origin", "main"],
                 capture_output=True, text=True, timeout=60
+            )
+            if fetch.returncode != 0:
+                return JSONResponse({"ok": False, "error": fetch.stderr.strip()}, status_code=500)
+            pull = subprocess.run(
+                ["git", "-C", root, "reset", "--hard", "origin/main"],
+                capture_output=True, text=True, timeout=30
             )
             if pull.returncode != 0:
                 return JSONResponse({"ok": False, "error": pull.stderr.strip()}, status_code=500)
