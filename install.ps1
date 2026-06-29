@@ -176,7 +176,18 @@ AGENT_API_TOKEN=change-me-to-random-string
 function Create-Launcher {
     $bat = "$INSTALL_DIR\captain.bat"
     # 用 ASCII 写入，避免 BOM 导致 cmd.exe 乱码
-    $batContent = "@echo off`r`ntitle Captain AI Agent`r`ncd /d `"%~dp0`"`r`nset PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%`r`necho Captain 启动中... 请稍候`r`npython -m uvicorn server.app:app --host 127.0.0.1 --port 8000`r`npause`r`n"
+    $batLines = @(
+        "@echo off",
+        "title Captain AI Agent",
+        "cd /d ""%~dp0""",
+        "set PYTHON=%~dp0runtime\python\python.exe",
+        "set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%",
+        "set PYTHONPATH=%~dp0runtime\python\Lib\site-packages",
+        "echo Captain 启动中... 请稍候",
+        "%PYTHON% -m uvicorn server.app:app --host 127.0.0.1 --port 8000",
+        "pause"
+    )
+    $batContent = ($batLines -join "`r`n") + "`r`n"
     [System.IO.File]::WriteAllText($bat, $batContent, [System.Text.Encoding]::ASCII)
     Write-Ok "启动脚本: $bat"
 }
