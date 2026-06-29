@@ -1141,7 +1141,7 @@ def create_app():
             return JSONResponse({
                 "ok": True,
                 "already_latest": already_latest,
-                "log": pull.stdout.strip(),
+                "log": fetch.stderr.strip(),
             })
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
