@@ -12,6 +12,7 @@ $ErrorActionPreference = "Continue"
 $INSTALL_DIR = "$env:USERPROFILE\captain"
 $PYTHON_DIR  = "$INSTALL_DIR\runtime\python"
 $GIT_DIR     = "$INSTALL_DIR\runtime\git"
+$PKGS_DIR    = "$INSTALL_DIR\runtime\packages"
 $PYTHON_EXE  = "$PYTHON_DIR\python.exe"
 $GIT_EXE     = "$GIT_DIR\bin\git.exe"
 $REPO_URL    = "https://github.com/john-lcj/my-agent.git"
@@ -73,19 +74,12 @@ function Setup-Python {
     Expand-Archive -Path $zip -DestinationPath $PYTHON_DIR -Force
     Remove-Item $zip -Force -ErrorAction SilentlyContinue
 
-    # 开启 site-packages（embeddable 默认注释掉 import site）
-    $pth = Get-ChildItem "$PYTHON_DIR\*._pth" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($pth) {
-        $content = Get-Content $pth.FullName -Raw
-        $content = $content -replace '#\s*import site', 'import site'
-        Set-Content -Path $pth.FullName -Value $content -NoNewline
-    }
-
-    # 安装 pip（警告 PATH 不在系统 PATH 无需理会，脚本直接用绝对路径）
+    # 安装 pip（用 --target 模式，不依赖 site-packages 路径）
     $getpip = "$env:TEMP\get-pip.py"
     Download-File $GETPIP_URL $getpip
     Write-Info "安装 pip ..."
-    & $PYTHON_EXE $getpip --quiet --no-warn-script-location -i $PIP_MIRROR 2>&1 | Out-Null
+    & $PYTHON_EXE $getpip --quiet --no-warn-script-location `
+        --target "$PYTHON_DIR\pip_bootstrap" -i $PIP_MIRROR 2>&1 | Out-Null
     Remove-Item $getpip -Force -ErrorAction SilentlyContinue
 
     if (-not (Test-Path $PYTHON_EXE)) { Write-Err "Python 安装失败" }
@@ -138,9 +132,12 @@ function Clone-OrUpdate {
 function Install-Deps {
     $req = "$INSTALL_DIR\requirements.txt"
     if (-not (Test-Path $req)) { return }
-    Write-Info "安装 Python 依赖（清华镜像）..."
+    New-Item -ItemType Directory -Force -Path $PKGS_DIR | Out-Null
+    Write-Info "安装 Python 依赖（清华镜像，--target 模式）..."
+    # --target 把所有包装到固定目录，不依赖 site-packages 配置
+    $env:PYTHONPATH = "$PYTHON_DIR\pip_bootstrap;$PKGS_DIR"
     & $PYTHON_EXE -m pip install --quiet --no-warn-script-location `
-        -r $req -i $PIP_MIRROR 2>&1 | Out-Null
+        --target $PKGS_DIR -r $req -i $PIP_MIRROR 2>&1 | Out-Null
     Write-Ok "依赖安装完成"
 }
 
@@ -181,8 +178,8 @@ function Create-Launcher {
         "title Captain AI Agent",
         "cd /d ""%~dp0""",
         "set PYTHON=%~dp0runtime\python\python.exe",
-        "set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%",
-        "set PYTHONPATH=%~dp0runtime\python\Lib\site-packages",
+        "set PATH=%~dp0runtime\python;%~dp0runtime\git\bin;%PATH%",
+        "set PYTHONPATH=%~dp0runtime\packages;%~dp0runtime\python\pip_bootstrap",
         "echo Captain 启动中... 请稍候",
         "%PYTHON% -m uvicorn server.app:app --host 127.0.0.1 --port 8000",
         "pause"
