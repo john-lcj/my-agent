@@ -200,9 +200,9 @@
 <!-- HERO -->
 <div class="hero">
   <div class="container">
-    <div class="badge"><span class="badge-dot"></span>现已开放 · v1.0 Beta · macOS</div>
-    <h1>跑在你电脑上的<br/><em>私人 AI Agent</em></h1>
-    <p class="hero-sub">读你的文件、执行你的任务、记住你的偏好。<br/>数据永远在你本机，不上传，不共享。</p>
+    <div class="badge"><span class="badge-dot"></span>现已开放 · macOS & Windows · MIT 开源</div>
+    <h1>你的<em>私人专属</em> AI 助手<br/>懂你、记得你、主动找你</h1>
+    <p class="hero-sub">不只是聊天——它记住你的工作背景，主动跟进业务进度，<br/>在你电脑上默默帮你把事情做完。数据永不离开本机。</p>
     <div class="hero-btns">
       <button class="btn-primary" onclick="openInstallModal()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -213,23 +213,21 @@
         购买 Pro
       </button>
     </div>
-    <p class="hero-hint">macOS 支持 · Windows 即将支持 · MIT 开源</p>
+    <p class="hero-hint">macOS · Windows · Linux · MIT 开源</p>
     <div class="terminal">
       <div class="term-bar">
         <div class="term-dot" style="background:#ff5f57"></div>
         <div class="term-dot" style="background:#febc2e"></div>
         <div class="term-dot" style="background:#28c840"></div>
-        <div class="term-title">Captain — 本地 AI Agent</div>
+        <div class="term-title">Captain — 私人 AI 助手</div>
       </div>
       <div class="term-body">
-        <div><span class="tc">你  </span><span class="tu">帮我把 Downloads 里上个月的发票整理汇总，生成报销表</span></div>
-        <div style="margin-top:10px"><span class="tc">⚡  </span><span class="ta">正在扫描 ~/Downloads ...</span></div>
-        <div><span class="tc">    </span><span class="ta">找到 23 个 PDF，识别金额中</span></div>
-        <div><span class="tc">    </span><span class="tg">✓ 已生成 报销汇总_2025-06.xlsx</span></div>
-        <div style="margin-top:10px"><span class="tc">你  </span><span class="tu">顺手发邮件给财务，附上这个文件</span></div>
-        <div style="margin-top:6px"><span class="tc">⚡  </span><span class="ty">发送邮件给 finance@company.com？</span></div>
-        <div><span class="tc">    </span><span class="tu">确认</span></div>
-        <div><span class="tc">    </span><span class="tg">✓ 邮件已发送</span></div>
+        <div><span class="tc">⚡  </span><span class="ty">早上好，昨天你说要跟进A客户的报价，现在方便的话我帮你起草一封跟进邮件？</span></div>
+        <div style="margin-top:8px"><span class="tc">你  </span><span class="tu">好，帮我写，语气正式一点</span></div>
+        <div style="margin-top:10px"><span class="tc">⚡  </span><span class="ta">起草邮件中，基于你上次的报价记录...</span></div>
+        <div><span class="tc">    </span><span class="tg">✓ 邮件已准备好，发送给 client@acorp.com？</span></div>
+        <div style="margin-top:8px"><span class="tc">你  </span><span class="tu">发</span></div>
+        <div><span class="tc">    </span><span class="tg">✓ 已发送 · 我会在3天后提醒你跟进回复</span></div>
       </div>
     </div>
   </div>
@@ -239,15 +237,17 @@
 <section id="features">
   <div class="container">
     <div class="section-label">核心能力</div>
-    <h2>不只是聊天，它真的能<em style="color:var(--accent2)">动手</em></h2>
-    <p class="section-sub">完整的工具链——操作文件、跑代码、上网查资料、定时执行任务。</p>
+    <h2>不只是聊天，它真的能<em style="color:var(--accent2)">懂你、帮你</em></h2>
+    <p class="section-sub">记住你的背景，主动跟进任务，替你把事情做完——像一个真正的私人助手。</p>
     <div class="features-grid">
-      <div class="feat-card"><div class="feat-icon">📁</div><h3>文件 & 代码操作</h3><p>读写本地文件、执行 shell 命令、批量重命名、代码审查修改——所有操作在你的电脑上完成，不经过任何云端。</p></div>
-      <div class="feat-card"><div class="feat-icon">⏰</div><h3>定时任务 & 监控</h3><p>每天早上自动出简报、监控某个网页变化就发通知、定期备份重要文件——设定一次，持续运行。</p></div>
-      <div class="feat-card"><div class="feat-icon">🧠</div><h3>长期记忆</h3><p>记住你的偏好、过往交代过的背景信息、项目上下文，不用每次重新交代。越用越懂你。</p></div>
-      <div class="feat-card"><div class="feat-icon">🔌</div><h3>Skill 插件</h3><p>一键安装外贸助手、数据分析、文案生成等专属插件，对话中用 /skill名 直接调用。</p></div>
-      <div class="feat-card"><div class="feat-icon">🌐</div><h3>联网 & 信息收集</h3><p>搜索最新资讯、抓取指定网页、整合多个来源生成摘要报告，比你自己查快 10 倍。</p></div>
-      <div class="feat-card"><div class="feat-icon">🔒</div><h3>数据完全本地</h3><p>对话历史、文件、密钥——全部存在你自己的电脑。没有云端同步，没有数据收集，没有广告。</p></div>
+      <div class="feat-card"><div class="feat-icon">🎯</div><h3>主动跟进业务</h3><p>你交代过的事它不会忘——定时提醒你跟进客户、检查项目进度、询问待办事项，像真正的助理一样主动找你。</p></div>
+      <div class="feat-card"><div class="feat-icon">👤</div><h3>专属用户档案</h3><p>填写你的职业、工作背景、沟通偏好，Captain 记住你是谁，每次对话都带着这些背景，不用反复交代。</p></div>
+      <div class="feat-card"><div class="feat-icon">⚡</div><h3>工作流模板</h3><p>内置每日简报、邮件助手、会议纪要、文件整理等 8 个开箱即用模板，一键启动常用工作流。</p></div>
+      <div class="feat-card"><div class="feat-icon">⏰</div><h3>定时任务 & 监控</h3><p>每天早上自动出简报、监控网页变化发通知、定期备份重要文件——设定一次，持续运行。</p></div>
+      <div class="feat-card"><div class="feat-icon">🧠</div><h3>长期记忆</h3><p>记住你的偏好、过往项目上下文，越用越懂你。换话题回来照样记得上次说到哪里。</p></div>
+      <div class="feat-card"><div class="feat-icon">📁</div><h3>文件 & 代码操作</h3><p>读写本地文件、执行 shell 命令、批量处理文档——所有操作在你的电脑上完成，不经过任何云端。</p></div>
+      <div class="feat-card"><div class="feat-icon">🌐</div><h3>联网 & 信息收集</h3><p>搜索最新资讯、抓取网页、整合多来源生成摘要报告，比你自己查快 10 倍。</p></div>
+      <div class="feat-card"><div class="feat-icon">🔒</div><h3>数据完全本地</h3><p>对话历史、文件、密钥全部在你的电脑。没有云端同步，没有数据收集，没有广告。</p></div>
     </div>
   </div>
 </section>
@@ -324,7 +324,7 @@
     <div class="faq-list">
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">我的对话数据会上传到你们服务器吗？<span class="faq-arrow">+</span></div><div class="faq-a">不会。Captain 完全在你的本机运行，对话历史、文件、密钥都存在本地。我们的服务器只做授权码验证，不接触任何对话内容。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">需要我自己的 LLM API Key 吗？<span class="faq-arrow">+</span></div><div class="faq-a">是的。你需要自备 DeepSeek / OpenAI / Anthropic 等的 API Key，填在本地 .env 文件里。推荐 DeepSeek，价格极低，日常使用成本不超过 ¥5/月。</div></div>
-      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">目前主力支持 macOS，Windows 版本正在开发中，预计 1-2 个月内发布。Linux 服务器也可以运行（无 GUI 功能）。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">支持。macOS、Windows、Linux 均可安装。Windows 用户在 PowerShell 运行 <code>irm .../install.ps1 | iex</code> 即可，自动安装所有依赖。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">Pro 授权可以换电脑用吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。Pro 支持最多 2 台设备同时激活。换新电脑时，联系我们注销旧设备即可重新激活。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">不满意可以退款吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。购买后 7 天内发邮件申请全额退款，无需理由。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">是开源的吗？<span class="faq-arrow">+</span></div><div class="faq-a">核心代码在 GitHub 开源（MIT 协议），可自行搭建。Pro 授权是对商业使用的支持，开源代码本身不受限制。</div></div>
@@ -347,19 +347,31 @@
 <div class="modal-overlay" id="install-modal" onclick="if(event.target===this)closeInstallModal()">
   <div class="modal-box">
     <h3>安装 Captain</h3>
-    <p>在终端运行以下命令，自动完成安装（macOS / Linux）：</p>
-    <div class="install-cmd" id="install-cmd-box">
-      curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash
-      <button class="copy-btn" onclick="copyInstall()">复制</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button onclick="switchOS('mac',this)" class="pay-tab active" style="flex:1">🍎 macOS / Linux</button>
+      <button onclick="switchOS('win',this)" class="pay-tab" style="flex:1">🪟 Windows</button>
+    </div>
+    <div id="install-mac">
+      <p style="margin-bottom:10px">在终端运行以下命令（自动安装 Python、git）：</p>
+      <div class="install-cmd">
+        curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash
+        <button class="copy-btn" onclick="copyInstall('mac')">复制</button>
+      </div>
+    </div>
+    <div id="install-win" style="display:none">
+      <p style="margin-bottom:10px">以管理员身份打开 PowerShell，运行：</p>
+      <div class="install-cmd">
+        irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex
+        <button class="copy-btn" onclick="copyInstall('win')">复制</button>
+      </div>
     </div>
     <ol class="install-steps">
-      <li>运行命令后，编辑 <b>~/captain/.env</b>，填入你的 DeepSeek API Key</li>
-      <li>运行 <b>bash ~/captain/captain.sh</b> 启动服务</li>
-      <li>浏览器打开 <b>http://localhost:8765</b> 开始使用</li>
+      <li>安装完成后，编辑 <b>~/captain/.env</b>，填入你的 DeepSeek API Key</li>
+      <li>运行 <b>captain.sh</b>（macOS）或 <b>captain.bat</b>（Windows）启动服务</li>
+      <li>浏览器打开 <b>http://localhost:8000</b> 开始使用</li>
     </ol>
     <p style="font-size:13px;color:var(--dim);margin-bottom:20px">
-      需要 Python 3.10+ 和 git。没有 API Key？→
-      <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent2)">DeepSeek 注册</a>（新用户免费额度）
+      没有 API Key？→ <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent2)">DeepSeek 注册</a>（新用户有免费额度）
     </p>
     <button class="modal-close-btn" onclick="closeInstallModal()">关闭</button>
   </div>
@@ -384,12 +396,20 @@
 <script>
 function openInstallModal() { document.getElementById('install-modal').classList.add('open'); }
 function closeInstallModal() { document.getElementById('install-modal').classList.remove('open'); }
-function copyInstall() {
-  const cmd = 'curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash';
+function copyInstall(os) {
+  const cmd = os === 'win'
+    ? 'irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex'
+    : 'curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash';
   navigator.clipboard.writeText(cmd).then(() => {
-    const btn = document.querySelector('.copy-btn');
-    btn.textContent = '已复制'; setTimeout(() => btn.textContent = '复制', 2000);
+    const btns = document.querySelectorAll('.copy-btn');
+    btns.forEach(b => { b.textContent = '已复制'; setTimeout(() => b.textContent = '复制', 2000); });
   });
+}
+function switchOS(os, el) {
+  document.querySelectorAll('#install-modal .pay-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('install-mac').style.display = os === 'mac' ? 'block' : 'none';
+  document.getElementById('install-win').style.display = os === 'win' ? 'block' : 'none';
 }
 function openPayModal() { document.getElementById('pay-modal').classList.add('open'); }
 function closePayModal() { document.getElementById('pay-modal').classList.remove('open'); }
