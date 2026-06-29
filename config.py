@@ -81,10 +81,10 @@ class Config:
     SKILL_PREFETCH = os.environ.get("AGENT_SKILL_PREFETCH", "on").lower() in ("on", "1", "true")
     SKILL_PREFETCH_MAX_CHARS = int(os.environ.get("AGENT_SKILL_PREFETCH_MAX_CHARS", "2000"))
 
-    # 个人数据目录(只读接入,冒号分隔),如 ~/Documents/notes:~/Desktop/docs
+    # 个人数据目录(只读接入,路径分隔符分隔),如 ~/Documents/notes:~/Desktop/docs
     PERSONAL_DIRS = [
         os.path.expanduser(p.strip())
-        for p in os.environ.get("AGENT_PERSONAL_DIRS", "").split(":")
+        for p in os.environ.get("AGENT_PERSONAL_DIRS", "").split(os.pathsep)
         if p.strip()
     ]
 

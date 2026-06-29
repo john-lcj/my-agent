@@ -1,11 +1,13 @@
 """人设与用户画像加载 —— "知道自己是谁、知道我是谁"的静态部分。
 
-从 persona.yaml 读取 agent 身份 + 主人画像,渲染成一段可注入系统提示词的文本。
-这是"显式、长期稳定"的认知;动态、会变的事情(临时偏好、最近做过啥)交给
-长期记忆(memory.*)在运行时补充。两者叠加,agent 才既有恒定人格又能记住你。
+从 persona.yaml 读取 agent 身份（agent 段）；
+从 data/owner.json 读取主人档案（owner 段，不进 git）。
+两者合并渲染成注入系统提示词的文本。
+data/ 已在 .gitignore，git reset --hard 不会清空用户数据。
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 
@@ -42,20 +44,92 @@ class Persona:
         return "\n".join(lines)
 
 
-def load_persona(path: str = "persona.yaml") -> "Persona | None":
-    """加载 persona.yaml;文件缺失或解析失败返回 None(回退到通用人设)。"""
-    if not os.path.isfile(path):
-        return None
+def _owner_json_path() -> str:
+    """返回 data/owner.json 的绝对路径（相对于项目根）。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "data", "owner.json")
+
+
+def _migrate_owner_from_yaml(yaml_path: str, owner_json: str) -> dict:
+    """
+    如果 persona.yaml 含 owner 段且 owner.json 不存在，
+    自动迁移到 owner.json 并从 yaml 清除 owner 段。
+    返回迁移出的 owner dict（可能为空）。
+    """
     try:
         import yaml
-        with open(path, "r", encoding="utf-8") as f:
+        with open(yaml_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        owner = data.get("owner", {}) or {}
+        if not owner:
+            return {}
+        # 写入 owner.json
+        os.makedirs(os.path.dirname(owner_json), exist_ok=True)
+        with open(owner_json, "w", encoding="utf-8") as f:
+            json.dump(owner, f, ensure_ascii=False, indent=2)
+        # 从 persona.yaml 移除 owner 段
+        data.pop("owner", None)
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+        print("[persona] 已将 owner 档案从 persona.yaml 迁移至 data/owner.json")
+        return owner
     except Exception as e:
-        print(f"[persona] 加载 {path} 失败: {e}")
+        print(f"[persona] 迁移 owner 失败: {e}")
+        return {}
+
+
+def load_owner() -> dict:
+    """读取 data/owner.json，不存在则返回空 dict。"""
+    path = _owner_json_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception as e:
+        print(f"[persona] 读取 owner.json 失败: {e}")
+        return {}
+
+
+def save_owner(owner: dict) -> None:
+    """写入 data/owner.json。"""
+    path = _owner_json_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(owner, f, ensure_ascii=False, indent=2)
+
+
+def load_persona(path: str = "persona.yaml") -> "Persona | None":
+    """
+    加载 persona：
+    - agent 身份从 persona.yaml 读取
+    - owner 档案从 data/owner.json 读取
+    - 若 owner.json 不存在但 persona.yaml 含 owner 段，自动迁移
+    文件缺失或解析失败返回 None（回退到通用人设）。
+    """
+    # 解析 persona.yaml（agent 段）
+    agent: dict = {}
+    if os.path.isfile(path):
+        try:
+            import yaml
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            agent = data.get("agent", {}) or {}
+        except Exception as e:
+            print(f"[persona] 加载 {path} 失败: {e}")
+
+    # 读取 owner 档案
+    owner_json = _owner_json_path()
+    if not os.path.isfile(owner_json) and os.path.isfile(path):
+        # 尝试从旧 persona.yaml owner 段迁移
+        owner = _migrate_owner_from_yaml(path, owner_json)
+    else:
+        owner = load_owner()
+
+    # agent 和 owner 都空时返回 None
+    if not agent and not owner:
         return None
 
-    agent = data.get("agent", {}) or {}
-    owner = data.get("owner", {}) or {}
     return Persona(
         agent_name=agent.get("name", "助理"),
         tagline=agent.get("tagline", ""),

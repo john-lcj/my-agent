@@ -4405,7 +4405,16 @@ async function doUpdate() {
     } else {
       status.style.color = '#3ecf8e';
       status.textContent = '✓ 更新成功，正在重启…';
-      setTimeout(() => location.reload(), 3000);
+      // 轮询 /healthz，等服务重新可用再刷新（最多等 30s）
+      let waited = 0;
+      const poll = setInterval(async () => {
+        waited += 1000;
+        try {
+          const h = await fetch('/healthz', { cache: 'no-store' });
+          if (h.ok) { clearInterval(poll); location.reload(); return; }
+        } catch (_) { /* 重启中，继续等 */ }
+        if (waited >= 30000) { clearInterval(poll); location.reload(); }
+      }, 1000);
     }
   } catch (e) {
     status.style.color = 'var(--danger, #e55)';

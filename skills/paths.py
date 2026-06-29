@@ -22,7 +22,7 @@ def resolve_skills_dirs() -> list[str]:
     _add(user)
 
     extra = os.environ.get("AGENT_SKILLS_DIRS", "")
-    for part in extra.split(":"):
+    for part in extra.split(os.pathsep):
         part = part.strip()
         if part:
             _add(part)

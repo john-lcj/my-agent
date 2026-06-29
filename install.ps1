@@ -151,6 +151,8 @@ function Install-Deps {
 function Setup-Env {
     $f = "$INSTALL_DIR\.env"
     if (Test-Path $f) { Write-Warn ".env 已存在，跳过"; return }
+    # 生成随机 token
+    $randToken = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
     $content = @(
         "# Captain 配置文件 - 填写 API Key 后保存",
         "",
@@ -166,8 +168,9 @@ function Setup-Env {
         "# Pro 授权码（留空以 Free 版运行）",
         "CAPTAIN_LICENSE_KEY=",
         "",
-        "AGENT_PORT=8000",
-        "AGENT_API_TOKEN=change-me-to-random-string"
+        "AGENT_WEB_PORT=8000",
+        "# 安装时自动生成的随机令牌，无需修改",
+        "AGENT_API_TOKEN=$randToken"
     )
     [System.IO.File]::WriteAllLines($f, $content, [System.Text.UTF8Encoding]::new($false))
     Write-Ok ".env 已生成: $f"
@@ -181,9 +184,12 @@ function Create-Launcher {
         "title Captain AI Agent",
         "cd /d ""%~dp0""",
         "set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%",
+        ":loop",
         "echo Captain 启动中... 请稍候",
         "python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8000",
-        "pause"
+        "echo Captain 已停止，5秒后自动重启...",
+        "timeout /t 5 /nobreak >nul",
+        "goto loop"
     )
     [System.IO.File]::WriteAllLines($bat, $lines, [System.Text.Encoding]::ASCII)
     Write-Ok "启动脚本: $bat"

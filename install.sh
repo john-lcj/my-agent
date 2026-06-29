@@ -52,7 +52,8 @@ detect_python() {
         if command -v "$cmd" &>/dev/null; then
             VER=$("$cmd" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
             MAJ="${VER%%.*}"; MIN="${VER#*.}"
-            if [[ "$MAJ" -ge 3 && "$MIN" -ge 10 ]]; then
+            # 只接受 3.10 ~ 3.12（3.13+ 部分依赖可能不兼容）
+            if [[ "$MAJ" -eq 3 && "$MIN" -ge 10 && "$MIN" -le 12 ]]; then
                 PYTHON_CMD="$cmd"
                 info "检测到 Python $VER ($cmd)"
                 return 0
@@ -140,7 +141,11 @@ setup_env() {
         return
     fi
     info "生成 .env 配置模板..."
-    cat > "$ENV_FILE" << 'EOF'
+    # 生成随机 token（32位十六进制）
+    RAND_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(16))" 2>/dev/null \
+        || head -c 16 /dev/urandom | xxd -p 2>/dev/null \
+        || date +%s%N | sha256sum | head -c 32)
+    cat > "$ENV_FILE" << EOF
 # ============================================================
 #  Captain 配置文件  —  请填写以下内容后保存
 #  文件路径：~/captain/.env
@@ -157,18 +162,17 @@ DEEPSEEK_API_KEY=sk-xxx
 # ANTHROPIC_API_KEY=sk-ant-xxx
 
 # ── 默认使用的模型 ────────────────────────────────────────────
-# 选项: deepseek/deepseek-chat | openai/gpt-4o | anthropic/claude-3-5-sonnet
 AGENT_PROVIDER=deepseek
 AGENT_MODEL=deepseek/deepseek-chat
 
 # ── Pro 授权码（留空则以 Free 版运行）────────────────────────
 CAPTAIN_LICENSE_KEY=
 
-# ── 服务端口（默认 8765）──────────────────────────────────────
-AGENT_PORT=8765
+# ── 服务端口（默认 8000）──────────────────────────────────────
+AGENT_WEB_PORT=8000
 
-# ── WebSocket 接入令牌（可自定义，保持随机即可）──────────────
-AGENT_API_TOKEN=change-me-to-random-string
+# ── WebSocket 接入令牌（安装时自动生成，无需修改）────────────
+AGENT_API_TOKEN=${RAND_TOKEN}
 
 # ── 日志 & 数据目录（默认 ~/captain/logs）────────────────────
 # LOG_DIR=~/captain/logs
@@ -185,16 +189,21 @@ create_launcher() {
 set -euo pipefail
 cd "$INSTALL_DIR"
 source "$VENV_DIR/bin/activate"
-exec python server/app.py "\$@"
+PORT="\${AGENT_WEB_PORT:-8000}"
+exec python -m uvicorn server.app:app --host 127.0.0.1 --port "\$PORT" "\$@"
 SCRIPT
     chmod +x "$LAUNCHER"
 
-    # macOS: 也在 /usr/local/bin 放一个软链（需要权限时跳过）
-    if [[ "$OS" == "macos" ]]; then
-        if [[ -w "/usr/local/bin" ]] || sudo -n true 2>/dev/null; then
-            sudo ln -sf "$LAUNCHER" /usr/local/bin/captain 2>/dev/null || true
-            success "已创建命令 'captain'，可在任意目录运行"
-        fi
+    # 在 ~/.local/bin 放软链（无需 sudo，对所有平台适用）
+    LOCAL_BIN="$HOME/.local/bin"
+    mkdir -p "$LOCAL_BIN"
+    ln -sf "$LAUNCHER" "$LOCAL_BIN/captain" 2>/dev/null || true
+    # 如果 ~/.local/bin 不在 PATH 里，提示用户
+    if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
+        warn "请将 $LOCAL_BIN 加入 PATH（写入 ~/.bashrc 或 ~/.zshrc）："
+        warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    else
+        success "已创建命令 'captain'，可在任意目录运行"
     fi
 }
 
@@ -212,7 +221,13 @@ create_macos_service() {
     <key>ProgramArguments</key>
     <array>
         <string>$VENV_DIR/bin/python</string>
-        <string>$INSTALL_DIR/server/app.py</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>server.app:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
     </array>
     <key>WorkingDirectory</key>  <string>$INSTALL_DIR</string>
     <key>EnvironmentVariables</key>
@@ -221,7 +236,7 @@ create_macos_service() {
         <string>/usr/local/bin:/usr/bin:/bin:$VENV_DIR/bin</string>
     </dict>
     <key>RunAtLoad</key>         <false/>
-    <key>KeepAlive</key>         <false/>
+    <key>KeepAlive</key>         <true/>
     <key>StandardOutPath</key>   <string>$INSTALL_DIR/logs/agent.log</string>
     <key>StandardErrorPath</key> <string>$INSTALL_DIR/logs/agent_err.log</string>
 </dict>
@@ -245,8 +260,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$VENV_DIR/bin/python $INSTALL_DIR/server/app.py
-Restart=on-failure
+ExecStart=$VENV_DIR/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+Restart=always
 RestartSec=5
 StandardOutput=append:$INSTALL_DIR/logs/agent.log
 StandardError=append:$INSTALL_DIR/logs/agent_err.log
@@ -273,7 +288,7 @@ print_done() {
     echo -e "  ${BOLD}第 2 步：启动 Captain${RESET}"
     echo    "    cd $INSTALL_DIR"
     echo    "    bash captain.sh"
-    echo    "    浏览器打开 http://localhost:8765"
+    echo    "    浏览器打开 http://localhost:8000"
     echo ""
     echo -e "  ${BOLD}第 3 步（可选）：激活 Pro${RESET}"
     echo    "    python -m license_client.cli activate CAPT-PRO-XXXX-XXXX-XXXX"

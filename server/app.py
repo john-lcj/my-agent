@@ -727,6 +727,32 @@ def create_app():
 
     app = FastAPI(title="my-agent", lifespan=_lifespan)
 
+    # ── CORS：只允许本机来源（防 DNS rebinding）─────────────────────────────────
+    from fastapi.middleware.cors import CORSMiddleware
+    _allowed_origins = [
+        "http://localhost:8000", "http://127.0.0.1:8000",
+        "http://localhost",      "http://127.0.0.1",
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # ── Host 头校验（拒绝非本机 Host，防 DNS rebinding）────────────────────────
+    @app.middleware("http")
+    async def _host_guard(request: Request, call_next):
+        host_header = request.headers.get("host", "").split(":")[0].lower()
+        # 允许：无 Host 头（curl 等直连）、loopback 主机名
+        if host_header and host_header not in ("localhost", "127.0.0.1", "::1", ""):
+            return JSONResponse(
+                {"error": "forbidden", "detail": "Host 头不合法，拒绝请求"},
+                status_code=403,
+            )
+        return await call_next(request)
+
     # ── 控制面鉴权(security-by-default)─────────────────────────────────────────
     # /api/* 是完整控制面(改配置、删会话、回滚、录入模型 key……)。
     # 策略:本机(loopback)请求照常放行,保持本地零配置体验;非本机访问 /api/*
@@ -1080,13 +1106,13 @@ def create_app():
     @app.get("/api/profile")
     async def get_profile() -> JSONResponse:
         try:
-            from core.persona import load_persona
-            p = load_persona()
-            if p is None:
-                return JSONResponse({"ok": True, "profile": {"name": "", "call_me": "", "about": "", "preferences": []}})
+            from core.persona import load_owner
+            owner = load_owner()
             return JSONResponse({"ok": True, "profile": {
-                "name": p.owner_name, "call_me": p.call_me,
-                "about": p.owner_about, "preferences": p.owner_preferences,
+                "name":        owner.get("name", ""),
+                "call_me":     owner.get("call_me", ""),
+                "about":       owner.get("about", ""),
+                "preferences": owner.get("preferences", []),
             }})
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -1094,26 +1120,18 @@ def create_app():
     @app.post("/api/profile")
     async def save_profile(request: Request) -> JSONResponse:
         try:
+            from core.persona import save_owner
             body = await request.json()
-            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            persona_path = os.path.join(root, "persona.yaml")
-            import yaml
-            # 新装机可能没有 persona.yaml，直接创建
-            if os.path.exists(persona_path):
-                with open(persona_path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
-            else:
-                data = {}
             prefs = body.get("preferences", [])
             if isinstance(prefs, str):
                 prefs = [p.strip() for p in prefs.splitlines() if p.strip()]
-            data.setdefault("owner", {})
-            data["owner"]["name"]        = body.get("name", "")
-            data["owner"]["call_me"]     = body.get("call_me", "")
-            data["owner"]["about"]       = body.get("about", "")
-            data["owner"]["preferences"] = prefs
-            with open(persona_path, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            owner = {
+                "name":        body.get("name", ""),
+                "call_me":     body.get("call_me", ""),
+                "about":       body.get("about", ""),
+                "preferences": prefs,
+            }
+            save_owner(owner)
             return JSONResponse({"ok": True})
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -1191,12 +1209,22 @@ def create_app():
                 )
                 if reset.returncode != 0:
                     return JSONResponse({"ok": False, "error": reset.stderr.strip()}, status_code=500)
-            req = os.path.join(root, "requirements.txt")
+            req_base = os.path.join(root, "requirements-base.txt")
+            req_full = os.path.join(root, "requirements.txt")
+            req = req_base if os.path.exists(req_base) else req_full
             if os.path.exists(req) and not already_latest:
-                subprocess.run(
-                    pip_cmd + ["install", "-q", "-r", req],
-                    capture_output=True, timeout=120
+                pip_mirror = ["https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple",
+                              "https://mirrors.aliyun.com/pypi/simple"]
+                pip_install_cmd = pip_cmd + ["install", "-q", "-r", req,
+                                             "-i", pip_mirror[0],
+                                             "--extra-index-url", pip_mirror[1]]
+                pip_result = subprocess.run(
+                    pip_install_cmd,
+                    capture_output=True, timeout=180
                 )
+                if pip_result.returncode != 0:
+                    err = (pip_result.stderr or b"").decode(errors="replace").strip()
+                    return JSONResponse({"ok": False, "error": f"pip install 失败: {err}"}, status_code=500)
             if not already_latest:
                 # 更新成功后延迟 1s 重启进程（Windows 兼容）
                 async def _restart():
@@ -2344,3 +2372,7 @@ def run() -> None:
     port = int(_os.environ.get("AGENT_WEB_PORT", "8000"))
     print(f"Web 聊天 → http://{host}:{port}  (Ctrl+C 停止)")
     uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    run()

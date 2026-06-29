@@ -1,0 +1,15 @@
+# Captain 最小核心依赖 — 安装脚本默认安装此文件
+# 完整可选依赖见 requirements.txt
+
+# Web 服务
+fastapi>=0.110.0
+uvicorn>=0.29.0
+websockets>=12.0
+
+# LLM provider（至少二选一）
+openai>=1.30.0          # OpenAI / DeepSeek（推荐）
+anthropic>=0.34.0       # Claude（可选）
+
+# 通用工具
+PyYAML>=6.0             # 配置文件解析
+aiohttp>=3.9.0          # web.search / web.fetch
