@@ -227,8 +227,10 @@ async def list_keys(request: Request) -> JSONResponse:
         "FROM license_keys k LEFT JOIN activations a ON a.license_key=k.key "
         "GROUP BY k.key ORDER BY k.created_at DESC"
     ).fetchall()]
+    total = len(keys)
+    active = sum(1 for k in keys if k.get("activations", 0) > 0)
     conn.close()
-    return JSONResponse({"ok": True, "keys": keys})
+    return JSONResponse({"ok": True, "keys": keys, "stats": {"total": total, "activated": active}})
 
 
 # ── 健康检查 ──────────────────────────────────────────────────────────────────

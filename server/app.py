@@ -1068,6 +1068,31 @@ def create_app():
         except Exception:
             return JSONResponse({"ok": True, "user": {"email": "local", "plan": "free"}})
 
+    @app.get("/api/version")
+    async def version() -> JSONResponse:
+        try:
+            vf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")
+            ver = open(vf).read().strip() if os.path.exists(vf) else "unknown"
+        except Exception:
+            ver = "unknown"
+        return JSONResponse({"version": ver})
+
+    @app.post("/api/license/activate")
+    async def license_activate(request: Request) -> JSONResponse:
+        """应用内激活授权码。"""
+        try:
+            body = await request.json()
+            key = body.get("key", "").strip()
+            if not key:
+                return JSONResponse({"ok": False, "error": "请输入授权码"}, status_code=400)
+            from license_client.client import activate
+            s = activate(key)
+            if not s.valid:
+                return JSONResponse({"ok": False, "error": s.error or "激活失败"}, status_code=400)
+            return JSONResponse({"ok": True, "plan": s.plan, "days_left": s.days_left()})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
     @app.post("/api/system/update")
     async def system_update() -> JSONResponse:
         """拉取最新代码并重装依赖，完成后提示用户重启。"""
@@ -1090,6 +1115,13 @@ def create_app():
                     capture_output=True, timeout=120
                 )
             already_latest = "Already up to date" in pull.stdout or "Already up to date" in pull.stderr
+            if not already_latest:
+                # 更新成功后延迟 1s 重启进程
+                async def _restart():
+                    await asyncio.sleep(1)
+                    import signal
+                    os.kill(os.getpid(), signal.SIGTERM)
+                asyncio.create_task(_restart())
             return JSONResponse({
                 "ok": True,
                 "already_latest": already_latest,

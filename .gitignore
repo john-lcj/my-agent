@@ -49,3 +49,9 @@ htmlcov/
 coverage.xml
 scripts/
 *.pem
+send_news_mail.py
+demo/
+收件箱/
+uploads/
+*.github_token
+_cgi-bin_*

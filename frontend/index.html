@@ -567,11 +567,24 @@
           <h2 id="settings-about-title" data-i18n="settingsAbout">关于</h2>
           <p class="settings-desc" id="settings-about-desc" data-i18n="settingsAboutDesc">Captain Agent 平台</p>
         <div style="color:var(--muted);font-size:14px;line-height:1.8;max-width:520px">
-          <p><strong style="color:var(--txt)">Captain</strong></p>
+          <p><strong style="color:var(--txt)">Captain</strong> <span id="about-version" style="font-size:12px;color:var(--muted)"></span></p>
           <p id="about-tagline" data-i18n="aboutTagline">听懂目标 · 自己拆解执行 · 治理可审计</p>
           <br>
           <p id="about-features" data-i18n="aboutFeatures">单 Agent 自治 + 主动反思 + 多模态/语音 + 加密保险库 + 浏览器/连接器 + 手机直连/邮件</p>
           <p style="margin-top:12px"><button type="button" class="btn-sm" id="btn-open-shortcuts" onclick="openShortcuts()" data-i18n="shortcutsLink">键盘快捷键</button></p>
+          <p style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+            <span style="font-size:13px;color:var(--txt);font-weight:600">激活 Pro 授权码</span><br>
+            <span style="font-size:12px;color:var(--muted)">购买后邮件收到的 CAPT-PRO-XXXX-XXXX-XXXX 格式授权码</span>
+          </p>
+          <p style="display:flex;gap:8px;margin-top:8px">
+            <input id="license-key-input" type="text" placeholder="CAPT-PRO-XXXX-XXXX-XXXX"
+              style="flex:1;background:var(--input-bg,#1e1e24);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--txt);font-size:13px;outline:none"/>
+            <button type="button" onclick="doActivate()"
+              style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap">
+              激活
+            </button>
+          </p>
+          <p id="activate-status" style="font-size:12px;margin-top:6px;min-height:18px"></p>
           <p style="margin-top:16px">
             <button type="button" class="btn-sm" id="btn-update" onclick="doUpdate()" style="background:var(--accent);color:#fff;border:none;padding:7px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
               ⬆ 检查并更新

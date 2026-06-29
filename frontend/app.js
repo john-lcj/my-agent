@@ -1714,6 +1714,10 @@ function switchSettingsTab(tab, el) {
   if (tab === 'channels' || tab === 'general' || tab === 'keys') loadSettingsUI();
   if (tab === 'goals') renderGoals();
   if (tab === 'monitors') renderMonitors();
+  if (tab === 'about') fetch('/api/version').then(r=>r.json()).then(d=>{
+    const el = document.getElementById('about-version');
+    if (el) el.textContent = 'v' + (d.version || '');
+  }).catch(()=>{});
 }
 function openCustomize(tab) {
   tab = tab || 'skills';
@@ -4246,6 +4250,34 @@ function modKey(e) {
   return navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
 }
 
+async function doActivate() {
+  const input = document.getElementById('license-key-input');
+  const status = document.getElementById('activate-status');
+  const key = input?.value?.trim();
+  if (!key) { status.style.color = '#e55'; status.textContent = '请输入授权码'; return; }
+  status.style.color = 'var(--muted)';
+  status.textContent = '验证中…';
+  try {
+    const r = await fetch('/api/license/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      status.style.color = '#3ecf8e';
+      status.textContent = `✓ 激活成功！${d.plan === 'pro' ? 'Pro' : d.plan} 版，剩余 ${d.days_left} 天`;
+      input.value = '';
+    } else {
+      status.style.color = '#e55';
+      status.textContent = '✗ ' + (d.error || '激活失败');
+    }
+  } catch {
+    status.style.color = '#e55';
+    status.textContent = '网络错误，请重试';
+  }
+}
+
 async function doUpdate() {
   const btn = document.getElementById('btn-update');
   const status = document.getElementById('update-status');
@@ -4263,7 +4295,8 @@ async function doUpdate() {
       status.textContent = '✓ 已是最新版本';
     } else {
       status.style.color = '#3ecf8e';
-      status.textContent = '✓ 更新成功，请重启 Captain';
+      status.textContent = '✓ 更新成功，正在重启…';
+      setTimeout(() => location.reload(), 3000);
     }
   } catch (e) {
     status.style.color = 'var(--danger, #e55)';

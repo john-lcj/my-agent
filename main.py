@@ -129,7 +129,25 @@ def _collect_banner_meta() -> tuple[list[tuple[str, str]], list[tuple[str, str]]
     return experts, skills, expert_names
 
 
+def _setup_error_log() -> None:
+    """未捕获异常写入 logs/error.log，方便远程排查。"""
+    import sys, traceback, logging
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "error.log")
+    logging.basicConfig(
+        filename=log_path, level=logging.ERROR,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    _orig = sys.excepthook
+    def _hook(exc_type, exc_value, exc_tb):
+        logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+        _orig(exc_type, exc_value, exc_tb)
+    sys.excepthook = _hook
+
+
 async def main() -> None:
+    _setup_error_log()
     load_env()
 
     # ── 授权检查 ────────────────────────────────────────────────────────────

@@ -278,7 +278,7 @@ print_done() {
     echo -e "  ${BOLD}第 3 步（可选）：激活 Pro${RESET}"
     echo    "    python -m license_client.cli activate CAPT-PRO-XXXX-XXXX-XXXX"
     echo ""
-    echo -e "  ${CYAN}购买 Pro：https://captain-ai.com/#pricing${RESET}"
+    echo -e "  ${CYAN}购买 Pro：https://irestart-your-life.club/#pricing${RESET}"
     echo ""
 }
 
