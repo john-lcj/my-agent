@@ -742,11 +742,22 @@ def create_app():
     )
 
     # ── Host 头校验（拒绝非本机 Host，防 DNS rebinding）────────────────────────
+    import re as _re
+    _LOCAL_IP_RE = _re.compile(r'^127\.\d+\.\d+\.\d+$')
+
+    def _host_is_external(h: str) -> bool:
+        """如果 Host 像真实外部域名（含 . 且不是 IP/localhost），返回 True。"""
+        if not h or h in ("localhost", "::1"):
+            return False
+        if _LOCAL_IP_RE.match(h):
+            return False
+        # 含点 → 真实域名（evil.com 等）；不含点 → 裸主机名（testserver、localhost 等）
+        return "." in h
+
     @app.middleware("http")
     async def _host_guard(request: Request, call_next):
         host_header = request.headers.get("host", "").split(":")[0].lower()
-        # 允许：无 Host 头（curl 等直连）、loopback 主机名
-        if host_header and host_header not in ("localhost", "127.0.0.1", "::1", ""):
+        if _host_is_external(host_header):
             return JSONResponse(
                 {"error": "forbidden", "detail": "Host 头不合法，拒绝请求"},
                 status_code=403,
