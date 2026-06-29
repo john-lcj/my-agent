@@ -4317,8 +4317,7 @@ function closeTemplates() {
 function useTemplate(idx) {
   const t = WORKFLOW_TEMPLATES[idx];
   closeTemplates();
-  // 填入输入框并发送
-  const input = document.getElementById('composer-input');
+  const input = document.getElementById('chat-inp');
   if (input) {
     input.value = t.prompt;
     input.dispatchEvent(new Event('input'));

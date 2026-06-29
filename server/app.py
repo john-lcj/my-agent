@@ -1098,8 +1098,12 @@ def create_app():
             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             persona_path = os.path.join(root, "persona.yaml")
             import yaml
-            with open(persona_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+            # 新装机可能没有 persona.yaml，直接创建
+            if os.path.exists(persona_path):
+                with open(persona_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                data = {}
             prefs = body.get("preferences", [])
             if isinstance(prefs, str):
                 prefs = [p.strip() for p in prefs.splitlines() if p.strip()]
@@ -1135,12 +1139,33 @@ def create_app():
         """拉取最新代码并重装依赖，完成后提示用户重启。"""
         import subprocess, sys
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        venv_pip = os.path.join(root, ".venv", "bin", "pip")
-        if not os.path.exists(venv_pip):
-            venv_pip = sys.executable.replace("python", "pip")
+
+        # 找 git：优先 PortableGit（Windows 安装包内置），其次系统 git
+        import shutil
+        portable_git = os.path.join(root, "runtime", "git", "bin", "git.exe")
+        if os.path.exists(portable_git):
+            git_cmd = portable_git
+        elif shutil.which("git"):
+            git_cmd = "git"
+        else:
+            return JSONResponse({"ok": False, "error": "未找到 git，请确保已安装 Git"}, status_code=500)
+
+        # 找 pip：portable Python > .venv > sys pip
+        portable_pip = os.path.join(root, "runtime", "python", "Scripts", "pip.exe")
+        venv_pip_win = os.path.join(root, ".venv", "Scripts", "pip.exe")
+        venv_pip_unix = os.path.join(root, ".venv", "bin", "pip")
+        if os.path.exists(portable_pip):
+            pip_cmd = [portable_pip]
+        elif os.path.exists(venv_pip_win):
+            pip_cmd = [venv_pip_win]
+        elif os.path.exists(venv_pip_unix):
+            pip_cmd = [venv_pip_unix]
+        else:
+            pip_cmd = [sys.executable, "-m", "pip"]
+
         try:
             fetch = subprocess.run(
-                ["git", "-C", root, "fetch", "origin", "main"],
+                [git_cmd, "-C", root, "fetch", "origin", "main"],
                 capture_output=True, text=True, timeout=60
             )
             if fetch.returncode != 0:
@@ -1165,15 +1190,18 @@ def create_app():
             req = os.path.join(root, "requirements.txt")
             if os.path.exists(req) and not already_latest:
                 subprocess.run(
-                    [venv_pip, "install", "-q", "-r", req],
+                    pip_cmd + ["install", "-q", "-r", req],
                     capture_output=True, timeout=120
                 )
             if not already_latest:
-                # 更新成功后延迟 1s 重启进程
+                # 更新成功后延迟 1s 重启进程（Windows 兼容）
                 async def _restart():
                     await asyncio.sleep(1)
-                    import signal
-                    os.kill(os.getpid(), signal.SIGTERM)
+                    try:
+                        import signal
+                        os.kill(os.getpid(), signal.SIGTERM)
+                    except Exception:
+                        os._exit(0)
                 asyncio.create_task(_restart())
             return JSONResponse({
                 "ok": True,
@@ -1182,6 +1210,91 @@ def create_app():
             })
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    # ── 目标管理 ──────────────────────────────────────────────
+    def _goals_file():
+        import pathlib
+        d = pathlib.Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "data"
+        d.mkdir(exist_ok=True)
+        return d / "goals.json"
+
+    def _load_goals():
+        import json as _json
+        f = _goals_file()
+        return _json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
+
+    def _save_goals(goals):
+        import json as _json
+        _goals_file().write_text(_json.dumps(goals, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @app.get("/api/goals")
+    async def get_goals() -> JSONResponse:
+        return JSONResponse({"goals": _load_goals()})
+
+    @app.post("/api/goals")
+    async def add_goal(request: Request) -> JSONResponse:
+        import uuid as _uuid, datetime as _dt
+        body = await request.json()
+        text = (body.get("text") or "").strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "内容不能为空"}, status_code=400)
+        goals = _load_goals()
+        goals.append({"id": str(_uuid.uuid4()), "text": text, "created": _dt.datetime.now().isoformat()})
+        _save_goals(goals)
+        return JSONResponse({"ok": True})
+
+    @app.delete("/api/goals/{goal_id}")
+    async def delete_goal(goal_id: str) -> JSONResponse:
+        goals = [g for g in _load_goals() if g.get("id") != goal_id]
+        _save_goals(goals)
+        return JSONResponse({"ok": True})
+
+    # ── 变化监控 ──────────────────────────────────────────────
+    def _monitors_file():
+        import pathlib
+        d = pathlib.Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "data"
+        d.mkdir(exist_ok=True)
+        return d / "monitors.json"
+
+    def _load_monitors():
+        import json as _json
+        f = _monitors_file()
+        return _json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
+
+    def _save_monitors(mons):
+        import json as _json
+        _monitors_file().write_text(_json.dumps(mons, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @app.get("/api/monitors")
+    async def get_monitors() -> JSONResponse:
+        return JSONResponse({"monitors": _load_monitors()})
+
+    @app.post("/api/monitors")
+    async def add_monitor(request: Request) -> JSONResponse:
+        import uuid as _uuid, datetime as _dt
+        body = await request.json()
+        name = (body.get("name") or "").strip()
+        source = (body.get("source") or "").strip()
+        if not name or not source:
+            return JSONResponse({"ok": False, "error": "名称和来源不能为空"}, status_code=400)
+        mons = _load_monitors()
+        mons.append({
+            "id": str(_uuid.uuid4()),
+            "name": name,
+            "source": source,
+            "action": body.get("action", ""),
+            "monitor_type": body.get("monitor_type", "url"),
+            "interval_sec": int(body.get("interval_sec", 1800)),
+            "created": _dt.datetime.now().isoformat(),
+        })
+        _save_monitors(mons)
+        return JSONResponse({"ok": True})
+
+    @app.delete("/api/monitors/{monitor_id}")
+    async def delete_monitor(monitor_id: str) -> JSONResponse:
+        mons = [m for m in _load_monitors() if m.get("id") != monitor_id]
+        _save_monitors(mons)
+        return JSONResponse({"ok": True})
 
     @app.get("/api/stats")
     async def stats() -> JSONResponse:
