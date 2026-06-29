@@ -7,6 +7,9 @@
 
 $Host.UI.RawUI.WindowTitle = "Captain 安装程序"
 $ErrorActionPreference = "Continue"
+# 强制控制台 UTF-8 输出，避免中文/制表符在旧 cp936 终端乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $INSTALL_DIR = "$env:USERPROFILE\captain"
 $PYTHON_DIR  = "$INSTALL_DIR\runtime\python"
@@ -162,6 +165,9 @@ function Setup-Env {
         "# OpenAI（可选）",
         "# OPENAI_API_KEY=sk-xxx",
         "",
+        "# Anthropic Claude（可选）",
+        "# ANTHROPIC_API_KEY=sk-ant-xxx",
+        "",
         "AGENT_PROVIDER=deepseek",
         "AGENT_MODEL=deepseek/deepseek-chat",
         "",
@@ -213,7 +219,20 @@ If oHTTP.Status = 200 Then bRunning = True
 On Error GoTo 0
 If Not bRunning Then
     WShell.Run """$bat""", 1, False
-    WScript.Sleep 3500
+    Dim waited
+    waited = 0
+    Do While waited < 30000
+        WScript.Sleep 1000
+        waited = waited + 1000
+        On Error Resume Next
+        Set oHTTP2 = CreateObject("MSXML2.XMLHTTP")
+        oHTTP2.Open "GET", "http://localhost:8000/healthz", False
+        oHTTP2.Send
+        If oHTTP2.Status = 200 Then
+            waited = 30000
+        End If
+        On Error GoTo 0
+    Loop
 End If
 WShell.Run "http://localhost:8000"
 "@

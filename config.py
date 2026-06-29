@@ -48,7 +48,7 @@ class Config:
 
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
     CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
-    DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek/deepseek-chat")
     # 会话首选模型 id(与 /model 一致;可被 runtime.json 覆盖)
     MODEL = os.environ.get("AGENT_MODEL", DEEPSEEK_MODEL)
     OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")

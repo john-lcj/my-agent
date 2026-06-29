@@ -128,7 +128,10 @@ setup_venv() {
     source "$VENV_DIR/bin/activate"
     info "安装依赖（首次可能需要 1-2 分钟）..."
     pip install --quiet --upgrade pip
-    if [[ -f "requirements.txt" ]]; then
+    # 优先安装最小核心依赖（速度快），完整依赖按需手动安装
+    if [[ -f "requirements-base.txt" ]]; then
+        pip install --quiet -r requirements-base.txt
+    elif [[ -f "requirements.txt" ]]; then
         pip install --quiet -r requirements.txt
     fi
     success "依赖安装完成"
