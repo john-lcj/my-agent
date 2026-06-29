@@ -92,13 +92,18 @@ function Setup-Git {
 # ── 3. 克隆 / 更新代码 ────────────────────────────────────────
 function Clone-OrUpdate {
     if (Test-Path "$INSTALL_DIR\.git") {
+        # 已是 git repo，直接更新
         Write-Warn "已有安装，执行更新..."
         & $GIT_EXE -C $INSTALL_DIR fetch origin main 2>&1 | Out-Null
         & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
         Write-Ok "代码已更新"
     } else {
+        # 目录可能已存在（runtime 子目录），用 init+fetch+reset 代替 clone
         Write-Info "下载 Captain 代码 ..."
-        & $GIT_EXE clone --depth 1 $REPO_URL $INSTALL_DIR 2>&1
+        & $GIT_EXE -C $INSTALL_DIR init 2>&1 | Out-Null
+        & $GIT_EXE -C $INSTALL_DIR remote add origin $REPO_URL 2>&1 | Out-Null
+        & $GIT_EXE -C $INSTALL_DIR fetch --depth 1 origin main 2>&1
+        & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
         Write-Ok "代码已下载"
     }
 }
