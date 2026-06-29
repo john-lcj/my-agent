@@ -1103,7 +1103,7 @@ def create_app():
             venv_pip = sys.executable.replace("python", "pip")
         try:
             pull = subprocess.run(
-                ["git", "-C", root, "pull", "--ff-only"],
+                ["git", "-C", root, "pull", "--ff-only", "origin", "main"],
                 capture_output=True, text=True, timeout=60
             )
             if pull.returncode != 0:
