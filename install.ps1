@@ -94,16 +94,18 @@ function Clone-OrUpdate {
     if (Test-Path "$INSTALL_DIR\.git") {
         # 已是 git repo，直接更新
         Write-Warn "已有安装，执行更新..."
-        & $GIT_EXE -C $INSTALL_DIR fetch origin main 2>&1 | Out-Null
-        & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
+        $null = & $GIT_EXE -C $INSTALL_DIR fetch origin main *>&1
+        $null = & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD *>&1
         Write-Ok "代码已更新"
     } else {
         # 目录可能已存在（runtime 子目录），用 init+fetch+reset 代替 clone
         Write-Info "下载 Captain 代码 ..."
-        & $GIT_EXE -C $INSTALL_DIR init 2>&1 | Out-Null
-        & $GIT_EXE -C $INSTALL_DIR remote add origin $REPO_URL 2>&1 | Out-Null
-        & $GIT_EXE -C $INSTALL_DIR fetch --depth 1 origin main 2>&1
-        & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
+        # -b main 避免 git hint 写 stderr 触发 Stop 策略
+        $null = & $GIT_EXE -C $INSTALL_DIR init -b main *>&1
+        $null = & $GIT_EXE -C $INSTALL_DIR remote add origin $REPO_URL *>&1
+        Write-Info "正在从 GitHub 拉取代码，请稍候..."
+        $null = & $GIT_EXE -C $INSTALL_DIR fetch --depth 1 origin main *>&1
+        $null = & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD *>&1
         Write-Ok "代码已下载"
     }
 }
