@@ -1108,19 +1108,29 @@ def create_app():
             )
             if fetch.returncode != 0:
                 return JSONResponse({"ok": False, "error": fetch.stderr.strip()}, status_code=500)
-            pull = subprocess.run(
-                ["git", "-C", root, "reset", "--hard", "origin/main"],
-                capture_output=True, text=True, timeout=30
-            )
-            if pull.returncode != 0:
-                return JSONResponse({"ok": False, "error": pull.stderr.strip()}, status_code=500)
+            # 用 FETCH_HEAD 而非 origin/main，fetch origin main 只更新 FETCH_HEAD
+            local = subprocess.run(
+                ["git", "-C", root, "rev-parse", "HEAD"],
+                capture_output=True, text=True
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "-C", root, "rev-parse", "FETCH_HEAD"],
+                capture_output=True, text=True
+            ).stdout.strip()
+            already_latest = (local == remote)
+            if not already_latest:
+                reset = subprocess.run(
+                    ["git", "-C", root, "reset", "--hard", "FETCH_HEAD"],
+                    capture_output=True, text=True, timeout=30
+                )
+                if reset.returncode != 0:
+                    return JSONResponse({"ok": False, "error": reset.stderr.strip()}, status_code=500)
             req = os.path.join(root, "requirements.txt")
-            if os.path.exists(req):
+            if os.path.exists(req) and not already_latest:
                 subprocess.run(
                     [venv_pip, "install", "-q", "-r", req],
                     capture_output=True, timeout=120
                 )
-            already_latest = "Already up to date" in pull.stdout or "Already up to date" in pull.stderr
             if not already_latest:
                 # 更新成功后延迟 1s 重启进程
                 async def _restart():
