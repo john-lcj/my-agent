@@ -148,7 +148,7 @@ function Install-Deps {
 function Setup-Env {
     $f = "$INSTALL_DIR\.env"
     if (Test-Path $f) { Write-Warn ".env 已存在，跳过"; return }
-    @"
+    $envContent = @"
 # ============================================================
 #  Captain 配置文件 — 填写 API Key 后保存
 # ============================================================
@@ -167,23 +167,17 @@ CAPTAIN_LICENSE_KEY=
 
 AGENT_PORT=8000
 AGENT_API_TOKEN=change-me-to-random-string
-"@ | Set-Content $f -Encoding UTF8
+"@
+    [System.IO.File]::WriteAllText($f, $envContent, [System.Text.UTF8Encoding]::new($false))
     Write-Ok ".env 已生成"
 }
 
 # ── 6. 启动脚本 captain.bat ───────────────────────────────────
 function Create-Launcher {
     $bat = "$INSTALL_DIR\captain.bat"
-    # 用相对路径，不依赖系统 PATH
-    @"
-@echo off
-title Captain AI Agent
-cd /d "%~dp0"
-set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%
-echo Captain 启动中... 请稍候
-python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
-pause
-"@ | Set-Content $bat -Encoding UTF8
+    # 用 ASCII 写入，避免 BOM 导致 cmd.exe 乱码
+    $batContent = "@echo off`r`ntitle Captain AI Agent`r`ncd /d `"%~dp0`"`r`nset PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%`r`necho Captain 启动中... 请稍候`r`npython -m uvicorn server.app:app --host 127.0.0.1 --port 8000`r`npause`r`n"
+    [System.IO.File]::WriteAllText($bat, $batContent, [System.Text.Encoding]::ASCII)
     Write-Ok "启动脚本: $bat"
 }
 
