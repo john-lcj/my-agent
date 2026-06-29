@@ -1163,27 +1163,31 @@ def create_app():
         else:
             pip_cmd = [sys.executable, "-m", "pip"]
 
+        # PortableGit 需要自己的 bin 目录在 PATH 里才能加载 DLL
+        git_env = os.environ.copy()
+        git_bin_dir = os.path.dirname(git_cmd)
+        git_env["PATH"] = git_bin_dir + os.pathsep + git_env.get("PATH", "")
+
         try:
             fetch = subprocess.run(
                 [git_cmd, "-C", root, "fetch", "origin", "main"],
-                capture_output=True, text=True, timeout=60
+                capture_output=True, text=True, timeout=60, env=git_env
             )
             if fetch.returncode != 0:
                 return JSONResponse({"ok": False, "error": fetch.stderr.strip()}, status_code=500)
-            # 用 FETCH_HEAD 而非 origin/main，fetch origin main 只更新 FETCH_HEAD
             local = subprocess.run(
-                ["git", "-C", root, "rev-parse", "HEAD"],
-                capture_output=True, text=True
+                [git_cmd, "-C", root, "rev-parse", "HEAD"],
+                capture_output=True, text=True, env=git_env
             ).stdout.strip()
             remote = subprocess.run(
-                ["git", "-C", root, "rev-parse", "FETCH_HEAD"],
-                capture_output=True, text=True
+                [git_cmd, "-C", root, "rev-parse", "FETCH_HEAD"],
+                capture_output=True, text=True, env=git_env
             ).stdout.strip()
             already_latest = (local == remote)
             if not already_latest:
                 reset = subprocess.run(
-                    ["git", "-C", root, "reset", "--hard", "FETCH_HEAD"],
-                    capture_output=True, text=True, timeout=30
+                    [git_cmd, "-C", root, "reset", "--hard", "FETCH_HEAD"],
+                    capture_output=True, text=True, timeout=30, env=git_env
                 )
                 if reset.returncode != 0:
                     return JSONResponse({"ok": False, "error": reset.stderr.strip()}, status_code=500)
