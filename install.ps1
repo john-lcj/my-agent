@@ -1,44 +1,47 @@
 # ============================================================
 #  Captain — Windows 一键安装脚本 (PowerShell)
+#  Portable 方案：内置 Python + Git，无需任何预装环境
 #
-#  用法 A（推荐，在 PowerShell 里粘贴运行）：
+#  运行方式（在 PowerShell 粘贴一行）：
 #    irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex
-#
-#  用法 B（双击运行 .ps1 文件）：
-#    右键 install.ps1 → 用 PowerShell 运行
-#    窗口执行完毕后按任意键关闭
 # ============================================================
 
-# 防止窗口闪退——脚本最后会等待用户按键
 $Host.UI.RawUI.WindowTitle = "Captain 安装程序"
-
-Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$REPO_URL    = "https://github.com/john-lcj/my-agent.git"
+# ── 路径 ──────────────────────────────────────────────────────
 $INSTALL_DIR = "$env:USERPROFILE\captain"
-$VENV_DIR    = "$INSTALL_DIR\.venv"
-$ENV_FILE    = "$INSTALL_DIR\.env"
+$RUNTIME_DIR = "$INSTALL_DIR\runtime"
+$PYTHON_DIR  = "$RUNTIME_DIR\python"
+$GIT_DIR     = "$RUNTIME_DIR\git"
+$PYTHON_EXE  = "$PYTHON_DIR\python.exe"
+$GIT_EXE     = "$GIT_DIR\bin\git.exe"
+$REPO_URL    = "https://github.com/john-lcj/my-agent.git"
 
-# 国内镜像（无需梯子）
-$PYTHON_MIRROR = "https://mirrors.huaweicloud.com/python/3.11.9/python-3.11.9-amd64.exe"
-$GIT_MIRROR    = "https://npmmirror.com/mirrors/git-for-windows/v2.45.2.windows.1/Git-2.45.2-64-bit.exe"
-$PIP_MIRROR    = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+# ── 国内镜像（全部无需梯子）──────────────────────────────────
+$PYTHON_ZIP  = "https://mirrors.huaweicloud.com/python/3.11.9/python-3.11.9-embed-amd64.zip"
+$GIT_SFX     = "https://npmmirror.com/mirrors/git-for-windows/v2.45.2.windows.1/PortableGit-2.45.2-64-bit.7z.exe"
+$GETPIP_URL  = "https://bootstrap.pypa.io/get-pip.py"
+$PIP_MIRROR  = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
+# ── 工具函数 ──────────────────────────────────────────────────
 function Write-Info { param($m) Write-Host "  ▶  $m" -ForegroundColor Cyan }
 function Write-Ok   { param($m) Write-Host "  ✓  $m" -ForegroundColor Green }
 function Write-Warn { param($m) Write-Host "  ⚠  $m" -ForegroundColor Yellow }
-function Write-Err  { param($m)
-    Write-Host "`n  ✗  $m" -ForegroundColor Red
-    Write-Host "`n按任意键退出..." -ForegroundColor Gray
+function Pause-Exit { param($code=0)
+    Write-Host "`n  按任意键关闭..." -ForegroundColor DarkGray
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit 1
+    exit $code
+}
+function Write-Err { param($m)
+    Write-Host "`n  ✗  $m" -ForegroundColor Red
+    Pause-Exit 1
 }
 
-# ── 下载文件（带进度）─────────────────────────────────────────
 function Download-File {
     param($Url, $Dest)
-    Write-Info "下载中: $([System.IO.Path]::GetFileName($Dest))"
+    $name = [System.IO.Path]::GetFileName($Dest)
+    Write-Info "下载 $name ..."
     try {
         $wc = New-Object System.Net.WebClient
         $wc.DownloadFile($Url, $Dest)
@@ -47,102 +50,80 @@ function Download-File {
     }
 }
 
-# ── 检测 Python ───────────────────────────────────────────────
-function Find-Python {
-    # 刷新 PATH 后再检测
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")
-    foreach ($cmd in @("python", "python3", "py")) {
-        $gc = Get-Command $cmd -ErrorAction SilentlyContinue
-        if (-not $gc) { continue }
-        try {
-            $ver = & $cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1
-            if ($ver -match "^(\d+)\.(\d+)") {
-                if ([int]$Matches[1] -ge 3 -and [int]$Matches[2] -ge 10) {
-                    Write-Ok "检测到 Python $ver ($($gc.Source))"
-                    return $cmd
-                }
-            }
-        } catch {}
+# ── 1. Portable Python ────────────────────────────────────────
+function Setup-Python {
+    if (Test-Path $PYTHON_EXE) { Write-Ok "Python 已就绪 (portable)"; return }
+    New-Item -ItemType Directory -Force -Path $PYTHON_DIR | Out-Null
+    $zip = "$env:TEMP\python-embed.zip"
+    Download-File $PYTHON_ZIP $zip
+    Write-Info "解压 Python ..."
+    Expand-Archive -Path $zip -DestinationPath $PYTHON_DIR -Force
+    Remove-Item $zip -Force -ErrorAction SilentlyContinue
+
+    # 开启 site-packages（embeddable 默认关闭，pip 需要它）
+    $pth = Get-ChildItem "$PYTHON_DIR\*._pth" | Select-Object -First 1
+    if ($pth) {
+        (Get-Content $pth.FullName) -replace '#import site','import site' |
+            Set-Content $pth.FullName
     }
-    return $null
+
+    # 安装 pip
+    Write-Info "安装 pip ..."
+    $getpip = "$env:TEMP\get-pip.py"
+    Download-File $GETPIP_URL $getpip
+    & $PYTHON_EXE $getpip --quiet -i $PIP_MIRROR
+    Remove-Item $getpip -Force -ErrorAction SilentlyContinue
+    Write-Ok "Python + pip 就绪"
 }
 
-function Install-Python {
-    Write-Warn "未找到 Python 3.10+，使用华为云镜像下载安装（无需梯子）..."
-    $installer = "$env:TEMP\python-installer.exe"
-    Download-File $PYTHON_MIRROR $installer
-    Write-Info "安装 Python（静默安装，约1分钟）..."
-    Start-Process -FilePath $installer -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0" -Wait
-    Remove-Item $installer -Force -ErrorAction SilentlyContinue
-    # 刷新 PATH
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")
-    Write-Ok "Python 安装完成"
+# ── 2. Portable Git ───────────────────────────────────────────
+function Setup-Git {
+    if (Test-Path $GIT_EXE) { Write-Ok "Git 已就绪 (portable)"; return }
+    New-Item -ItemType Directory -Force -Path $GIT_DIR | Out-Null
+    $sfx = "$env:TEMP\PortableGit.exe"
+    Download-File $GIT_SFX $sfx
+    Write-Info "解压 Git ..."
+    # PortableGit 是 7z 自解压包，-o 指定输出目录，-y 自动确认
+    Start-Process -FilePath $sfx -ArgumentList "-o`"$GIT_DIR`"", "-y" -Wait -NoNewWindow
+    Remove-Item $sfx -Force -ErrorAction SilentlyContinue
+    Write-Ok "Git 就绪"
 }
 
-# ── 检测 Git ──────────────────────────────────────────────────
-function Find-Git {
-    # 先刷新 PATH，再用 Get-Command 检测（比 try{git} 更可靠）
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")
-    $g = Get-Command git -ErrorAction SilentlyContinue
-    if ($g) { Write-Ok "检测到 Git: $($g.Source)"; return $true }
-    return $false
-}
-
-function Install-Git {
-    Write-Warn "未找到 Git，使用 npmmirror 镜像下载（无需梯子）..."
-    $installer = "$env:TEMP\git-installer.exe"
-    Download-File $GIT_MIRROR $installer
-    Write-Info "安装 Git（静默安装，约1分钟）..."
-    Start-Process -FilePath $installer -ArgumentList "/VERYSILENT", "/NORESTART", "/NOCANCEL" -Wait
-    Remove-Item $installer -Force -ErrorAction SilentlyContinue
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")
-    Write-Ok "Git 安装完成"
-}
-
-# ── 克隆或更新代码 ────────────────────────────────────────────
+# ── 3. 克隆 / 更新代码 ────────────────────────────────────────
 function Clone-OrUpdate {
     if (Test-Path "$INSTALL_DIR\.git") {
-        Write-Warn "检测到已有安装，执行更新..."
-        Push-Location $INSTALL_DIR
-        git fetch origin main 2>&1 | Out-Null
-        git reset --hard FETCH_HEAD 2>&1 | Out-Null
-        Pop-Location
+        Write-Warn "已有安装，执行更新..."
+        & $GIT_EXE -C $INSTALL_DIR fetch origin main 2>&1 | Out-Null
+        & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
         Write-Ok "代码已更新"
     } else {
-        Write-Info "下载 Captain 代码..."
-        git clone --depth 1 $REPO_URL $INSTALL_DIR 2>&1
-        Write-Ok "代码已下载到 $INSTALL_DIR"
+        Write-Info "下载 Captain 代码 ..."
+        & $GIT_EXE clone --depth 1 $REPO_URL $INSTALL_DIR 2>&1
+        Write-Ok "代码已下载"
     }
 }
 
-# ── 虚拟环境 & 依赖 ──────────────────────────────────────────
-function Setup-Venv {
-    param($PythonCmd)
-    Write-Info "创建 Python 虚拟环境..."
-    & $PythonCmd -m venv $VENV_DIR
-    $pip = "$VENV_DIR\Scripts\pip.exe"
-    Write-Info "安装依赖（使用清华镜像，无需梯子）..."
-    & $pip install --quiet --upgrade pip -i $PIP_MIRROR
+# ── 4. 安装 Python 依赖 ───────────────────────────────────────
+function Install-Deps {
+    $pip = "$PYTHON_DIR\Scripts\pip.exe"
+    if (-not (Test-Path $pip)) { $pip = "$PYTHON_DIR\pip.exe" }
+    Write-Info "安装依赖（清华镜像）..."
     if (Test-Path "$INSTALL_DIR\requirements.txt") {
-        & $pip install --quiet -r "$INSTALL_DIR\requirements.txt" -i $PIP_MIRROR
+        & $PYTHON_EXE -m pip install --quiet -r "$INSTALL_DIR\requirements.txt" -i $PIP_MIRROR
     }
     Write-Ok "依赖安装完成"
 }
 
-# ── .env 模板 ────────────────────────────────────────────────
+# ── 5. 生成 .env 模板 ─────────────────────────────────────────
 function Setup-Env {
-    if (Test-Path $ENV_FILE) { Write-Warn ".env 已存在，跳过"; return }
-    Write-Info "生成 .env 配置模板..."
+    $env_file = "$INSTALL_DIR\.env"
+    if (Test-Path $env_file) { Write-Warn ".env 已存在，跳过"; return }
     @"
 # ============================================================
-#  Captain 配置文件 — 请填写 API Key 后保存
+#  Captain 配置文件 — 填写 API Key 后保存
 # ============================================================
 
-# DeepSeek（推荐，国内直连）
+# DeepSeek（推荐，国内直连）https://platform.deepseek.com
 DEEPSEEK_API_KEY=sk-xxx
 
 # OpenAI（可选）
@@ -156,44 +137,44 @@ CAPTAIN_LICENSE_KEY=
 
 AGENT_PORT=8000
 AGENT_API_TOKEN=change-me-to-random-string
-"@ | Set-Content $ENV_FILE -Encoding UTF8
-    Write-Ok ".env 已生成: $ENV_FILE"
+"@ | Set-Content $env_file -Encoding UTF8
+    Write-Ok ".env 已生成: $env_file"
 }
 
-# ── 启动脚本 ──────────────────────────────────────────────────
+# ── 6. 启动脚本 captain.bat ───────────────────────────────────
 function Create-Launcher {
-    $launcher = "$INSTALL_DIR\captain.bat"
+    $bat = "$INSTALL_DIR\captain.bat"
     @"
 @echo off
 title Captain AI Agent
-cd /d "$INSTALL_DIR"
-call "$VENV_DIR\Scripts\activate.bat"
-echo Captain 启动中...
+cd /d "%~dp0"
+set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%
+echo Captain 启动中... 请稍候
 python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
 pause
-"@ | Set-Content $launcher -Encoding UTF8
-    Write-Ok "启动脚本已创建: $launcher"
+"@ | Set-Content $bat -Encoding UTF8
+    Write-Ok "启动脚本: $bat"
 }
 
 # ── 完成提示 ──────────────────────────────────────────────────
 function Print-Done {
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "  ║      Captain 安装完成！              ║" -ForegroundColor Green
-    Write-Host "  ╚══════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host "  ╔════════════════════════════════════════╗" -ForegroundColor Green
+    Write-Host "  ║       Captain 安装完成！               ║" -ForegroundColor Green
+    Write-Host "  ╚════════════════════════════════════════╝" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  第 1 步：" -ForegroundColor White -NoNewline
-    Write-Host "用记事本打开 $ENV_FILE"
-    Write-Host "           填入 DEEPSEEK_API_KEY（DeepSeek 注册：platform.deepseek.com）"
+    Write-Host "  第 1 步  " -NoNewline -ForegroundColor White
+    Write-Host "用记事本打开并填写 API Key："
+    Write-Host "           $INSTALL_DIR\.env"
     Write-Host ""
-    Write-Host "  第 2 步：" -ForegroundColor White -NoNewline
-    Write-Host "双击运行 $INSTALL_DIR\captain.bat"
+    Write-Host "  第 2 步  " -NoNewline -ForegroundColor White
+    Write-Host "双击启动："
+    Write-Host "           $INSTALL_DIR\captain.bat"
     Write-Host ""
-    Write-Host "  第 3 步：" -ForegroundColor White -NoNewline
+    Write-Host "  第 3 步  " -NoNewline -ForegroundColor White
     Write-Host "浏览器打开 http://localhost:8000"
     Write-Host ""
-    Write-Host "  购买 Pro：" -ForegroundColor Cyan -NoNewline
-    Write-Host "https://irestart-your-life.club/#pricing"
+    Write-Host "  购买 Pro  https://irestart-your-life.club/#pricing" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -201,28 +182,16 @@ function Print-Done {
 #  主流程
 # ══════════════════════════════════════════════════════════════
 Write-Host ""
-Write-Host "  ⚡ Captain 安装程序 (Windows)" -ForegroundColor Cyan
-Write-Host "  ─────────────────────────────" -ForegroundColor DarkGray
+Write-Host "  ⚡ Captain 安装程序 (Windows · Portable)" -ForegroundColor Cyan
+Write-Host "  ─────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host ""
 
-# Git
-if (-not (Find-Git)) { Install-Git }
-if (-not (Find-Git)) { Write-Err "Git 安装失败，请手动下载: https://npmmirror.com/mirrors/git-for-windows/v2.45.2.windows.1/Git-2.45.2-64-bit.exe" }
-
-# Python
-$pythonCmd = Find-Python
-if (-not $pythonCmd) { Install-Python; $pythonCmd = Find-Python }
-if (-not $pythonCmd) { Write-Err "Python 安装失败，请手动下载: https://mirrors.huaweicloud.com/python/3.11.9/python-3.11.9-amd64.exe" }
-
+Setup-Python
+Setup-Git
 Clone-OrUpdate
-
-Push-Location $INSTALL_DIR
-Setup-Venv -PythonCmd $pythonCmd
+Install-Deps
 Setup-Env
 Create-Launcher
-Pop-Location
-
 Print-Done
 
-Write-Host "  按任意键关闭此窗口..." -ForegroundColor DarkGray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Pause-Exit 0
