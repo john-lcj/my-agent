@@ -855,17 +855,24 @@ option{background:var(--card)}
 /* ── 移动端深度适配(≤680px)──────────────────────────────────── */
 @media(max-width:680px){
   html,body{overflow-x:hidden}
+  /* iOS 安全区（刘海屏/圆角屏）*/
+  body{padding-bottom:env(safe-area-inset-bottom)}
+  #app{padding-bottom:env(safe-area-inset-bottom)}
   /* 汉堡在两种模式下都能用 */
   #btn-sb-toggle.sb-toggle{display:inline-flex!important}
   /* 对话区铺满 + 收紧边距 */
   .chat-column,#app.work-mode-coworker .chat-column{padding:0 12px!important;max-width:none}
   #chat-messages{padding:12px 0 16px!important}
-  .composer-wrap{padding:0 10px 12px}
+  .composer-wrap{padding:0 10px calc(12px + env(safe-area-inset-bottom))}
+  /* 输入框 font-size≥16px 防止 iOS 自动缩放 */
+  #composer-input,#composer-input *{font-size:16px!important}
   /* 输入工具条:允许换行,触控热区放大,发送常驻 */
   .composer-toolbar{flex-wrap:wrap;row-gap:6px}
   .composer-left,.composer-right{gap:2px}
-  .composer-tool{width:36px;height:36px}
-  .btn-send{width:40px;height:40px}
+  /* 触控热区最小 44px（Apple HIG 标准）*/
+  .composer-tool{width:44px;height:44px}
+  .btn-send{width:44px;height:44px}
+  .icon-btn{min-width:44px;min-height:44px}
   /* 右侧工作台 → 从右滑出的抽屉(覆盖 ≤900px 的隐藏)*/
   #app.wb-open #workbench{display:flex!important;position:fixed;inset:0 0 0 auto;
     width:min(340px,92vw);z-index:90;box-shadow:-4px 0 24px rgba(0,0,0,.14);visibility:visible}
@@ -881,4 +888,8 @@ option{background:var(--card)}
   /* 欢迎区 / 专家网格更紧凑 */
   .welcome-scenarios{grid-template-columns:1fr}
   .expert-grid{grid-template-columns:1fr}
+  /* 消息气泡移动端更宽 */
+  .msg-bubble{max-width:92vw!important}
+  /* 隐藏桌面端才需要的元素 */
+  .desktop-only{display:none!important}
 }

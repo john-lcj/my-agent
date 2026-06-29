@@ -1077,6 +1077,43 @@ def create_app():
             ver = "unknown"
         return JSONResponse({"version": ver})
 
+    @app.get("/api/profile")
+    async def get_profile() -> JSONResponse:
+        try:
+            from core.persona import load_persona
+            p = load_persona()
+            if p is None:
+                return JSONResponse({"ok": True, "profile": {"name": "", "call_me": "", "about": "", "preferences": []}})
+            return JSONResponse({"ok": True, "profile": {
+                "name": p.owner_name, "call_me": p.call_me,
+                "about": p.owner_about, "preferences": p.owner_preferences,
+            }})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    @app.post("/api/profile")
+    async def save_profile(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            persona_path = os.path.join(root, "persona.yaml")
+            import yaml
+            with open(persona_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            prefs = body.get("preferences", [])
+            if isinstance(prefs, str):
+                prefs = [p.strip() for p in prefs.splitlines() if p.strip()]
+            data.setdefault("owner", {})
+            data["owner"]["name"]        = body.get("name", "")
+            data["owner"]["call_me"]     = body.get("call_me", "")
+            data["owner"]["about"]       = body.get("about", "")
+            data["owner"]["preferences"] = prefs
+            with open(persona_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            return JSONResponse({"ok": True})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
     @app.post("/api/license/activate")
     async def license_activate(request: Request) -> JSONResponse:
         """应用内激活授权码。"""

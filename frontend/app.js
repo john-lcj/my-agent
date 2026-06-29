@@ -1714,6 +1714,7 @@ function switchSettingsTab(tab, el) {
   if (tab === 'channels' || tab === 'general' || tab === 'keys') loadSettingsUI();
   if (tab === 'goals') renderGoals();
   if (tab === 'monitors') renderMonitors();
+  if (tab === 'profile') loadProfile();
   if (tab === 'about') fetch('/api/version').then(r=>r.json()).then(d=>{
     const el = document.getElementById('about-version');
     if (el) el.textContent = 'v' + (d.version || '');
@@ -4248,6 +4249,115 @@ function isTypingTarget(el) {
 
 function modKey(e) {
   return navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
+}
+
+// ── 工作流模板 ────────────────────────────────────────────────
+const WORKFLOW_TEMPLATES = [
+  {
+    icon: '📰', title: '每日简报',
+    desc: '汇总今日新闻、邮件要点，生成一份简报',
+    prompt: '请帮我生成今天的简报：①总结今日科技/AI领域3条重要新闻；②列出我今天需要关注的事项；③给出今日工作建议。用简洁的中文输出。',
+  },
+  {
+    icon: '📧', title: '邮件助手',
+    desc: '帮你写邮件、回复邮件、优化表达',
+    prompt: '我需要写一封邮件，请帮我起草。请先问我：收件人是谁？邮件主题是什么？需要传达的核心内容是什么？',
+  },
+  {
+    icon: '📂', title: '文件整理',
+    desc: '扫描指定目录，按类型/日期整理文件',
+    prompt: '请帮我整理文件。先告诉我你能访问哪些目录，然后我告诉你要整理哪个文件夹，你帮我分析里面的文件并给出整理方案。',
+  },
+  {
+    icon: '📝', title: '会议纪要',
+    desc: '将会议录音或文字整理成结构化纪要',
+    prompt: '我需要整理会议纪要。请将我粘贴的会议内容整理为：①会议时间/参与人；②主要议题；③决议与行动项（包含负责人和截止时间）；④下次会议安排。',
+  },
+  {
+    icon: '🔍', title: '深度研究',
+    desc: '对某个话题做深度调研，输出结构化报告',
+    prompt: '请帮我做一个深度研究报告。先告诉我你想研究的话题，我会为你：①搜集关键信息；②分析现状与趋势；③总结结论与建议；④生成可保存的报告文档。',
+  },
+  {
+    icon: '💻', title: '代码助手',
+    desc: '写代码、调试、代码审查、解释逻辑',
+    prompt: '我需要编程帮助。请告诉我：你用什么语言/框架？遇到了什么问题或需要实现什么功能？我会帮你写代码、调试或审查。',
+  },
+  {
+    icon: '📊', title: '数据分析',
+    desc: '分析表格数据，生成图表和洞察',
+    prompt: '请帮我分析数据。你可以粘贴 CSV 数据或描述数据结构，我会帮你：①清洗数据；②统计分析；③找出关键洞察；④生成 Excel 报告。',
+  },
+  {
+    icon: '⏰', title: '定时任务',
+    desc: '设置一个自动执行的定时任务',
+    prompt: '我想设置一个定时任务。请问我：任务内容是什么？执行频率是多久一次（每天/每周/指定时间）？结果发到哪里（邮件/本地文件）？',
+  },
+];
+
+function openTemplates() {
+  const overlay = document.getElementById('templates-overlay');
+  const grid = document.getElementById('templates-grid');
+  grid.innerHTML = WORKFLOW_TEMPLATES.map((t, i) => `
+    <div onclick="useTemplate(${i})" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;
+      padding:16px;cursor:pointer;transition:border-color .15s"
+      onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
+      <div style="font-size:24px;margin-bottom:8px">${t.icon}</div>
+      <div style="font-weight:600;margin-bottom:4px">${t.title}</div>
+      <div style="font-size:13px;color:var(--muted)">${t.desc}</div>
+    </div>
+  `).join('');
+  overlay.style.display = 'flex';
+}
+
+function closeTemplates() {
+  document.getElementById('templates-overlay').style.display = 'none';
+}
+
+function useTemplate(idx) {
+  const t = WORKFLOW_TEMPLATES[idx];
+  closeTemplates();
+  // 填入输入框并发送
+  const input = document.getElementById('composer-input');
+  if (input) {
+    input.value = t.prompt;
+    input.dispatchEvent(new Event('input'));
+    input.focus();
+  }
+}
+
+async function loadProfile() {
+  try {
+    const r = await fetch('/api/profile');
+    const d = await r.json();
+    if (!d.ok) return;
+    const p = d.profile;
+    document.getElementById('profile-name').value    = p.name || '';
+    document.getElementById('profile-callme').value  = p.call_me || '';
+    document.getElementById('profile-about').value   = p.about || '';
+    document.getElementById('profile-prefs').value   = (p.preferences || []).join('\n');
+  } catch {}
+}
+
+async function saveProfile() {
+  const status = document.getElementById('profile-save-status');
+  const body = {
+    name:        document.getElementById('profile-name').value.trim(),
+    call_me:     document.getElementById('profile-callme').value.trim(),
+    about:       document.getElementById('profile-about').value.trim(),
+    preferences: document.getElementById('profile-prefs').value
+                   .split('\n').map(s=>s.trim()).filter(Boolean),
+  };
+  status.textContent = '保存中…'; status.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/profile', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.ok) { status.style.color='#3ecf8e'; status.textContent='✓ 已保存，重启后生效'; }
+    else       { status.style.color='#e55';    status.textContent='✗ '+d.error; }
+  } catch { status.style.color='#e55'; status.textContent='网络错误'; }
 }
 
 async function doActivate() {
