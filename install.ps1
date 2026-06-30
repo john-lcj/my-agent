@@ -122,8 +122,21 @@ function Setup-Git {
 function Clone-OrUpdate {
     if (Test-Path "$INSTALL_DIR\.git") {
         Write-Warn "已有安装，执行更新..."
+        $dirty = & $GIT_EXE -C $INSTALL_DIR status --porcelain 2>$null
+        $hadStash = -not [string]::IsNullOrWhiteSpace(($dirty -join ""))
+        if ($hadStash) {
+            & $GIT_EXE -C $INSTALL_DIR stash push --include-untracked -m "captain-auto-update-backup" 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Warn "本地改动备份失败，继续尝试更新" }
+        }
         & $GIT_EXE -C $INSTALL_DIR fetch --depth=1 origin main 2>&1 | Out-Null
         & $GIT_EXE -C $INSTALL_DIR reset --hard FETCH_HEAD 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Err "代码更新失败" }
+        if ($hadStash) {
+            & $GIT_EXE -C $INSTALL_DIR stash pop 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "本地改动恢复时有冲突，请检查安装目录中的 git 状态"
+            }
+        }
         Write-Ok "代码已更新"
     } else {
         Write-Info "下载 Captain 代码..."
@@ -139,8 +152,17 @@ function Clone-OrUpdate {
 
 # ── 4. 安装依赖 ───────────────────────────────────────────────
 function Install-Deps {
-    $req = "$INSTALL_DIR\requirements.txt"
-    if (-not (Test-Path $req)) { Write-Warn "未找到 requirements.txt，跳过"; return }
+    $lock = "$INSTALL_DIR\requirements.lock.txt"
+    $base = "$INSTALL_DIR\requirements-base.txt"
+    $full = "$INSTALL_DIR\requirements.txt"
+    if (Test-Path $lock) {
+        $req = $lock
+    } elseif (Test-Path $base) {
+        $req = $base
+    } else {
+        $req = $full
+    }
+    if (-not (Test-Path $req)) { Write-Warn "未找到 requirements，跳过"; return }
     Write-Info "安装 Python 依赖（清华镜像，首次约需3分钟）..."
     & $PYTHON_EXE -m pip install --quiet --no-warn-script-location `
         -r $req -i $PIP_MIRROR 2>&1 | Out-Null
@@ -156,6 +178,7 @@ function Setup-Env {
     if (Test-Path $f) { Write-Warn ".env 已存在，跳过"; return }
     # 生成随机 token
     $randToken = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+    $randSecret = -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
     $content = @(
         "# Captain 配置文件 - 填写 API Key 后保存",
         "",
@@ -176,7 +199,8 @@ function Setup-Env {
         "",
         "AGENT_WEB_PORT=8000",
         "# 安装时自动生成的随机令牌，无需修改",
-        "AGENT_API_TOKEN=$randToken"
+        "AGENT_API_TOKEN=$randToken",
+        "AUTH_SECRET=$randSecret"
     )
     [System.IO.File]::WriteAllLines($f, $content, [System.Text.UTF8Encoding]::new($false))
     Write-Ok ".env 已生成: $f"
@@ -217,10 +241,35 @@ function Create-Shortcut {
     $vbs = "$INSTALL_DIR\captain_launch.vbs"
     $vbsContent = @"
 Set WShell = CreateObject("WScript.Shell")
+
+' Read AGENT_WEB_PORT from .env (default 8000)
+Dim sPort
+sPort = "8000"
+Dim scriptDir
+scriptDir = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\"))
+Dim envPath
+envPath = scriptDir & ".env"
+Dim fso
+Set fso = CreateObject("Scripting.FileSystemObject")
+If fso.FileExists(envPath) Then
+    Dim f
+    Set f = fso.OpenTextFile(envPath, 1)
+    Do While Not f.AtEndOfStream
+        Dim sLine
+        sLine = Trim(f.ReadLine)
+        If Left(sLine, 16) = "AGENT_WEB_PORT=" Then
+            sPort = Trim(Mid(sLine, 17))
+        End If
+    Loop
+    f.Close
+End If
+Dim sBase
+sBase = "http://localhost:" & sPort
+
 bRunning = False
 On Error Resume Next
 Set oHTTP = CreateObject("MSXML2.XMLHTTP")
-oHTTP.Open "GET", "http://localhost:8000/healthz", False
+oHTTP.Open "GET", sBase & "/healthz", False
 oHTTP.Send
 If oHTTP.Status = 200 Then bRunning = True
 On Error GoTo 0
@@ -233,7 +282,7 @@ If Not bRunning Then
         waited = waited + 1000
         On Error Resume Next
         Set oHTTP2 = CreateObject("MSXML2.XMLHTTP")
-        oHTTP2.Open "GET", "http://localhost:8000/healthz", False
+        oHTTP2.Open "GET", sBase & "/healthz", False
         oHTTP2.Send
         If oHTTP2.Status = 200 Then
             waited = 30000
@@ -241,7 +290,7 @@ If Not bRunning Then
         On Error GoTo 0
     Loop
 End If
-WShell.Run "http://localhost:8000"
+WShell.Run sBase
 "@
     # ASCII 写入（VBS 不需要 Unicode）
     [System.IO.File]::WriteAllText($vbs, $vbsContent, [System.Text.Encoding]::ASCII)
@@ -263,6 +312,13 @@ WShell.Run "http://localhost:8000"
 
 # ── 完成提示 ──────────────────────────────────────────────────
 function Print-Done {
+    $port = "8000"
+    $envFile = "$INSTALL_DIR\.env"
+    if (Test-Path $envFile) {
+        foreach ($line in [System.IO.File]::ReadAllLines($envFile)) {
+            if ($line -match '^AGENT_WEB_PORT=(.+)$') { $port = $Matches[1].Trim() }
+        }
+    }
     Write-Host ""
     Write-Host "  ╔════════════════════════════════════════╗" -ForegroundColor Green
     Write-Host "  ║       Captain 安装完成！               ║" -ForegroundColor Green
@@ -276,7 +332,7 @@ function Print-Done {
     Write-Host "双击桌面上的 Captain 图标启动"
     Write-Host ""
     Write-Host "  第 3 步  " -NoNewline -ForegroundColor White
-    Write-Host "浏览器会自动打开 http://localhost:8000"
+    Write-Host "浏览器会自动打开 http://localhost:$port"
     Write-Host ""
     Write-Host "  购买 Pro  https://irestart-your-life.club/#pricing" -ForegroundColor Cyan
     Write-Host ""
@@ -295,10 +351,25 @@ New-Item -ItemType Directory -Force -Path $INSTALL_DIR | Out-Null
 Setup-Python    # 1. 解压 Python，修复 _pth，装 pip
 Setup-Git       # 2. 解压 PortableGit
 Clone-OrUpdate  # 3. 拉取应用代码
-Install-Deps    # 4. pip install requirements.txt → site-packages
+Install-Deps    # 4. pip install requirements-base.txt
 Setup-Env       # 5. 生成 .env 模板
 Create-Launcher # 6. 生成 captain.bat
 Create-Shortcut # 7. 桌面快捷方式
+
+# ── 8. 可选：Playwright 浏览器自动化 ─────────────────────────
+Write-Host ""
+Write-Host "  [可选] 浏览器自动化能力 (Playwright, 约 400MB)" -ForegroundColor Yellow
+$pw = Read-Host "  是否安装? [y/N]"
+if ($pw -match '^[Yy]$') {
+    Write-Info "安装 playwright ..."
+    & $PYTHON_EXE -m pip install playwright --quiet --no-warn-script-location `
+        -i $PIP_MIRROR 2>&1 | Out-Null
+    Write-Info "下载 Chromium 内核（约 400MB）..."
+    & $PYTHON_EXE -m playwright install chromium 2>&1
+    Write-Ok "Playwright 已安装，browser.* 能力已可用"
+} else {
+    Write-Info "跳过 Playwright（如需安装: python -m playwright install chromium）"
+}
 
 Print-Done
 Pause-Exit 0

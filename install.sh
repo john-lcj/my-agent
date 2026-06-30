@@ -13,6 +13,7 @@ INSTALL_DIR="$HOME/captain"
 VENV_DIR="$INSTALL_DIR/.venv"
 ENV_FILE="$INSTALL_DIR/.env"
 MIN_PYTHON="3.10"
+MAX_PYTHON_MINOR="12"
 
 # ── 颜色 ─────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -53,7 +54,7 @@ detect_python() {
             VER=$("$cmd" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
             MAJ="${VER%%.*}"; MIN="${VER#*.}"
             # 只接受 3.10 ~ 3.12（3.13+ 部分依赖可能不兼容）
-            if [[ "$MAJ" -eq 3 && "$MIN" -ge 10 && "$MIN" -le 12 ]]; then
+            if [[ "$MAJ" -eq 3 && "$MIN" -ge 10 && "$MIN" -le "$MAX_PYTHON_MINOR" ]]; then
                 PYTHON_CMD="$cmd"
                 info "检测到 Python $VER ($cmd)"
                 return 0
@@ -148,6 +149,9 @@ setup_env() {
     RAND_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(16))" 2>/dev/null \
         || head -c 16 /dev/urandom | xxd -p 2>/dev/null \
         || date +%s%N | sha256sum | head -c 32)
+    RAND_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null \
+        || head -c 32 /dev/urandom | xxd -p 2>/dev/null \
+        || date +%s%N | sha256sum | head -c 48)
     cat > "$ENV_FILE" << EOF
 # ============================================================
 #  Captain 配置文件  —  请填写以下内容后保存
@@ -177,6 +181,9 @@ AGENT_WEB_PORT=8000
 # ── WebSocket 接入令牌（安装时自动生成，无需修改）────────────
 AGENT_API_TOKEN=${RAND_TOKEN}
 
+# ── 登录会话签名密钥（安装时自动生成，无需修改）──────────────
+AUTH_SECRET=${RAND_SECRET}
+
 # ── 日志 & 数据目录（默认 ~/captain/logs）────────────────────
 # LOG_DIR=~/captain/logs
 EOF
@@ -192,6 +199,12 @@ create_launcher() {
 set -euo pipefail
 cd "$INSTALL_DIR"
 source "$VENV_DIR/bin/activate"
+if [[ -f ".env" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source ".env"
+    set +a
+fi
 PORT="\${AGENT_WEB_PORT:-8000}"
 exec python -m uvicorn server.app:app --host 127.0.0.1 --port "\$PORT" "\$@"
 SCRIPT
@@ -214,6 +227,9 @@ SCRIPT
 create_macos_service() {
     PLIST_PATH="$HOME/Library/LaunchAgents/com.captain-ai.agent.plist"
     [[ -f "$PLIST_PATH" ]] && return   # 已存在则跳过
+    SERVICE_PORT="$(grep -E '^AGENT_WEB_PORT=' "$ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2-)"
+    SERVICE_PORT="${SERVICE_PORT:-8000}"
+    BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /usr/local)"
     cat > "$PLIST_PATH" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -230,13 +246,15 @@ create_macos_service() {
         <string>--host</string>
         <string>127.0.0.1</string>
         <string>--port</string>
-        <string>8000</string>
+        <string>$SERVICE_PORT</string>
     </array>
     <key>WorkingDirectory</key>  <string>$INSTALL_DIR</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:$VENV_DIR/bin</string>
+        <string>$BREW_PREFIX/bin:/usr/bin:/bin:$VENV_DIR/bin</string>
+        <key>AGENT_WEB_PORT</key>
+        <string>$SERVICE_PORT</string>
     </dict>
     <key>RunAtLoad</key>         <false/>
     <key>KeepAlive</key>         <true/>
@@ -263,7 +281,9 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$VENV_DIR/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+Environment=AGENT_WEB_PORT=8000
+EnvironmentFile=-$ENV_FILE
+ExecStart=$VENV_DIR/bin/python -m uvicorn server.app:app --host 127.0.0.1 --port \${AGENT_WEB_PORT}
 Restart=always
 RestartSec=5
 StandardOutput=append:$INSTALL_DIR/logs/agent.log
@@ -291,13 +311,32 @@ print_done() {
     echo -e "  ${BOLD}第 2 步：启动 Captain${RESET}"
     echo    "    cd $INSTALL_DIR"
     echo    "    bash captain.sh"
-    echo    "    浏览器打开 http://localhost:8000"
+    echo    "    浏览器打开 http://localhost:\${AGENT_WEB_PORT:-8000}"
     echo ""
     echo -e "  ${BOLD}第 3 步（可选）：激活 Pro${RESET}"
     echo    "    python -m license_client.cli activate CAPT-PRO-XXXX-XXXX-XXXX"
     echo ""
     echo -e "  ${CYAN}购买 Pro：https://irestart-your-life.club/#pricing${RESET}"
     echo ""
+}
+
+# ── 可选：安装 Playwright 浏览器自动化 ──────────────────────
+install_playwright() {
+    echo ""
+    echo -e "  ${BOLD}可选：浏览器自动化能力（Playwright）${RESET}"
+    echo    "  安装后可让 Captain 真实操控浏览器（约 400MB）"
+    echo    "  不安装也不影响核心聊天/文件/搜索功能"
+    echo -n "  是否安装？[y/N] "
+    read -r INSTALL_PW
+    if [[ "${INSTALL_PW:-N}" =~ ^[Yy]$ ]]; then
+        info "安装 playwright ..."
+        pip install --quiet playwright
+        info "下载 Chromium 内核（约 400MB，请稍候）..."
+        python -m playwright install chromium
+        success "Playwright 已安装，browser.* 能力已可用"
+    else
+        info "跳过 Playwright（如需安装：pip install playwright && python -m playwright install chromium）"
+    fi
 }
 
 # ── 主流程 ────────────────────────────────────────────────────
@@ -310,6 +349,7 @@ main() {
     setup_venv
     setup_env
     create_launcher
+    install_playwright
     if [[ "$OS" == "macos" ]]; then
         create_macos_service
     else

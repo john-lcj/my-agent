@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time
 
+__test__ = False
+
 
 async def test_endpoint(sdk: str, kind: str, base_url: str, api_key: str, model: str) -> dict:
     if not api_key:

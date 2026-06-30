@@ -20,8 +20,8 @@ config:  ## 配置向导(交互式填 .env:模型/文生图/搜索/令牌)
 update:  ## 同步更新:拉最新代码 + 更新依赖 + 重启(其它电脑用)
 	bash scripts/update.sh
 
-web:  ## 启动 Web 聊天界面 → http://127.0.0.1:8000
-	$(PY) -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+web:  ## 启动 Web 聊天界面 → http://127.0.0.1:$${AGENT_WEB_PORT:-8000}
+	$(PY) -m uvicorn server.app:app --host 127.0.0.1 --port $${AGENT_WEB_PORT:-8000}
 
 cli:  ## 终端对话(MockLLM 零配置可跑)
 	$(PY) main.py

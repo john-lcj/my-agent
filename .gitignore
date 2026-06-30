@@ -47,7 +47,8 @@ report/
 .coverage.*
 htmlcov/
 coverage.xml
-scripts/
+scripts/*
+!scripts/setup_wizard.py
 *.pem
 send_news_mail.py
 demo/

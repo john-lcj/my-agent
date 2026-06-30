@@ -34,3 +34,26 @@ def test_x_forwarded_for_also_triggers():
     with TestClient(app) as c:
         r = c.get("/api/models", headers={"x-forwarded-for": "1.2.3.4"})
         assert r.status_code == 401
+
+
+def test_cross_site_write_rejected():
+    os.environ["AGENT_API_TOKEN"] = "t"
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/config",
+            headers={"X-Agent-Token": "t", "Origin": "http://evil.com"},
+            json={"max_steps": 5},
+        )
+        assert r.status_code == 403
+
+
+def test_proxied_write_requires_non_default_auth_secret(monkeypatch):
+    os.environ["AGENT_API_TOKEN"] = "t"
+    monkeypatch.setenv("AUTH_SECRET", "captain-dev-secret-change-me-in-prod")
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/config",
+            headers={"cf-ray": "deadbeef-LHR", "X-Agent-Token": "t"},
+            json={"max_steps": 5},
+        )
+        assert r.status_code == 503

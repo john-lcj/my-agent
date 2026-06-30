@@ -130,7 +130,11 @@ def check_license(key: Optional[str] = None) -> LicenseStatus:
     开发模式：设置 CAPTAIN_DEV_PRO=1 直接返回 Pro，无需授权服务器。
     """
     # 开发/自用绕过：本地不需要授权服务器
-    if os.environ.get("CAPTAIN_DEV_PRO", "").strip() == "1":
+    testing_license_paths = (
+        os.environ.get("CAPTAIN_LICENSE_CACHE")
+        or os.environ.get("CAPTAIN_LICENSE_SERVER", "").startswith("http://localhost:")
+    )
+    if os.environ.get("CAPTAIN_DEV_PRO", "").strip() == "1" and not testing_license_paths:
         return LicenseStatus(valid=True, plan="pro",
                              expires_at=time.time() + 365 * 86400)
 
