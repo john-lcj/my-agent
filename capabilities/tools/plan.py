@@ -14,28 +14,32 @@ _STATUSES = {"todo", "pending", "doing", "running", "done", "failed"}
 
 
 def normalize_steps(raw: Any) -> list[dict]:
-    """把入参规整成 [{'text':..., 'status':...}],容忍字符串列表或 {text,status} 列表。"""
+    """把入参规整成 [{'text':..., 'status':..., 'check':...}],容忍字符串列表或字典列表。"""
     steps: list[dict] = []
     for item in (raw or []):
         if isinstance(item, str):
-            text, status = item.strip(), "todo"
+            text, status, check = item.strip(), "todo", ""
         elif isinstance(item, dict):
             text = str(item.get("text") or item.get("task") or item.get("step") or "").strip()
             status = str(item.get("status") or "todo").strip().lower()
+            check = str(item.get("check") or item.get("criteria") or item.get("verify") or "").strip()
         else:
             continue
         if not text:
             continue
         if status not in _STATUSES:
             status = "todo"
-        steps.append({"text": text[:120], "status": status})
+        row = {"text": text[:120], "status": status}
+        if check:
+            row["check"] = check[:160]
+        steps.append(row)
     return steps
 
 
 class PlanUpdate:
     name = "plan.update"
     risk = Risk.READ
-    description = ("维护你的待办清单:把任务拆成几步,每步带状态。动手前先列计划,"
+    description = ("维护你的待办清单:把任务拆成几步,每步带状态和可选验收标准 check。动手前先列计划,"
                   "每完成一步就再调一次更新状态。状态:todo(待办)/doing(进行中)/done(完成)/failed(失败)。")
     schema = {
         "type": "object",
@@ -48,6 +52,7 @@ class PlanUpdate:
                     "properties": {
                         "text": {"type": "string", "description": "这一步要做什么"},
                         "status": {"type": "string", "enum": ["todo", "doing", "done", "failed"]},
+                        "check": {"type": "string", "description": "这一步怎么判断完成(可选,建议复杂任务填写)"},
                     },
                     "required": ["text"],
                 },
@@ -63,7 +68,8 @@ class PlanUpdate:
         done = sum(1 for s in steps if s["status"] == "done")
         doing = sum(1 for s in steps if s["status"] in ("doing", "running"))
         # 真正的事件渲染在 loop 里(它能拿到事件总线);这里只回执行回执给模型。
+        with_check = sum(1 for s in steps if s.get("check"))
         return CapabilityResult(
             ok=True,
-            output=f"待办已更新:共 {len(steps)} 步,完成 {done},进行中 {doing}。继续推进下一步。",
+            output=f"待办已更新:共 {len(steps)} 步,完成 {done},进行中 {doing},含验收 {with_check}。继续推进下一步。",
         )

@@ -13,15 +13,16 @@ from capabilities.tools.plan import PlanUpdate, normalize_steps
 def test_normalize_steps_strings_and_dicts():
     assert normalize_steps(["查资料", "写报告"]) == [
         {"text": "查资料", "status": "todo"}, {"text": "写报告", "status": "todo"}]
-    s = normalize_steps([{"text": "搜", "status": "done"}, {"task": "写", "status": "doing"}])
+    s = normalize_steps([{"text": "搜", "status": "done", "check": "有来源"}, {"task": "写", "status": "doing"}])
     assert s[0]["status"] == "done" and s[1]["text"] == "写" and s[1]["status"] == "doing"
+    assert s[0]["check"] == "有来源"
     assert normalize_steps([{"text": "x", "status": "乱填"}])[0]["status"] == "todo"
 
 
 def test_plan_update_invoke():
     r = asyncio.run(PlanUpdate().invoke(
-        {"steps": [{"text": "a", "status": "done"}, {"text": "b", "status": "doing"}]}, None))
-    assert r.ok and "完成 1" in r.output and "进行中 1" in r.output
+        {"steps": [{"text": "a", "status": "done", "check": "a ok"}, {"text": "b", "status": "doing"}]}, None))
+    assert r.ok and "完成 1" in r.output and "进行中 1" in r.output and "含验收 1" in r.output
 
 
 def test_loop_emits_plan_events():

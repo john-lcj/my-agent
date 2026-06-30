@@ -27,6 +27,13 @@ from core.types import (
 )
 from governance.budget import BudgetGovernor
 from core.intent_router import classify_intent, intent_prompt_block
+from core.task_lifecycle import (
+    create_task_frame,
+    final_gate as lifecycle_final_gate,
+    lifecycle_prompt_block,
+    role_report_prompt,
+    update_plan as lifecycle_update_plan,
+)
 
 # 软边界确认回调:由 channel 提供(CLI 用 input,Web 用确认卡片)。
 # confirm(call, decision, reason="") -> bool。reason 为治理给出的"为什么需要确认"。
@@ -89,6 +96,10 @@ class Agent:
         frame = classify_intent(user_text, ctx)
         ctx.intent_frame = frame
         ctx.add_system(intent_prompt_block(frame))
+        task_frame = create_task_frame(user_text, frame)
+        ctx.task_frame = task_frame
+        ctx.add_system(lifecycle_prompt_block(task_frame))
+        ctx.add_system(role_report_prompt(task_frame))
 
         self._inject_credentials_manifest(ctx)
         self._inject_memories(user_text, ctx)
@@ -188,6 +199,17 @@ class Agent:
 
             if step.is_final:
                 text = step.text or ""
+                task_frame = getattr(ctx, "task_frame", None)
+                if task_frame is not None and not self._delivery_nudged:
+                    gate = lifecycle_final_gate(task_frame, text)
+                    if gate:
+                        self._delivery_nudged = True
+                        if tr is not None:
+                            tr.note("生命周期自检未过:" + gate[:120])
+                        ctx.add_assistant(text)
+                        ctx.add_system(gate)
+                        self.budget.charge(text, getattr(self.llm, "name", ""))
+                        continue
                 # ── 交付校验门(仅 Cowork):声称完成前,先查文件在不在 + 结构,再让模型质检内容 ──
                 if getattr(ctx, "coworker", False) and not self._delivery_nudged:
                     gate = self._completion_gate(user_text, text)
@@ -265,6 +287,13 @@ class Agent:
             # 待办清单:把 plan.update 调用翻译成 Progress 面板要的 plan_update 事件。
             if call.name == "plan.update":
                 self._emit_plan(emit, call.args)
+                try:
+                    from capabilities.tools.plan import normalize_steps
+                    task_frame = getattr(ctx, "task_frame", None)
+                    if task_frame is not None:
+                        lifecycle_update_plan(task_frame, normalize_steps(call.args.get("steps")))
+                except Exception:
+                    pass
             # 记录 assistant 的工具调用轮次。无论后续放行/拒绝/禁止,都必须补一条
             # 配对的 tool 结果消息,否则对话记录不合法(provider 会报错)。
             ctx.add_tool_call(
