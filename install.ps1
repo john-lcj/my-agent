@@ -2,8 +2,11 @@
 #  Captain — Windows 一键安装脚本 (PowerShell · Portable)
 #
 #  在 PowerShell 粘贴运行：
-#    irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex
+#    powershell -NoProfile -ExecutionPolicy Bypass -Command '$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p'
 # ============================================================
+param(
+    [switch]$UpdateOnly
+)
 
 $Host.UI.RawUI.WindowTitle = "Captain 安装程序"
 $ErrorActionPreference = "Continue"
@@ -209,26 +212,26 @@ function Setup-Env {
 # ── 6. 启动脚本 captain.bat ───────────────────────────────────
 function Create-Launcher {
     $bat = "$INSTALL_DIR\captain.bat"
-    $lines = @(
-        "@echo off",
-        "title Captain AI Agent",
-        "cd /d ""%~dp0""",
-        "set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%",
-        ":: 从 .env 读取 AGENT_WEB_PORT（默认 8000）",
-        "set AGENT_WEB_PORT=8000",
-        "if exist ""%~dp0.env"" (",
-        "  for /f ""usebackq tokens=1,* delims=="" %%a in (""%~dp0.env"") do (",
-        "    if /i ""%%a""==""AGENT_WEB_PORT"" set AGENT_WEB_PORT=%%b",
-        "  )",
-        ")",
-        ":loop",
-        "echo Captain 启动中 ^(端口 %AGENT_WEB_PORT%^)...",
-        "python.exe -m uvicorn server.app:app --host 127.0.0.1 --port %AGENT_WEB_PORT%",
-        "echo Captain 已停止，5秒后自动重启...",
-        "timeout /t 5 /nobreak >nul",
-        "goto loop"
-    )
-    [System.IO.File]::WriteAllLines($bat, $lines, [System.Text.Encoding]::ASCII)
+    $batContent = @'
+@echo off
+title Captain AI Agent
+cd /d "%~dp0"
+set PATH=%~dp0runtime\python;%~dp0runtime\python\Scripts;%~dp0runtime\git\bin;%PATH%
+:: Read AGENT_WEB_PORT from .env (default 8000)
+set AGENT_WEB_PORT=8000
+if exist "%~dp0.env" (
+  for /f "usebackq tokens=1,* delims==" %%a in ("%~dp0.env") do (
+    if /i "%%a"=="AGENT_WEB_PORT" set AGENT_WEB_PORT=%%b
+  )
+)
+:loop
+echo Captain starting (port %AGENT_WEB_PORT%)...
+python.exe -m uvicorn server.app:app --host 127.0.0.1 --port %AGENT_WEB_PORT%
+echo Captain stopped. Restarting in 5 seconds...
+timeout /t 5 /nobreak >nul
+goto loop
+'@
+    [System.IO.File]::WriteAllText($bat, $batContent, [System.Text.Encoding]::ASCII)
     Write-Ok "启动脚本: $bat"
 }
 
@@ -342,7 +345,11 @@ function Print-Done {
 #  主流程
 # ══════════════════════════════════════════════════════════════
 Write-Host ""
-Write-Host "  ⚡ Captain 安装程序 (Windows · Portable)" -ForegroundColor Cyan
+if ($UpdateOnly) {
+    Write-Host "  ⚡ Captain 更新程序 (Windows · Portable)" -ForegroundColor Cyan
+} else {
+    Write-Host "  ⚡ Captain 安装程序 (Windows · Portable)" -ForegroundColor Cyan
+}
 Write-Host "  ─────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -356,20 +363,25 @@ Setup-Env       # 5. 生成 .env 模板
 Create-Launcher # 6. 生成 captain.bat
 Create-Shortcut # 7. 桌面快捷方式
 
-# ── 8. 可选：Playwright 浏览器自动化 ─────────────────────────
-Write-Host ""
-Write-Host "  [可选] 浏览器自动化能力 (Playwright, 约 400MB)" -ForegroundColor Yellow
-$pw = Read-Host "  是否安装? [y/N]"
-if ($pw -match '^[Yy]$') {
-    Write-Info "安装 playwright ..."
-    & $PYTHON_EXE -m pip install playwright --quiet --no-warn-script-location `
-        -i $PIP_MIRROR 2>&1 | Out-Null
-    Write-Info "下载 Chromium 内核（约 400MB）..."
-    & $PYTHON_EXE -m playwright install chromium 2>&1
-    Write-Ok "Playwright 已安装，browser.* 能力已可用"
+if ($UpdateOnly) {
+    Write-Ok "更新完成。请重新双击桌面 Captain 图标启动。"
 } else {
-    Write-Info "跳过 Playwright（如需安装: python -m playwright install chromium）"
-}
+    # ── 8. 可选：Playwright 浏览器自动化 ─────────────────────────
+    Write-Host ""
+    Write-Host "  [可选] 浏览器自动化能力 (Playwright, 约 400MB)" -ForegroundColor Yellow
+    $pw = Read-Host "  是否安装? [y/N]"
+    if ($pw -match '^[Yy]$') {
+        Write-Info "安装 playwright ..."
+        & $PYTHON_EXE -m pip install playwright --quiet --no-warn-script-location `
+            -i $PIP_MIRROR 2>&1 | Out-Null
+        Write-Info "下载 Chromium 内核（约 400MB）..."
+        & $PYTHON_EXE -m playwright install chromium 2>&1
+        Write-Ok "Playwright 已安装，browser.* 能力已可用"
+    } else {
+        Write-Info "跳过 Playwright（如需安装: python -m playwright install chromium）"
+    }
 
-Print-Done
-Pause-Exit 0
+    Print-Done
+    Pause-Exit 0
+}
+exit 0

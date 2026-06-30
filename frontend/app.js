@@ -719,13 +719,13 @@ function updateStatusBar(p) {
   tokEl.hidden = false;
   if (div) div.hidden = false;
   track.hidden = false;
-  pctEl.hidden = false;
+  pctEl.hidden = true;
 
-  tokEl.textContent = tok;
+  tokEl.textContent = t('ctxUsageLabel').replace('{pct}', String(Math.round(pct)));
   fill.style.width = `${pct}%`;
   fill.classList.toggle('is-warn', pct >= 80 && pct < 95);
   fill.classList.toggle('is-high', pct >= 95);
-  pctEl.textContent = `${Math.round(pct)}%`;
+  pctEl.textContent = '';
   pctEl.classList.toggle('is-warn', pct >= 80);
   let tip = t('ctxTooltip').replace('{tok}', tok).replace('{pct}', String(Math.round(pct)));
   if (pct >= 80) tip += ' · ' + t('ctxWarn');
@@ -1393,10 +1393,8 @@ function highlightPaths(text) {
 function showTaskUsage(detail) {
   const el = document.getElementById('ctx-task-usage');
   if (!el || !detail) return;
-  const tokens = formatTokenCount(detail.tokens || 0);
-  const cost = (detail.cost_usd || 0).toFixed(4);
-  el.textContent = t('taskUsage').replace('{tokens}', tokens).replace('{cost}', cost);
-  el.hidden = false;
+  el.hidden = true;
+  el.textContent = '';
 }
 
 // 恢复服务端发来的历史消息
@@ -1428,7 +1426,6 @@ function renderRestored(messages) {
       const rel = (m.name === 'image.generate' || /已生成图片/.test(m.content || ''))
         ? normalizeArtifactRel('', m.content) : '';
       if (rel && isImageArtifact(rel)) pendingRestoreImages.push(rel);
-      else chatEvent('ok', m.name || '工具', (m.content || '').slice(0, 300));
     }
   });
   updateChatLayoutState();
@@ -1509,8 +1506,8 @@ function showThinking() {
   const area = document.getElementById('chat-messages');
   const d = document.createElement('div');
   d.id = 'thinking-indicator';
-  d.className = 'event-row';
-  d.innerHTML = `<span class="pill">·</span><span class="thinking-label" style="color:var(--dim)">思考中…</span>`;
+  d.className = 'thinking-row';
+  d.innerHTML = `<span class="thinking-spinner" aria-hidden="true"></span><span class="thinking-label">${t('thinkingWorking')}</span>`;
   area.appendChild(d); area.scrollTop = area.scrollHeight;
   thinkingEl = d;
 }
@@ -3804,9 +3801,11 @@ const I18N = {
     copyMsg: '复制',
     readAloud: '朗读',
     retryMsg: '重试',
-    taskUsage: '本次 ≈ {tokens} tokens · ${cost}',
+    taskUsage: '上下文占用提示',
     ctxTooltip: '上下文 {tok}（{pct}%）— 当前会话 token 估算',
+    ctxUsageLabel: '上下文占用 {pct}%',
     ctxWarn: '接近上限，建议新对话或 /rollback',
+    thinkingWorking: '正在处理…',
     errLabel: '错误',
     evtDispatch: '派发',
     evtAutoDispatch: '自动派发专家',
@@ -4172,9 +4171,11 @@ const I18N = {
     copyMsg: 'Copy',
     readAloud: 'Read aloud',
     retryMsg: 'Retry',
-    taskUsage: 'This run ≈ {tokens} tokens · ${cost}',
+    taskUsage: 'Context usage',
     ctxTooltip: 'Context {tok} ({pct}%) — estimated session tokens',
+    ctxUsageLabel: 'Context {pct}%',
     ctxWarn: 'Near limit — start a new chat or /rollback',
+    thinkingWorking: 'Working…',
     errLabel: 'Error',
     evtDispatch: 'Dispatch',
     evtAutoDispatch: 'Auto-dispatch experts',
@@ -4717,10 +4718,11 @@ async function doUpdate() {
     const d = await r.json();
     if (!d.ok) {
       status.style.color = 'var(--danger, #e55)';
-      status.textContent = '失败：' + (d.error || '未知错误');
+      const fallback = d.fallback_command ? `\n备用更新命令：${d.fallback_command}` : '';
+      status.textContent = '失败：' + (d.error || '未知错误') + fallback;
     } else if (d.already_latest) {
       status.style.color = 'var(--muted)';
-      status.textContent = '✓ 已是最新版本';
+      status.textContent = '✓ 已是最新版本' + (d.fallback_command ? `；备用命令：${d.fallback_command}` : '');
     } else {
       status.style.color = '#3ecf8e';
       status.textContent = '✓ 更新成功，正在重启…';

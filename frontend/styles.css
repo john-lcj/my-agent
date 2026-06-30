@@ -246,9 +246,9 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 
 .msg{max-width:100%;word-break:break-word;line-height:1.65;font-size:15px;animation:fadeUp .15s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}}
-.msg-user{align-self:flex-end;max-width:min(88%,32rem);width:fit-content;padding:10px 14px;border-radius:12px;
-          background:rgba(217,119,87,.09);border:1px solid rgba(217,119,87,.22);
-          color:var(--txt);white-space:pre-wrap;box-shadow:none}
+.msg-user{align-self:flex-end;max-width:min(88%,32rem);width:fit-content;padding:0;
+          background:transparent;border:none;color:var(--txt);white-space:normal;box-shadow:none;
+          display:flex;flex-direction:column;align-items:flex-end}
 .msg-user .msg-head{display:none}
 /* Claude 风格:助手回复是画布上的纯文本,无气泡/无边框/无左色条,更像文档而非聊天框。 */
 .msg-agent{align-self:stretch;max-width:100%;padding:4px 2px 16px;
@@ -257,7 +257,8 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .msg-label{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:none}
 .msg-label-user{color:var(--accent)}
 .msg-label-agent{color:var(--muted)}
-.msg-body.user-body{white-space:pre-wrap;line-height:1.6}
+.msg-body.user-body{white-space:pre-wrap;line-height:1.6;padding:10px 14px;border-radius:12px;
+                    background:rgba(217,119,87,.09);border:1px solid rgba(217,119,87,.22)}
 .msg-footer{display:flex;align-items:center;gap:0;margin-top:12px;padding-top:0;opacity:1}
 .msg-footer-btn{width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;
   justify-content:center;background:transparent;color:var(--dim);padding:0;flex-shrink:0}
@@ -391,20 +392,26 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .ctx-connecting{font-size:11px;color:var(--dim);letter-spacing:.01em}
 .ctx-pct.is-warn{color:var(--yellow)}
 .ctx-task-usage{font-size:11px;color:var(--dim);margin-left:8px;white-space:nowrap}
+.thinking-row{align-self:flex-start;display:flex;align-items:center;gap:8px;
+              color:var(--dim);font-size:13px;margin:4px 0 10px;padding:6px 2px}
+.thinking-spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);
+                  border-top-color:var(--accent);animation:spin .8s linear infinite;flex-shrink:0}
+.thinking-label{line-height:1.4}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 .composer-wrap{flex-shrink:0;padding:0 20px 24px;max-width:calc(var(--chat-max) + 40px);width:100%;margin:0 auto}
 .composer{display:flex;flex-direction:column;width:100%;background:var(--panel);
-          border:1px solid var(--border);border-radius:var(--r-composer);padding:14px 16px 10px;
-          box-shadow:0 1px 3px rgba(0,0,0,.04);transition:var(--trans);min-height:88px}
+          border:1px solid var(--border);border-radius:var(--r-composer);padding:10px 14px 8px;
+          box-shadow:0 1px 3px rgba(0,0,0,.04);transition:var(--trans);min-height:64px}
 .composer:focus-within{border-color:rgba(0,0,0,.12);
                        box-shadow:0 0 0 3px rgba(217,119,87,.08),0 2px 8px rgba(0,0,0,.04)}
 #chat-inp{flex:1 1 auto;width:100%;min-width:0;box-sizing:border-box;
           background:transparent;border:none;color:var(--txt);
           font:inherit;font-size:15px;outline:none;resize:none;
-          max-height:200px;overflow-y:auto;line-height:1.5;min-height:44px;padding:0}
+          max-height:180px;overflow-y:auto;line-height:1.45;min-height:24px;padding:0}
 #chat-inp::placeholder{color:var(--dim)}
 .composer-toolbar{display:flex;align-items:center;justify-content:space-between;
-  margin-top:10px;gap:8px;flex-wrap:wrap}
+  margin-top:6px;gap:8px;flex-wrap:wrap}
 .composer-left,.composer-right{display:flex;align-items:center;gap:4px}
 .composer-tool{width:32px;height:32px;border-radius:var(--r-sm);background:transparent;
   color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:18px;
@@ -496,6 +503,7 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
              font:inherit;font-size:13px;outline:none;transition:var(--trans)}
 .field-input:focus{border-color:var(--accent)}
 .field-input::placeholder{color:var(--dim)}
+#update-status{white-space:pre-wrap;line-height:1.45}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .field-hint{font-size:11px;color:var(--dim);margin-top:3px}
 .access-token-saved{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -745,11 +753,11 @@ option{background:var(--card)}
 #app.work-mode-chat .composer-dock{width:100%;max-width:calc(var(--chat-max) + 40px);margin:0 auto;padding:0 20px;
   display:flex;flex-direction:column;align-items:stretch}
 #app.work-mode-chat .composer-wrap{padding:0;margin:0;max-width:none}
-#app.work-mode-chat .composer{min-height:76px;padding:12px 14px 8px;border-radius:var(--r-composer);
+#app.work-mode-chat .composer{min-height:60px;padding:10px 14px 8px;border-radius:var(--r-composer);
   box-shadow:0 2px 12px rgba(0,0,0,.04)}
 #app.work-mode-chat .composer-dock:has(.usage-banner:not([hidden])) .composer{
   border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent}
-#app.work-mode-chat #chat-inp{min-height:36px;font-size:15px}
+#app.work-mode-chat #chat-inp{min-height:24px;font-size:15px}
 #app.work-mode-chat .composer-toolbar{margin-top:6px}
 .chat-quick-actions{display:none;flex-wrap:wrap;justify-content:center;gap:8px;width:100%}
 #app.work-mode-chat #chat-quick-actions{display:flex;margin-top:12px}

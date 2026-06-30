@@ -107,6 +107,16 @@ def register_system(app, task_store, template_store, vault, ext_channels,
     async def system_update() -> JSONResponse:
         import subprocess, sys
         root = _project_root()
+        fallback_command = (
+            'powershell -NoProfile -ExecutionPolicy Bypass -Command '
+            '\'$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; '
+            '$p = Join-Path $env:TEMP "captain-install.ps1"; '
+            '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; '
+            '(New-Object Net.WebClient).DownloadFile($u, $p); '
+            'powershell -NoProfile -ExecutionPolicy Bypass -File $p -UpdateOnly\''
+        ) if os.name == "nt" else (
+            "curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash"
+        )
 
         import shutil
         portable_git = os.path.join(root, "runtime", "git", "bin", "git.exe")
@@ -115,7 +125,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
         elif shutil.which("git"):
             git_cmd = "git"
         else:
-            return JSONResponse({"ok": False, "error": "未找到 git"}, status_code=500)
+            return JSONResponse({"ok": False, "error": "未找到 git",
+                                 "fallback_command": fallback_command}, status_code=500)
 
         portable_pip = os.path.join(root, "runtime", "python", "Scripts", "pip.exe")
         venv_pip_win = os.path.join(root, ".venv", "Scripts", "pip.exe")
@@ -135,11 +146,12 @@ def register_system(app, task_store, template_store, vault, ext_channels,
 
         try:
             fetch = subprocess.run(
-                [git_cmd, "-C", root, "fetch", "origin", "main"],
+                [git_cmd, "-C", root, "fetch", "--depth=1", "origin", "main"],
                 capture_output=True, text=True, timeout=60, env=git_env,
             )
             if fetch.returncode != 0:
-                return JSONResponse({"ok": False, "error": fetch.stderr.strip()}, status_code=500)
+                return JSONResponse({"ok": False, "error": fetch.stderr.strip(),
+                                     "fallback_command": fallback_command}, status_code=500)
             local = subprocess.run(
                 [git_cmd, "-C", root, "rev-parse", "HEAD"],
                 capture_output=True, text=True, env=git_env,
@@ -162,7 +174,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
                         capture_output=True, text=True, timeout=15, env=git_env,
                     )
                     if stash.returncode != 0:
-                        return JSONResponse({"ok": False, "error": stash.stderr.strip()}, status_code=500)
+                        return JSONResponse({"ok": False, "error": stash.stderr.strip(),
+                                             "fallback_command": fallback_command}, status_code=500)
                 reset = subprocess.run(
                     [git_cmd, "-C", root, "reset", "--hard", "FETCH_HEAD"],
                     capture_output=True, text=True, timeout=30, env=git_env,
@@ -171,7 +184,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
                     if had_stash:
                         subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
                                        capture_output=True, timeout=10, env=git_env)
-                    return JSONResponse({"ok": False, "error": reset.stderr.strip()}, status_code=500)
+                    return JSONResponse({"ok": False, "error": reset.stderr.strip(),
+                                         "fallback_command": fallback_command}, status_code=500)
                 if had_stash:
                     subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
                                    capture_output=True, timeout=10, env=git_env)
@@ -190,7 +204,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
                 )
                 if pip_result.returncode != 0:
                     err = (pip_result.stderr or b"").decode(errors="replace").strip()
-                    return JSONResponse({"ok": False, "error": f"pip install 失败: {err}"}, status_code=500)
+                    return JSONResponse({"ok": False, "error": f"pip install 失败: {err}",
+                                         "fallback_command": fallback_command}, status_code=500)
             if not already_latest:
                 async def _restart():
                     await asyncio.sleep(1)
@@ -206,6 +221,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
                     os._exit(0)
                 asyncio.create_task(_restart())
             return JSONResponse({"ok": True, "already_latest": already_latest,
-                                 "log": fetch.stderr.strip()})
+                                 "log": fetch.stderr.strip(),
+                                 "fallback_command": fallback_command})
         except Exception as e:
-            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+            return JSONResponse({"ok": False, "error": str(e),
+                                 "fallback_command": fallback_command}, status_code=500)
