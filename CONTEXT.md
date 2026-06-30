@@ -34,6 +34,7 @@
 
 | 文件 | 说明 |
 |------|------|
+| `PROJECT_MEMORY.md` | 项目北极星、长期产品判断与下一阶段建议 |
 | `server/app.py` | 主后端，所有 API 端点 |
 | `frontend/index.html` | 完整前端 HTML |
 | `frontend/app.js` | 前端逻辑（约4700行） |

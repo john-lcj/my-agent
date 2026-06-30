@@ -26,6 +26,7 @@ from core.types import (
     Role,
 )
 from governance.budget import BudgetGovernor
+from core.intent_router import classify_intent, intent_prompt_block
 
 # 软边界确认回调:由 channel 提供(CLI 用 input,Web 用确认卡片)。
 # confirm(call, decision, reason="") -> bool。reason 为治理给出的"为什么需要确认"。
@@ -84,6 +85,10 @@ class Agent:
 
         # 记录本轮任务文本，供 _run_loop 内各步做能力路由（按需发 specs 子集）。
         self._current_user_text = user_text
+
+        frame = classify_intent(user_text, ctx)
+        ctx.intent_frame = frame
+        ctx.add_system(intent_prompt_block(frame))
 
         self._inject_credentials_manifest(ctx)
         self._inject_memories(user_text, ctx)

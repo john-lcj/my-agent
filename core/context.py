@@ -24,6 +24,8 @@ class Context:
     captain_only: bool = False
     # Cowork 模式:全自动确认(仅硬边界拦),Chat 模式写操作需确认
     coworker: bool = False
+    # 每轮开始的轻量语境判断结果(内部使用,不直接展示给用户)
+    intent_frame: Any = None
     # Agent.run 期间注入,供能力回调确认门(软边界确认)
     confirm_fn: Any = None
     working: WorkingMemory = field(default_factory=WorkingMemory)
