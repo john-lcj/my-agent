@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.context import Context
-from core.intent_router import classify_intent, intent_prompt_block
+from core.intent_router import ROLE_BEHAVIORS, classify_intent, intent_prompt_block
 from core.types import Step
 
 
@@ -37,7 +37,44 @@ def test_prompt_block_is_internal_and_actionable():
     assert "内部使用" in block
     assert "不要向用户复述" in block
     assert "reviewer" in block
+    assert "角色行为契约" in block
+    assert "发现优先" in block
     assert "默认可改文件:否" in block
+
+
+def test_all_roles_have_detailed_behavior_contracts():
+    required = {
+        "advisor": ("顾问", "默认不改文件"),
+        "reviewer": ("审阅者", "按严重程度"),
+        "executor": ("执行者", "完成后必须验证"),
+        "researcher": ("研究员", "权威"),
+        "pm": ("产品经理", "优先级"),
+        "security": ("安全官", "不要回显秘密"),
+    }
+    for role, (label, phrase) in required.items():
+        behavior = ROLE_BEHAVIORS[role]
+        assert behavior.label == label
+        block = intent_prompt_block(
+            classify_intent({
+                "advisor": "解释一下这个函数",
+                "reviewer": "帮我看看有没有 bug",
+                "executor": "继续完成修复并跑测试",
+                "researcher": "查一下最新资料",
+                "pm": "你觉得产品方向怎么走",
+                "security": "这个 token 怎么设置安全",
+            }[role])
+        )
+        assert label in block
+        assert phrase in block
+        assert "工具策略" in block
+        assert "确认边界" in block
+        assert "验证标准" in block
+        assert "禁止事项" in block
+
+
+def test_pm_takes_precedence_for_product_advice():
+    frame = classify_intent("你有什么建议吗？这个产品方向怎么实现更好？")
+    assert frame.role == "pm"
 
 
 def test_agent_injects_intent_frame_without_user_visible_message():
