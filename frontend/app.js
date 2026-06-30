@@ -415,21 +415,29 @@ function reconnectWebSocket() {
   connect();
 }
 
+function wsAuthPayload() {
+  const token = getAuthToken() || getAccessToken();
+  return token ? { type: 'auth', token } : null;
+}
+
+function sendWsInit(sock) {
+  try {
+    const auth = wsAuthPayload();
+    if (auth) sock.send(JSON.stringify(auth));
+    sock.send(JSON.stringify(wsInitPayload()));
+  } catch {}
+}
+
 function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  // 优先用用户 JWT，降级用设备级 token
-  const _userTok = getAuthToken();
-  const _devTok  = getAccessToken();
-  const _tok = _userTok || _devTok;
-  const _q = _tok ? `?token=${encodeURIComponent(_tok)}` : '';
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const sock = new WebSocket(`${proto}//${location.host}/ws${_q}`);
+  const sock = new WebSocket(`${proto}//${location.host}/ws`);
   ws = sock;
   setWsConnected(false);
   sock.onopen = () => {
     if (ws !== sock) return;
     setWsConnected(true);
-    try { sock.send(JSON.stringify(wsInitPayload())); } catch {}
+    sendWsInit(sock);
     if (_wsSendQueue) {
       const q = _wsSendQueue;
       setTimeout(() => {
@@ -4743,6 +4751,59 @@ async function doUpdate() {
   } finally {
     btn.disabled = false;
     btn.textContent = '⬆ 检查并更新';
+  }
+}
+
+async function downloadBackup() {
+  const status = document.getElementById('backup-status');
+  if (status) { status.style.color = 'var(--muted)'; status.textContent = '正在导出…'; }
+  try {
+    const r = await fetch('/api/backup/export', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    const name = m ? m[1] : `captain-backup-${Date.now()}.json`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    if (status) { status.style.color = '#3ecf8e'; status.textContent = '备份已导出'; }
+  } catch (e) {
+    if (status) { status.style.color = 'var(--danger, #e55)'; status.textContent = '导出失败：' + (e.message || e); }
+  }
+}
+
+async function importBackupFile(input) {
+  const status = document.getElementById('backup-status');
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!confirm('导入会合并并覆盖同 ID 的本地会话、模板、任务、目标和档案。确定继续？')) {
+    input.value = '';
+    return;
+  }
+  if (status) { status.style.color = 'var(--muted)'; status.textContent = '正在导入…'; }
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const r = await fetch('/api/backup/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || '导入失败');
+    if (status) { status.style.color = '#3ecf8e'; status.textContent = '导入完成，刷新后生效'; }
+    refreshSessions();
+    loadSettingsUI();
+  } catch (e) {
+    if (status) { status.style.color = 'var(--danger, #e55)'; status.textContent = '导入失败：' + (e.message || e); }
+  } finally {
+    input.value = '';
   }
 }
 

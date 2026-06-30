@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 
 # ── 配置 ─────────────────────────────────────────────────────────────────────
@@ -87,6 +87,112 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Captain License Server", lifespan=lifespan)
+
+
+@app.get("/admin")
+async def admin_page() -> HTMLResponse:
+    html = """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Captain 授权后台</title>
+  <style>
+    body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f7f9;color:#20242a}
+    main{max-width:1080px;margin:0 auto;padding:28px 18px 60px}
+    h1{font-size:24px;margin:0 0 18px}
+    section{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:18px;margin:14px 0}
+    h2{font-size:16px;margin:0 0 12px}
+    label{display:block;font-size:12px;color:#667085;margin:8px 0 4px}
+    input,select,textarea{box-sizing:border-box;width:100%;border:1px solid #d0d5dd;border-radius:6px;padding:8px;background:#fff;color:#101828}
+    textarea{min-height:68px}
+    button{border:0;border-radius:6px;background:#2563eb;color:#fff;padding:9px 14px;font-weight:600;cursor:pointer}
+    button.secondary{background:#475467}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px}
+    .row{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+    .row>*{flex:1}
+    pre{white-space:pre-wrap;background:#0b1020;color:#e5e7eb;border-radius:8px;padding:12px;max-height:240px;overflow:auto}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{text-align:left;border-bottom:1px solid #eaecf0;padding:8px;font-size:12px;vertical-align:top}
+    .muted{color:#667085}
+  </style>
+</head>
+<body><main>
+  <h1>Captain 授权后台</h1>
+  <section>
+    <h2>管理员令牌</h2>
+    <div class="row">
+      <div><label>ADMIN_TOKEN</label><input id="tok" type="password" autocomplete="current-password" placeholder="只保存在本浏览器内存"></div>
+      <button class="secondary" onclick="loadKeys()">刷新列表</button>
+    </div>
+    <p class="muted">页面不会读取或展示服务端 ADMIN_TOKEN；所有管理请求通过你输入的令牌放在请求头里发送。</p>
+  </section>
+  <section>
+    <h2>生成授权码</h2>
+    <div class="grid">
+      <div><label>plan</label><select id="plan"><option value="pro">pro</option><option value="free">free</option></select></div>
+      <div><label>months</label><input id="months" type="number" min="1" value="12"></div>
+      <div><label>n</label><input id="n" type="number" min="1" max="100" value="1"></div>
+      <div><label>max_devices</label><input id="max_devices" type="number" min="1" value="2"></div>
+    </div>
+    <label>note</label><input id="note" placeholder="客户名 / 订单号 / 备注">
+    <p><button onclick="generateKeys()">生成</button></p>
+    <pre id="out">等待操作…</pre>
+  </section>
+  <section>
+    <h2>手动邮件发码</h2>
+    <div class="grid">
+      <div><label>email</label><input id="email" type="email" placeholder="customer@example.com"></div>
+      <div><label>plan</label><select id="mail_plan"><option value="pro">pro</option><option value="free">free</option></select></div>
+      <div><label>months</label><input id="mail_months" type="number" min="1" value="12"></div>
+      <div><label>note</label><input id="mail_note" value="manual"></div>
+    </div>
+    <p><button onclick="manualIssue()">生成并发送</button></p>
+  </section>
+  <section>
+    <h2>授权码列表</h2>
+    <div id="stats" class="muted"></div>
+    <table><thead><tr><th>key</th><th>plan</th><th>months</th><th>devices</th><th>activations</th><th>note</th><th>expires_at</th></tr></thead><tbody id="rows"></tbody></table>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const headers = () => ({'Content-Type':'application/json','X-Admin-Token':$('tok').value.trim()});
+const show = x => $('out').textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2);
+async function api(path, opts={}) {
+  const r = await fetch(path, {...opts, headers:{...headers(), ...(opts.headers||{})}});
+  const d = await r.json();
+  if (!r.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+async function generateKeys(){
+  try {
+    const body = {
+      plan:$('plan').value, months:+$('months').value, n:+$('n').value,
+      max_devices:+$('max_devices').value, note:$('note').value
+    };
+    const d = await api('/api/license/generate',{method:'POST',body:JSON.stringify(body)});
+    show(d.keys.join('\\n'));
+    loadKeys();
+  } catch(e) { show('失败：' + e.message); }
+}
+async function manualIssue(){
+  try {
+    const body = {email:$('email').value, plan:$('mail_plan').value, months:+$('mail_months').value, note:$('mail_note').value};
+    const d = await api('/api/payment/manual_issue',{method:'POST',body:JSON.stringify(body)});
+    show(d);
+    loadKeys();
+  } catch(e) { show('失败：' + e.message); }
+}
+async function loadKeys(){
+  try {
+    const d = await api('/api/license/list');
+    $('stats').textContent = `总计 ${d.stats.total} 个，已激活 ${d.stats.activated} 个`;
+    $('rows').innerHTML = d.keys.map(k => `<tr><td>${k.key}</td><td>${k.plan}</td><td>${k.months}</td><td>${k.max_devices}</td><td>${k.activations}</td><td>${k.note||''}</td><td>${k.expires_at ? new Date(k.expires_at*1000).toLocaleDateString() : ''}</td></tr>`).join('');
+  } catch(e) { show('失败：' + e.message); }
+}
+</script></body></html>"""
+    return HTMLResponse(html)
 
 
 # ── 管理员：批量生成 key ───────────────────────────────────────────────────────

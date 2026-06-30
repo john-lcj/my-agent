@@ -24,7 +24,7 @@
 - **存储**：SQLite（对话/记忆）+ JSON 文件（goals/monitors）存于 `data/`
 - **授权**：本地 XOR 缓存 `~/.captain/.license_cache`，验证服务 `license.irestart-your-life.club`
 - **开发绕过授权**：`CAPTAIN_DEV_PRO=1`
-- **persona 文件**：`persona.yaml`（owner 段存用户档案）
+- **persona 文件**：`persona.yaml`（agent 身份）+ `data/owner.json`（用户档案，不进 git）
 - **版本文件**：`VERSION`（当前 `0.1.0`）
 - **错误日志**：`logs/error.log`
 
@@ -41,7 +41,8 @@
 | `install.sh` | macOS/Linux 一键安装 |
 | `install.ps1` | Windows Portable 安装（当前正在调试） |
 | `main.py` | 启动入口，含 error log 初始化 |
-| `persona.yaml` | 用户档案（owner 段） |
+| `persona.yaml` | Agent 身份 |
+| `data/owner.json` | 用户档案（本地数据，不进 git） |
 | `VERSION` | 版本号 `0.1.0` |
 | `landing/index.html` | 产品介绍页 |
 | `landing/wechat-pay.jpg` | 微信收款码 |
@@ -75,10 +76,10 @@ python admin_cli.py gen --plan pro --days 365 --note "客户姓名"
 # 发送邮件
 python admin_cli.py send --key CAPT-PRO-XXXX-XXXX-XXXX --to 客户邮箱
 ```
-SMTP 配置：QQ 邮箱 `852420621@qq.com`，授权码 `jljnazhtexldbcif`
+SMTP 配置写在 `license_server/.env`，不要把邮箱授权码写入文档、聊天或提交历史。
 
 ### 产品功能
-- **用户档案**：`persona.yaml` owner 段，API `/api/profile` GET/POST
+- **用户档案**：`data/owner.json`，API `/api/profile` GET/POST
 - **工作流模板**：8个预设（每日简报/邮件/文件整理/会议纪要/研究/代码/数据/定时任务）
 - **目标管理**：`/api/goals` CRUD，存 `data/goals.json`
 - **变化监控**：`/api/monitors` CRUD，存 `data/monitors.json`
@@ -94,7 +95,7 @@ SMTP 配置：QQ 邮箱 `852420621@qq.com`，授权码 `jljnazhtexldbcif`
 
 **Windows 安装命令**（PowerShell）：
 ```powershell
-irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex
+powershell -NoProfile -ExecutionPolicy Bypass -Command '$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p'
 ```
 
 **macOS/Linux 安装命令**：
@@ -146,15 +147,7 @@ curl -fsSL https://irestart-your-life.club/install.sh | bash
 ## VPS 待办（用户需手动操作）
 
 1. 上传最新 `landing/index.html` 到 VPS
-2. SSH 到服务器，在 `/opt/license_server/.env` 添加 SMTP 配置：
-```
-SMTP_HOST=smtp.qq.com
-SMTP_PORT=465
-SMTP_USER=852420621@qq.com
-SMTP_PASS=jljnazhtexldbcif
-SMTP_FROM=852420621@qq.com
-```
-然后 `docker compose restart`
+2. SSH 到服务器，在 `/opt/license_server/.env` 添加 SMTP 配置，然后 `docker compose restart`。密钥只保存在服务器 `.env`，不要写进仓库文档。
 
 ---
 

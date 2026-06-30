@@ -261,7 +261,7 @@
     <div class="steps">
       <div class="step"><div class="step-num">1</div><h3>运行安装脚本</h3><p>终端粘贴一行 curl 命令，自动下载代码、配置环境、生成配置文件。</p></div>
       <div class="step"><div class="step-num">2</div><h3>填写 API Key</h3><p>在 .env 里填入你的 DeepSeek / OpenAI API Key，直接对接大模型，我们不做中间商。</p></div>
-      <div class="step"><div class="step-num">3</div><h3>打开浏览器使用</h3><p>运行 bash captain.sh 启动，浏览器打开 localhost:8765 即可开始对话。</p></div>
+      <div class="step"><div class="step-num">3</div><h3>打开浏览器使用</h3><p>运行 captain.sh / captain.bat 启动，浏览器打开 localhost:8000 即可开始对话。</p></div>
     </div>
     <div style="text-align:center;margin-top:48px">
       <button class="btn-primary" onclick="openInstallModal()" style="font-size:15px">查看安装命令</button>
@@ -324,7 +324,7 @@
     <div class="faq-list">
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">我的对话数据会上传到你们服务器吗？<span class="faq-arrow">+</span></div><div class="faq-a">不会。Captain 完全在你的本机运行，对话历史、文件、密钥都存在本地。我们的服务器只做授权码验证，不接触任何对话内容。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">需要我自己的 LLM API Key 吗？<span class="faq-arrow">+</span></div><div class="faq-a">是的。你需要自备 DeepSeek / OpenAI / Anthropic 等的 API Key，填在本地 .env 文件里。推荐 DeepSeek，价格极低，日常使用成本不超过 ¥5/月。</div></div>
-      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">支持。macOS、Windows、Linux 均可安装。Windows 用户在 PowerShell 运行 <code>irm .../install.ps1 | iex</code> 即可，自动安装所有依赖。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">支持。macOS、Windows、Linux 均可安装。Windows 用户在 PowerShell 运行安装命令即可，脚本会先下载到临时文件，再用 <code>powershell -File</code> 执行，自动安装依赖。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">Pro 授权可以换电脑用吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。Pro 支持最多 2 台设备同时激活。换新电脑时，联系我们注销旧设备即可重新激活。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">不满意可以退款吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。购买后 7 天内发邮件申请全额退款，无需理由。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">是开源的吗？<span class="faq-arrow">+</span></div><div class="faq-a">核心代码在 GitHub 开源（MIT 协议），可自行搭建。Pro 授权是对商业使用的支持，开源代码本身不受限制。</div></div>
@@ -361,7 +361,7 @@
     <div id="install-win" style="display:none">
       <p style="margin-bottom:10px">以管理员身份打开 PowerShell，运行：</p>
       <div class="install-cmd">
-        irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex
+        powershell -NoProfile -ExecutionPolicy Bypass -Command '$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p'
         <button class="copy-btn" onclick="copyInstall('win')">复制</button>
       </div>
     </div>
@@ -398,7 +398,7 @@ function openInstallModal() { document.getElementById('install-modal').classList
 function closeInstallModal() { document.getElementById('install-modal').classList.remove('open'); }
 function copyInstall(os) {
   const cmd = os === 'win'
-    ? 'irm https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1 | iex'
+    ? 'powershell -NoProfile -ExecutionPolicy Bypass -Command \'$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p\''
     : 'curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash';
   navigator.clipboard.writeText(cmd).then(() => {
     const btns = document.querySelectorAll('.copy-btn');

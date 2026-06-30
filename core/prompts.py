@@ -47,18 +47,33 @@ _PRINCIPLES_TEMPLATE = """你是 Captain,有分寸感的自主助理。行事原
 def runtime_env_block() -> str:
     """运行环境硬说明 —— 防止 agent 瞎猜工作目录 / 用错 python 而浪费步数。"""
     import os as _os
+    import platform as _platform
     cwd = (_os.environ.get("AGENT_SHELL_CWD", "").strip()
            or _os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
            or _os.getcwd())
+    is_win = _platform.system().lower().startswith("win")
+    if is_win:
+        python_hint = (
+            "- Python 解释器优先用 `python`,如果不可用再用 `py -3`;跑脚本写 `python scripts/xxx.py`"
+            "或 `py -3 scripts/xxx.py`。不要写 macOS/Linux 专用的 `python3`。\n"
+            "- 要把命令输出存成文件:PowerShell 可用 `python scripts/x.py | Set-Content data/out.txt`,"
+            "cmd 可用 `python scripts\\x.py > data\\out.txt`;更稳妥的是先读输出再用 fs.write 写入。\n"
+            "- 写文件前先确保目录存在:优先用 fs.write 或 Python `Path('data').mkdir(parents=True, exist_ok=True)`"
+            "跨平台创建目录;不要依赖 Unix 专用建目录参数。"
+        )
+    else:
+        python_hint = (
+            "- Python 解释器通常是 `python3`;跑脚本写 `python3 scripts/xxx.py`。若环境只提供 `python`,先用查询命令确认。\n"
+            "- 要把命令输出存成文件:用 `python3 scripts/x.py > data/out.txt`,"
+            "或先把内容读出来再用 fs.write 写入——别只在终端打印就当作已落盘。\n"
+            "- 写文件前先确保目录存在(如 `mkdir -p data report`),避免因目录缺失反复失败。"
+        )
     return (
         "【运行环境 · 必须遵守,别浪费步数试错】\n"
         f"- 你的工作目录固定为:{cwd}\n"
         "- shell.run 和 fs.* 已经默认在这个目录里运行。**绝不要 `cd` 到别的目录**,"
         "也不要猜测或拼接绝对路径;一律用相对工作目录的相对路径(如 scripts/x.py、data/x.csv)。\n"
-        "- Python 解释器是 `python3`(本机没有 `python` 这个命令);跑脚本写 `python3 scripts/xxx.py`。\n"
-        "- 要把命令输出存成文件:用 `python3 scripts/x.py > data/out.txt`,"
-        "或先把内容读出来再用 fs.write 写入——别只在终端打印就当作已落盘。\n"
-        "- 写文件前先确保目录存在(如 `mkdir -p data report`),避免因目录缺失反复失败。"
+        f"{python_hint}"
     )
 
 
@@ -73,7 +88,7 @@ _COWORK_MODE_PROMPT = """【当前模式 · Cowork 执行】
 - 你在工作区交付成果:产物落盘成文件,对话里只简报进度。少废话,先计划后执行。
 - **多步任务先用 plan.update 列出待办清单**,再一步步做;每开始/完成一步就再调 plan.update 更新该步状态(doing/done)。
 - 全自动执行(只有硬边界会被拦),不必为常规读写反复请示。
-- **交付的产物文件统一写到工作区下的 `产物/` 目录**(如 `产物/报告.md`、`产物/data.csv`),按需再分子目录;**不要把产物散落在代码目录里**。写前先 `mkdir -p 产物`。
+- **交付的产物文件统一写到工作区下的 `产物/` 目录**(如 `产物/报告.md`、`产物/data.csv`),按需再分子目录;**不要把产物散落在代码目录里**。写前优先用 fs.write 自动建目录,或用 Python `Path('产物').mkdir(parents=True, exist_ok=True)` 跨平台建目录。
 - **image.generate 生图**会保存到 `产物/` 并在 Web 聊天界面**内联显示**;回复里带上 `产物/xxx.png` 路径即可,勿说界面看不了图。
 - 【交付前自检 · preflight】产出后:回读关键产物确认内容无误、能跑的脚本真跑一遍看输出、对照待办逐项核对;有问题自己补,别把没验证的当完成。
 - 【遇阻不死磕】某一步失败:换条路(换工具/换数据源/换方法),并用 plan.update 把该步标 failed 或调整后续计划;实在做不成就如实写清缺口上报,不假装完成。

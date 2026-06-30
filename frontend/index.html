@@ -643,7 +643,7 @@
             <code>AUTH_SECRET</code> 用来保护登录态和远程访问。修改 <code>.env</code> 后需要重启服务。
           </div>
           <pre class="security-help-code">AGENT_WORKSPACE_ROOT=/Users/luchangjie/Desktop/my agent
-AUTH_SECRET=用随机字符串替换，例如运行: python3 -c "import secrets;print(secrets.token_urlsafe(32))"</pre>
+AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;print(secrets.token_urlsafe(32))"</pre>
         </div>
         <div style="margin-top:16px">
           <div style="font-size:13px;font-weight:500;margin-bottom:8px">审计日志（最近 50 条）
@@ -679,6 +679,12 @@ AUTH_SECRET=用随机字符串替换，例如运行: python3 -c "import secrets;
               ⬆ 检查并更新
             </button>
             <span id="update-status" style="margin-left:10px;font-size:13px;color:var(--muted)"></span>
+          </p>
+          <p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn-sm" onclick="downloadBackup()">导出备份</button>
+            <button type="button" class="btn-sm" onclick="document.getElementById('backup-import-input').click()">导入备份</button>
+            <input id="backup-import-input" type="file" accept="application/json,.json" style="display:none" onchange="importBackupFile(this)">
+            <span id="backup-status" style="font-size:13px;color:var(--muted)"></span>
           </p>
         </div>
         </div>

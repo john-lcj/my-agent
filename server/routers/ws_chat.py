@@ -26,14 +26,26 @@ def register_ws(app, is_loopback, is_proxied) -> None:
         import server.app as _sa
 
         client_host = ws.client.host if ws.client else ""
-        if is_proxied(ws.headers) or not is_loopback(client_host):
+        await ws.accept()
+        requires_auth = is_proxied(ws.headers) or not is_loopback(client_host)
+        if requires_auth:
             token = os.environ.get("AGENT_API_TOKEN", "").strip()
-            provided = ws.query_params.get("token") or ws.headers.get("x-agent-token", "")
+            provided = ws.headers.get("x-agent-token", "") or ws.query_params.get("token", "")
+            if not provided:
+                try:
+                    first = await asyncio.wait_for(ws.receive_json(), timeout=5)
+                except Exception:
+                    await ws.close(code=1008)
+                    return
+                if first.get("type") == "auth":
+                    provided = str(first.get("token") or "")
+                else:
+                    await ws.close(code=1008)
+                    return
             if not token or not hmac.compare_digest(provided, token):
                 await ws.close(code=1008)
                 return
 
-        await ws.accept()
         channel = WebChannel()
         ws_model: List[Optional[str]] = [None]
         ws_mode: list = [""]
@@ -276,6 +288,8 @@ def register_ws(app, is_loopback, is_proxied) -> None:
         try:
             while True:
                 msg = await ws.receive_json()
+                if msg.get("type") == "auth":
+                    continue
                 if msg.get("type") == "init":
                     from llm.model_registry import normalize_model_id
                     ws_mode[0] = str(msg.get("mode", "") or "")

@@ -9,6 +9,8 @@ defaults:
 shell_whitelist:
   - pattern: '^python3\s'
     reason: 运行Python脚本
+  - pattern: '^(python|py\s+-3)\s'
+    reason: Windows/Python 脚本执行
   - pattern: '\bmkdir\s+-p\b'
     reason: 创建工作区子目录
   - pattern: '\bwc\b(?:\s+-[a-z]+\s+|\s+)(?!/dev/)'
@@ -43,6 +45,18 @@ shell_whitelist:
     reason: 调试输出
   - pattern: '^python3\s.*>\s'
     reason: Python脚本输出到文件
+  - pattern: '^(python|py\s+-3)\s.*>\s'
+    reason: Windows/Python 脚本输出到文件
+  - pattern: '^(dir|type|where)\b'
+    reason: Windows cmd 只读查询
+  - pattern: '^(Get-ChildItem|Get-Content|Select-String|Measure-Object|Get-Location|Get-Date|Get-Command|Test-Path)\b'
+    reason: PowerShell 只读查询
+  - pattern: '^(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item)\b'
+    reason: PowerShell 文件写操作,需确认
+  - pattern: '^(Stop-Process|Start-Process|Start-Service|Stop-Service|Set-Service|Set-ExecutionPolicy)\b'
+    reason: PowerShell 进程/服务/执行策略操作,需确认
+  - pattern: '^(icacls|attrib)\b'
+    reason: Windows 权限/属性操作,需确认
 
 # 治理档位(保留供 Web runtime 切换;确认规则见 confirm 段,与档位无关)
 modes:
@@ -83,6 +97,22 @@ forbidden_patterns:
     reason: '把远程脚本管道直接交给 shell 执行,等于运行未经审查的任意代码。'
   - pattern: 'wget[^\n]*\|\s*(sudo\s+)?(ba)?sh\b'
     reason: '把远程脚本管道直接交给 shell 执行,等于运行未经审查的任意代码。'
+  - pattern: '\bRemove-Item\b[^\n]*(?:-Recurse\b[^\n]*-Force\b|-Force\b[^\n]*-Recurse\b)'
+    reason: 'PowerShell 递归强制删除不可逆,可能误删整个工作区。'
+  - pattern: '\b(del|erase)\b[^\n]*/s[^\n]*/q'
+    reason: 'cmd 递归静默删除不可逆,可能误删整个工作区。'
+  - pattern: '\b(rmdir|rd)\b[^\n]*/s[^\n]*/q'
+    reason: 'cmd 递归静默删除目录不可逆,可能误删整个工作区。'
+  - pattern: '\bformat\b\s+[a-z]:'
+    reason: '格式化 Windows 磁盘会清空数据。'
+  - pattern: '\bdiskpart\b'
+    reason: 'diskpart 可修改分区和磁盘,风险极高。'
+  - pattern: '\bbcdedit\b'
+    reason: 'bcdedit 会修改系统启动配置。'
+  - pattern: '\breg\b\s+delete\b'
+    reason: '删除注册表项可能破坏系统或应用。'
+  - pattern: '\btakeown\b[^\n]*/f\s+[a-z]:\\[^\n]*/r\b'
+    reason: '递归接管系统盘权限风险极高。'
 
 forbidden_paths:
   - pattern: '\.env'
@@ -148,6 +178,14 @@ confirm:
       reason: '安装依赖会改动环境,需确认。'
     - pattern: '\bmkdir\b|\btouch\b'
       reason: '创建路径/文件(改),需确认。'
+    - pattern: '\b(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item)\b'
+      reason: 'PowerShell 文件写入/移动/删除操作,需确认。'
+    - pattern: '\b(Stop-Process|Start-Process|Start-Service|Stop-Service|Set-Service|Set-ExecutionPolicy)\b'
+      reason: 'PowerShell 进程/服务/执行策略操作,需确认。'
+    - pattern: '\b(icacls|attrib)\b'
+      reason: 'Windows 权限/属性修改,需确认。'
+    - pattern: '\bpowershell\b[^\n]*-(EncodedCommand|enc)\b'
+      reason: '编码 PowerShell 命令不透明,需确认。'
 
 # 长期记忆:scheduler 禁止写入;其余自动记住,不再弹确认。
 memory:

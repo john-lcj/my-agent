@@ -629,6 +629,9 @@ def create_app():
     register_system(app, _task_store, _template_store, _vault, _ext_channels,
                     _scheduler_holder, _daemon_results, _START_TS)
 
+    from server.routers.backup import register_backup
+    register_backup(app)
+
     from server.routers.sessions import register_sessions
     register_sessions(app, _session_store)
 
