@@ -13,3 +13,5 @@ anthropic>=0.34.0       # Claude（可选）
 # 通用工具
 PyYAML>=6.0             # 配置文件解析
 aiohttp>=3.9.0          # web.search / web.fetch
+numpy>=1.24.0           # 默认长期记忆向量存储启动必需
+cryptography>=42.0.0    # 本地凭据保险库启动必需
