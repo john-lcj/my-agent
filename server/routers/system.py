@@ -10,6 +10,37 @@ from fastapi.responses import JSONResponse
 from config import Config
 
 
+def _project_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _env_path() -> str:
+    return os.path.join(_project_root(), ".env")
+
+
+def _write_env_value(key: str, value: str) -> None:
+    path = _env_path()
+    lines: list[str] = []
+    if os.path.isfile(path):
+      with open(path, "r", encoding="utf-8") as f:
+          lines = f.readlines()
+    found = False
+    out: list[str] = []
+    for line in lines:
+        raw = line.lstrip()
+        if raw.startswith(f"{key}="):
+            out.append(f"{key}={value}\n")
+            found = True
+        else:
+            out.append(line)
+    if not found:
+        if out and not out[-1].endswith("\n"):
+            out[-1] += "\n"
+        out.append(f"{key}={value}\n")
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(out)
+
+
 def register_system(app, task_store, template_store, vault, ext_channels,
                     scheduler_holder, daemon_results, start_ts) -> None:
     """scheduler_holder = [Scheduler|None]；start_ts = 进程启动时刻（float）。"""
@@ -31,6 +62,16 @@ def register_system(app, task_store, template_store, vault, ext_channels,
                                      if r.get("status") in ("queued", "running")),
             "total": len(daemon_results),
         }
+        token = os.environ.get("AGENT_API_TOKEN", "").strip()
+        auth_secret = os.environ.get("AUTH_SECRET", "").strip()
+        security = {
+            "workspace_root": bool(os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()),
+            "api_token": bool(token and token != "change-me-to-random-string"),
+            "auth_secret": bool(auth_secret and auth_secret != "captain-dev-secret-change-me-in-prod"),
+            "email_allowlist": bool(os.environ.get("EMAIL_ALLOWED_RECIPIENTS", "").strip()),
+            "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
+            "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
+        }
         return JSONResponse({
             "uptime_sec":       round(_time.time() - start_ts, 1),
             "sessions":         0,  # 避免循环引用；前端不展示此字段
@@ -42,12 +83,30 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "channels":         list(ext_channels.keys()),
             "daemon":           daemon,
             "scheduler_running": scheduler_holder[0] is not None,
+            "security":         security,
         })
+
+    @app.post("/api/system/security/access-token")
+    async def set_access_token(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        token = str(body.get("access_token") or "").strip()
+        if not token:
+            return JSONResponse({"ok": False, "error": "访问码不能为空"}, status_code=400)
+        if len(token) < 4:
+            return JSONResponse({"ok": False, "error": "访问码至少 4 位"}, status_code=400)
+        if len(token) > 128 or any(ch.isspace() for ch in token):
+            return JSONResponse({"ok": False, "error": "访问码不能包含空白，且长度不能超过 128"}, status_code=400)
+        _write_env_value("AGENT_API_TOKEN", token)
+        os.environ["AGENT_API_TOKEN"] = token
+        return JSONResponse({"ok": True, "configured": True})
 
     @app.post("/api/system/update")
     async def system_update() -> JSONResponse:
         import subprocess, sys
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        root = _project_root()
 
         import shutil
         portable_git = os.path.join(root, "runtime", "git", "bin", "git.exe")

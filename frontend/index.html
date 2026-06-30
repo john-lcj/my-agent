@@ -77,7 +77,7 @@
       <button type="button" class="lang-btn" id="lang-zh" onclick="setLanguage('zh')">中文</button>
       <button type="button" class="lang-btn" id="lang-en" onclick="setLanguage('en')">EN</button>
     </div>
-    <div class="sb-user" onclick="openSettings('general')" id="sb-user" title="设置">
+    <div class="sb-user" onclick="openSettings('profile')" id="sb-user" title="设置">
       <div class="sb-user-avatar">C</div>
       <div class="sb-user-name">captain</div>
     </div>
@@ -104,6 +104,8 @@
                 <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/>
               </svg>
             </button>
+            <button class="top-status-pill" type="button" id="top-status-pill" onclick="openSettings('setup')"
+                    title="启动检查">检查中</button>
             <button class="icon-btn sb-toggle" type="button" id="btn-workbench" onclick="toggleWorkbench()"
                     data-i18n-title="toggleWorkbench" aria-label="Toggle workbench">›</button>
             <div class="status-dot" id="dot" title="连接状态"></div>
@@ -114,6 +116,19 @@
             <div class="welcome" id="chat-empty">
               <div class="welcome-greet"><span class="welcome-greet-ic">☀</span><div class="welcome-title">Evening, captain</div></div>
               <div class="welcome-sub" data-i18n="welcome_chat">听懂目标，自己拆解执行，只给你结果</div>
+              <div class="setup-card" id="setup-card" hidden>
+                <div class="setup-card-head">
+                  <div>
+                    <div class="setup-card-title">启动检查</div>
+                    <div class="setup-card-sub">模型、访问、安全和档案配好后，Captain 就能稳定接活。</div>
+                  </div>
+                  <div class="setup-card-actions">
+                    <button type="button" class="btn-sm" onclick="openSettings('setup')">查看</button>
+                    <button type="button" class="setup-dismiss" onclick="dismissSetupStatus(event)" aria-label="关闭启动检查">×</button>
+                  </div>
+                </div>
+                <div class="setup-list" id="setup-list"></div>
+              </div>
             </div>
           </div>
           <div id="chat-status-bar" class="ctx-meter is-connecting" title="会话状态" aria-live="polite">
@@ -253,6 +268,7 @@
         </div>
         <div class="wb-prog-track"><div class="wb-prog-fill" id="wb-progress-bar"></div></div>
         <span class="dot"></span><span id="wb-progress-text" data-i18n="wbProgressIdle">等待任务</span>
+        <div class="wb-activity" id="wb-activity">最近动作会显示在这里</div>
         <div id="wb-plan-empty" class="wb-empty" data-i18n="wbPlanEmpty">交办任务后，执行步骤会出现在这里</div>
         <div id="wb-plan"></div>
       </div>
@@ -303,7 +319,7 @@
 
 <!-- Claude 式设置面板 -->
 <!-- 工作流模板弹窗 -->
-<div class="overlay" id="templates-overlay" onclick="closeIfBg(event,'templates-overlay')" style="display:none;align-items:center;justify-content:center">
+<div class="overlay" id="templates-overlay" onclick="closeIfBg(event,'templates-overlay')">
   <div class="modal" style="width:min(680px,96vw);max-height:80vh;overflow-y:auto;padding:28px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <h2 style="font-size:18px;font-weight:700">⚡ 工作流模板</h2>
@@ -321,8 +337,9 @@
       <nav class="settings-nav">
         <div class="settings-nav-title" id="settings-nav-title" data-i18n="settingsNavTitle">设置</div>
         <div class="settings-nav-group" id="nav-group-common" data-i18n="navGroupCommon">常用</div>
-        <div class="settings-nav-item active" data-tab="general" id="nav-general" onclick="switchSettingsTab('general', this)" data-i18n="settingsGeneral">通用</div>
-        <div class="settings-nav-item" data-tab="profile" id="nav-profile" onclick="switchSettingsTab('profile', this)">👤 我的档案</div>
+        <div class="settings-nav-item active" data-tab="profile" id="nav-profile" onclick="switchSettingsTab('profile', this)">我的档案</div>
+        <div class="settings-nav-item" data-tab="setup" id="nav-setup" onclick="switchSettingsTab('setup', this)">启动检查</div>
+        <div class="settings-nav-item" data-tab="general" id="nav-general" onclick="switchSettingsTab('general', this)" data-i18n="settingsGeneral">通用</div>
         <div class="settings-nav-item" data-tab="usage" onclick="switchSettingsTab('usage', this)" id="nav-usage" data-i18n="settingsUsage">用量</div>
         <div class="settings-nav-item" data-tab="keys" onclick="switchSettingsTab('keys', this)" id="nav-keys" data-i18n="modelKeyTitle">模型 API Key</div>
         <div class="settings-nav-group" id="nav-group-advanced" data-i18n="navGroupAdvanced">高级</div>
@@ -334,27 +351,38 @@
         <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)" data-i18n="settingsAbout">关于</div>
       </nav>
       <div class="settings-content">
+        <div class="settings-section" id="settings-setup">
+          <h2>启动检查</h2>
+          <p class="settings-desc">这里按“先能用、再安全、再自动化”的顺序检查关键配置。需要处理的建议会优先列在下面。</p>
+          <div class="diagnostic-summary" id="diagnostic-summary"></div>
+          <div class="diagnostic-grid" id="diagnostic-grid"></div>
+          <div class="diagnostic-actions">
+            <button class="btn-sm primary" type="button" onclick="loadSetupStatus()">重新检查</button>
+            <button class="btn-sm" type="button" onclick="openSettings('keys')">配置模型</button>
+            <button class="btn-sm" type="button" onclick="openSettings('profile')">填写档案</button>
+          </div>
+        </div>
         <!-- 用户档案 -->
-        <div class="settings-section" id="settings-profile">
-          <h2>👤 我的档案</h2>
-          <p class="settings-desc">填写后 Captain 会记住你是谁，每次对话都带着这些背景</p>
+        <div class="settings-section active" id="settings-profile">
+          <h2>我的档案</h2>
+          <p class="settings-desc">把你的称呼、背景和偏好告诉 Captain。之后它会用这些信息理解你的目标、调整语气，并减少每次重复交代上下文。</p>
           <div class="field-group" style="margin-top:16px">
-            <div class="field-label">你的名字</div>
-            <input id="profile-name" type="text" class="field-input" placeholder="例如：张三"/>
+            <div class="field-label">名字</div>
+            <input id="profile-name" type="text" class="field-input" placeholder="例如：李明"/>
           </div>
           <div class="field-group">
             <div class="field-label">让 Captain 称呼你</div>
-            <input id="profile-callme" type="text" class="field-input" placeholder="例如：老板、三哥、小张"/>
+            <input id="profile-callme" type="text" class="field-input" placeholder="例如：老板、船长、李老师"/>
           </div>
           <div class="field-group">
-            <div class="field-label">职业 / 背景</div>
+            <div class="field-label">身份与背景</div>
             <textarea id="profile-about" class="field-input" rows="3"
-              placeholder="例如：我是一名独立开发者，主要做 SaaS 产品，平时用 Python 和 Vue，关注 AI 方向。"></textarea>
+              placeholder="例如：我是一名独立开发者，正在做 AI 工具产品，平时关注增长、自动化和产品体验。"></textarea>
           </div>
           <div class="field-group">
-            <div class="field-label">偏好（每行一条）</div>
+            <div class="field-label">长期偏好（每行一条）</div>
             <textarea id="profile-prefs" class="field-input" rows="4"
-              placeholder="例如：&#10;回复要简洁，不要废话&#10;用中文回复&#10;代码优先用 Python"></textarea>
+              placeholder="例如：&#10;默认用中文回复&#10;先给结论，再给步骤&#10;代码改动要说明验证结果&#10;不确定时直接说不确定"></textarea>
           </div>
           <button type="button" onclick="saveProfile()"
             style="margin-top:8px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 20px;cursor:pointer;font-size:14px;font-weight:600">
@@ -363,7 +391,7 @@
           <span id="profile-save-status" style="margin-left:10px;font-size:13px;color:var(--muted)"></span>
         </div>
 
-        <div class="settings-section active" id="settings-general">
+        <div class="settings-section" id="settings-general">
           <h2 id="settings-general-title" data-i18n="settingsGeneral">通用</h2>
           <p class="settings-desc" id="settings-general-desc" data-i18n="settingsGeneralSub">默认模型、治理档位与会话成本上限</p>
         <div class="field-group">
@@ -380,10 +408,16 @@
         </div>
         <div class="field-group">
           <div class="field-label" data-i18n="tokenTitle">访问令牌(远程访问用)</div>
-          <div class="field-hint" style="margin-bottom:8px">仅当服务对外暴露(非 127.0.0.1)时需要:填入服务端 <code>AGENT_API_TOKEN</code>,本浏览器访问 /ws 与 /api/* 时自动携带。本机使用可留空。仅存于本浏览器。</div>
-          <div class="field-row">
+          <div class="field-hint" style="margin-bottom:8px">仅手机/Tailscale 等远程访问需要。这里设置服务端 <code>AGENT_API_TOKEN</code>，并同步保存到本浏览器；可以填数字访问码，也可以填随机字符串。</div>
+          <div class="access-token-saved" id="access-token-saved" hidden>
+            <span>服务端与本浏览器已保存访问令牌</span>
+            <button class="btn-sm" type="button" onclick="showAccessTokenEditor()">修改</button>
+            <button class="btn-sm" type="button" onclick="clearAccessToken()">清除本浏览器</button>
+          </div>
+          <div class="field-row" id="access-token-editor">
             <div class="field-group">
-              <input class="field-input" id="cfg-access-token" type="password" placeholder="未设置" autocomplete="off"/>
+              <input class="field-input" id="cfg-access-token" type="password" inputmode="numeric"
+                     placeholder="输入访问码或令牌" autocomplete="off"/>
             </div>
             <div class="field-group" style="align-self:flex-end">
               <button class="btn-sm primary" type="button" onclick="saveAccessToken()" data-i18n="btnSettingsSave">保存</button>
@@ -602,6 +636,15 @@
         <div style="font-size:13px;color:var(--muted);margin-bottom:10px" id="gov-stats-hint" data-i18n="govStatsHint">近 7 天治理裁决统计(来自 trace)</div>
         <div id="gov-stats-summary" style="display:none;margin-bottom:12px"></div>
         <div id="gov-stats-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
+        <div class="security-help-card" id="security-help-card">
+          <div class="security-help-title">安全边界设置</div>
+          <div class="security-help-desc">
+            <code>AGENT_WORKSPACE_ROOT</code> 会把文件读写限制在项目工作区内；
+            <code>AUTH_SECRET</code> 用来保护登录态和远程访问。修改 <code>.env</code> 后需要重启服务。
+          </div>
+          <pre class="security-help-code">AGENT_WORKSPACE_ROOT=/Users/luchangjie/Desktop/my agent
+AUTH_SECRET=用随机字符串替换，例如运行: python3 -c "import secrets;print(secrets.token_urlsafe(32))"</pre>
+        </div>
         <div style="margin-top:16px">
           <div style="font-size:13px;font-weight:500;margin-bottom:8px">审计日志（最近 50 条）
             <button class="btn-sm" style="margin-left:8px" onclick="loadAuditLog()">刷新</button>

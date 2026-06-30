@@ -174,6 +174,7 @@ function _reconnectWs() {
 
 document.addEventListener('DOMContentLoaded', () => {
   _authInit();
+  loadSetupStatus();
   setInterval(_refreshQuotaBar, 60000);
 });
 
@@ -555,6 +556,7 @@ function handle(ev) {
   else if (etype === 'capability_call') {
     _lastCapCall = { name: p.name || '', args: p.args || {} };
     updateThinkingStatus(p.name || '', p.intent || '');
+    updateWorkbenchActivity(p.name || '', p.intent || '', p.args || {});
     const name = p.name || '';
     const args = p.args || {};
     if (isToolTraceEnabled() && currentView === 'chat') {
@@ -614,6 +616,7 @@ function handle(ev) {
       }
     } catch {}
     _lastCapCall = null;
+    updateWorkbenchActivity(capName || 'tool', p.ok ? '完成' : (p.error || '失败'), {});
     if (isToolTraceEnabled() && currentView === 'chat') {
       const outFull = p.output || p.error || '';
       const hits = (capName === 'web.search' || capName === 'exa.search') && p.ok
@@ -629,6 +632,7 @@ function handle(ev) {
     }
   }
   else if (etype === 'governance_decision') {
+    updateWorkbenchActivity(p.name || 'governance', `${p.decision || ''} ${p.reason || ''}`.trim(), {});
     if (isToolTraceEnabled() && currentView === 'chat') {
       const dec = p.decision || '';
       const cls = dec === 'block' ? 'err' : (dec === 'ask' ? 'warn' : 'ok');
@@ -1403,6 +1407,7 @@ function renderRestored(messages) {
   if (!messages.length) {
     area.innerHTML = welcomeHtml();
     updateChatLayoutState();
+    renderSetupStatus();
     syncChatTopbarTitle();
     return;
   }
@@ -1439,15 +1444,33 @@ function chatEvent(cls, label, text) {
   area.scrollTop = area.scrollHeight;
 }
 
+function approvalRiskInfo(p) {
+  const name = p.name || '';
+  const args = p.args || {};
+  const risk = name.startsWith('fs.') || name.startsWith('skill.file') ? '文件改动'
+    : name.startsWith('shell.') ? '执行命令'
+    : name.startsWith('browser.') ? '浏览器操作'
+    : name.startsWith('http.') || name.includes('http_request') ? '外部请求'
+    : name.startsWith('schedule.') || name.startsWith('monitor.') || name.startsWith('goal.') ? '长期配置'
+    : '需确认';
+  const target = args.path || args.url || args.to || args.command || args.name || args.title || '';
+  return { risk, target: String(target || '').slice(0, 180) };
+}
+
 function approvalCard(p) {
   removeThinking();
   document.querySelectorAll('.approval-card').forEach(el => el.remove());
   const area = document.getElementById('chat-messages');
   const c = document.createElement('div');
   c.className = 'approval-card';
+  const info = approvalRiskInfo(p);
   c.innerHTML = `
     <div class="approval-title">⚠️ 需要你确认</div>
-    <div class="approval-detail">能力 <code>${escHtml(p.name)}</code></div>
+    <div class="approval-meta">
+      <div class="approval-meta-item"><div class="approval-meta-k">类型</div><div class="approval-meta-v">${escHtml(info.risk)}</div></div>
+      <div class="approval-meta-item"><div class="approval-meta-k">能力</div><div class="approval-meta-v">${escHtml(p.name || '')}</div></div>
+      <div class="approval-meta-item"><div class="approval-meta-k">目标</div><div class="approval-meta-v" title="${escAttr(info.target || '-')}">${escHtml(info.target || '-')}</div></div>
+    </div>
     <div class="approval-detail">参数 <code>${escHtml(JSON.stringify(p.args))}</code></div>
     ${p.intent ? `<div class="approval-detail" style="margin-top:4px">意图: ${escHtml(p.intent)}</div>` : ''}
     ${p.reason ? `<div class="approval-detail" style="margin-top:4px;color:var(--yellow)">治理: ${escHtml(p.reason)}</div>` : ''}
@@ -1466,6 +1489,18 @@ function approvalCard(p) {
   c.querySelector('.btn-allow').onclick = () => send({approved:true, grant_task:true});
   c.querySelector('.btn-once').onclick  = () => send({approved:true, grant_task:false});
   c.querySelector('.btn-deny').onclick  = () => send({approved:false});
+}
+
+function updateWorkbenchActivity(name, detail, args) {
+  const el = document.getElementById('wb-activity');
+  if (!el) return;
+  const now = new Date();
+  const hhmm = now.toTimeString().slice(0, 5);
+  let target = '';
+  try {
+    target = (args && (args.path || args.url || args.command || args.name)) || '';
+  } catch {}
+  el.textContent = `${hhmm} · ${name || '动作'}${detail ? ' · ' + String(detail).slice(0, 80) : ''}${target ? ' · ' + String(target).slice(0, 60) : ''}`;
 }
 
 function showThinking() {
@@ -1498,6 +1533,7 @@ function clearChat() {
   document.getElementById('chat-messages').innerHTML = welcomeHtml();
   msgCount = 0;
   updateChatLayoutState();
+  renderSetupStatus();
 }
 async function newChat() {
   if (taskRunning && ws && ws.readyState === WebSocket.OPEN) {
@@ -1709,7 +1745,8 @@ function switchSettingsTab(tab, el) {
     s.classList.toggle('active', s.id === 'settings-' + tab);
   });
   if (tab === 'tasks') refreshTasks();
-  if (tab === 'governance') loadGovStats();
+  if (tab === 'setup') loadSetupStatus();
+  if (tab === 'governance') { loadGovStats(); loadAuditLog(); }
   if (tab === 'usage') loadUsageStats();
   if (tab === 'channels' || tab === 'general' || tab === 'keys') loadSettingsUI();
   if (tab === 'goals') renderGoals();
@@ -2172,23 +2209,28 @@ async function loadAuditLog() {
   box.innerHTML = '加载中…';
   try {
     const d = await (await fetch('/api/audit?limit=50')).json();
-    const rows = d.logs || d.entries || d || [];
+    const rows = d.records || d.logs || d.entries || (Array.isArray(d) ? d : []);
     if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无审计日志</div>'; return; }
     box.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="color:var(--dim);text-align:left">
         <th style="padding:4px 8px">时间</th><th style="padding:4px 8px">操作</th>
-        <th style="padding:4px 8px">裁决</th><th style="padding:4px 8px">风险</th>
+        <th style="padding:4px 8px">裁决</th><th style="padding:4px 8px">结果</th><th style="padding:4px 8px">摘要</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = r.ts || r.timestamp || r.created_at;
-        const time = ts ? new Date(ts*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+        const time = typeof ts === 'number'
+          ? new Date(ts * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+          : (ts || '—');
         const dec = r.decision || r.verdict || '';
         const color = dec==='allow'?'#3cb371':dec==='block'?'#c84444':'#c89b3c';
+        const args = r.args && Object.keys(r.args).length ? JSON.stringify(r.args) : '';
+        const ok = r.ok === true ? '成功' : (r.ok === false ? '失败' : '—');
         return `<tr style="border-top:1px solid var(--border)">
           <td style="padding:4px 8px;color:var(--dim)">${escHtml(time)}</td>
-          <td style="padding:4px 8px">${escHtml(r.action||r.tool||r.capability||'')}</td>
+          <td style="padding:4px 8px">${escHtml(r.action||r.tool||r.capability||r.cap||'')}</td>
           <td style="padding:4px 8px;color:${color}">${escHtml(dec)}</td>
-          <td style="padding:4px 8px;color:var(--dim)">${escHtml(r.risk||r.risk_level||'')}</td>
+          <td style="padding:4px 8px;color:var(--dim)">${escHtml(ok)}</td>
+          <td style="padding:4px 8px;color:var(--dim)">${escHtml(r.detail || args || '')}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
@@ -2423,18 +2465,67 @@ async function selectModel(modelId) {
 
 const MODEL_KEY_FIELDS = { deepseek: 'key-deepseek', openai: 'key-openai', claude: 'key-claude' };
 
-function saveAccessToken() {
+async function saveAccessToken() {
   const el = document.getElementById('cfg-access-token');
   const result = document.getElementById('access-token-result');
   const v = (el?.value || '').trim();
+  if (!v) {
+    clearAccessToken();
+    return;
+  }
+  if (result) result.textContent = '正在保存到服务端…';
+  try {
+    const res = await fetch('/api/system/security/access-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: v }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) {
+      if (result) result.textContent = d.error || '保存失败，请稍后重试。';
+      return;
+    }
+  } catch {
+    if (result) result.textContent = '保存失败，请确认服务正在运行。';
+    return;
+  }
   setAccessToken(v);
-  if (el) { el.value = ''; el.placeholder = v ? '已设置(留空清除)' : '未设置'; }
-  if (result) result.textContent = v ? '已保存。重连后生效(刷新页面或重开会话)。' : '已清除访问令牌。';
+  if (el) el.value = '';
+  syncAccessTokenUI();
+  loadSetupStatus();
+  if (result) result.textContent = '已保存到服务端，并已同步到本浏览器。';
 }
 
 function loadAccessTokenField() {
+  syncAccessTokenUI();
+}
+
+function showAccessTokenEditor() {
+  const editor = document.getElementById('access-token-editor');
+  const saved = document.getElementById('access-token-saved');
+  const result = document.getElementById('access-token-result');
+  if (editor) editor.hidden = false;
+  if (saved) saved.hidden = true;
+  if (result) result.textContent = '';
   const el = document.getElementById('cfg-access-token');
-  if (el) { el.value = ''; el.placeholder = getAccessToken() ? '已设置(留空清除)' : '未设置'; }
+  if (el) { el.value = ''; el.placeholder = getAccessToken() ? '输入新访问码；留空保存则清除' : '输入访问码或令牌'; el.focus(); }
+}
+
+function clearAccessToken() {
+  setAccessToken('');
+  syncAccessTokenUI();
+  const result = document.getElementById('access-token-result');
+  if (result) result.textContent = '已清除访问令牌。';
+}
+
+function syncAccessTokenUI() {
+  const has = !!getAccessToken();
+  const editor = document.getElementById('access-token-editor');
+  const saved = document.getElementById('access-token-saved');
+  const el = document.getElementById('cfg-access-token');
+  if (editor) editor.hidden = has;
+  if (saved) saved.hidden = !has;
+  if (el) { el.value = ''; el.placeholder = has ? '输入新访问码；留空保存则清除' : '输入访问码或令牌'; }
 }
 
 let _customProviders = [];   // 本地新加、尚未保存的自定义端点 id
@@ -2572,6 +2663,197 @@ function formatTokenCount(n) {
   return String(n);
 }
 
+let _setupStatusCache = null;
+const SETUP_DISMISS_KEY = 'captain-setup-dismissed-this-session';
+
+function _diagCard({ key, title, state, stateText, body, action, tab }) {
+  return `<div class="diagnostic-card ${state}" data-diag="${escAttr(key || '')}">
+    <div class="diagnostic-title"><span>${escHtml(title)}</span><span class="diagnostic-state">${escHtml(stateText)}</span></div>
+    <div class="diagnostic-body">${escHtml(body)}</div>
+    ${tab ? `<button class="btn-sm" type="button" onclick="openSettings('${escAttr(tab)}')">${escHtml(action || '处理')}</button>` : ''}
+  </div>`;
+}
+
+function _setupItemHtml(item) {
+  return `<div class="setup-item ${item.state}">
+    <span class="setup-dot" aria-hidden="true"></span>
+    <span>${escHtml(item.title)} · ${escHtml(item.stateText)}</span>
+  </div>`;
+}
+
+function _diagSuggestionHtml(item) {
+  const label = item.state === 'bad' ? '需处理' : '建议';
+  return `<div class="diagnostic-suggestion ${item.state}">
+    <div class="diagnostic-suggestion-main">
+      <div class="diagnostic-suggestion-title">
+        <span>${escHtml(label)}</span>
+        <strong>${escHtml(item.title)}</strong>
+      </div>
+      <div class="diagnostic-suggestion-body">${escHtml(item.body)}</div>
+    </div>
+    ${item.tab ? `<button class="btn-sm" type="button" onclick="openSettings('${escAttr(item.tab)}')">${escHtml(item.action || '处理')}</button>` : ''}
+  </div>`;
+}
+
+function _modelConfigured(models, modelId) {
+  return (models || []).some(m => m.configured && (!modelId || m.id === modelId));
+}
+
+function isSetupStatusDismissed() {
+  try { return sessionStorage.getItem(SETUP_DISMISS_KEY) === '1'; } catch { return false; }
+}
+
+function dismissSetupStatus(e) {
+  e?.stopPropagation();
+  try { sessionStorage.setItem(SETUP_DISMISS_KEY, '1'); } catch {}
+  renderSetupStatus();
+}
+
+async function loadSetupStatus() {
+  const safeJson = async (url, fallback) => {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) return fallback;
+      return await r.json();
+    } catch { return fallback; }
+  };
+  const [cfg, modelsData, keysData, stats, lic, profileData, channelsData] = await Promise.all([
+    safeJson('/api/config', {}),
+    safeJson('/api/models?all=true', { models: [] }),
+    safeJson('/api/keys', { keys: {} }),
+    safeJson('/api/stats', {}),
+    safeJson('/api/license/status', {}),
+    safeJson('/api/profile', { profile: {} }),
+    safeJson('/api/channels', { enabled: {}, config: {} }),
+  ]);
+  const models = modelsData.models || [];
+  const keys = keysData.keys || {};
+  const security = stats.security || {};
+  const profile = profileData.profile || {};
+  const currentModel = cfg.model || '';
+  const configuredProviders = Object.values(keys).filter(k => k && k.configured).length;
+  const currentModelOk = _modelConfigured(models, currentModel);
+  const anyModelOk = models.some(m => m.configured);
+  const hasProfile = !!(profile.name || profile.call_me || profile.about || (profile.preferences || []).length);
+  const emailEnabled = !!((channelsData.enabled || {}).email);
+  const tokenSavedInBrowser = !!getAccessToken();
+  const remoteHost = security.web_host && !['127.0.0.1', 'localhost', ''].includes(String(security.web_host));
+
+  const cards = [
+    {
+      key: 'model',
+      title: '默认模型',
+      state: currentModelOk ? 'ok' : (anyModelOk ? 'warn' : 'bad'),
+      stateText: currentModelOk ? '已就绪' : (anyModelOk ? '需选择' : '未配置'),
+      body: currentModelOk ? `当前使用 ${currentModel}` : (anyModelOk ? '已有 Key，但默认模型未指向可用模型。' : '还没有可用模型 Key，聊天会不可用或回退测试模型。'),
+      action: '配置模型',
+      tab: 'keys',
+    },
+    {
+      key: 'keys',
+      title: '模型 Key',
+      state: configuredProviders ? 'ok' : 'bad',
+      stateText: configuredProviders ? `${configuredProviders} 个已配置` : '未配置',
+      body: configuredProviders ? 'Key 只保存在本机服务端，不会回显明文。' : '建议先配置 DeepSeek Key，国内网络最省心。',
+      action: '打开 Key 设置',
+      tab: 'keys',
+    },
+    {
+      key: 'remote',
+      title: '远程访问',
+      state: security.api_token ? 'ok' : (remoteHost ? 'bad' : 'warn'),
+      stateText: security.api_token ? '令牌已启用' : '建议设置',
+      body: remoteHost
+        ? `服务绑定 ${security.web_host}:${security.web_port || '8000'}；手机浏览器需要填访问码，本浏览器${tokenSavedInBrowser ? '已保存。' : '未保存。'}`
+        : '本机使用可不填；手机/Tailscale 访问时需要访问令牌。',
+      action: '通用设置',
+      tab: 'general',
+    },
+    {
+      key: 'security',
+      title: '安全边界',
+      state: security.workspace_root && security.auth_secret ? 'ok' : 'warn',
+      stateText: security.workspace_root && security.auth_secret ? '稳妥' : '可加固',
+      body: `${security.workspace_root ? '工作区已限制' : '未设置 AGENT_WORKSPACE_ROOT'}；${security.auth_secret ? 'AUTH_SECRET 已设置' : 'AUTH_SECRET 建议随机化'}。`,
+      action: '查看治理',
+      tab: 'governance',
+    },
+    {
+      key: 'profile',
+      title: '个人档案',
+      state: hasProfile ? 'ok' : 'warn',
+      stateText: hasProfile ? '已填写' : '待填写',
+      body: hasProfile ? 'Captain 会在对话里带着你的背景和偏好。' : '填写职业背景、称呼和偏好后，回复会更贴近你。',
+      action: '填写档案',
+      tab: 'profile',
+    },
+    {
+      key: 'delivery',
+      title: '通知投递',
+      state: emailEnabled ? 'ok' : 'warn',
+      stateText: emailEnabled ? '邮件已启用' : '未启用',
+      body: emailEnabled ? '定时任务和主动简报可以投递到邮箱。' : '不影响聊天；要接收简报和异步结果时再配置邮箱。',
+      action: '配置连接器',
+      tab: 'channels',
+    },
+    {
+      key: 'license',
+      title: '授权状态',
+      state: lic.plan === 'pro' || lic.is_pro ? 'ok' : 'warn',
+      stateText: (lic.plan || 'free').toUpperCase(),
+      body: lic.days_left != null ? `授权剩余 ${lic.days_left} 天。` : 'Free 可用基础功能；Pro 开启主动任务和高级工作流。',
+      action: '激活授权',
+      tab: 'about',
+    },
+  ];
+  _setupStatusCache = { cards, cfg, models, keys, stats, license: lic, profile, channels: channelsData, tokenSavedInBrowser };
+  renderSetupStatus();
+  return _setupStatusCache;
+}
+
+function renderSetupStatus() {
+  const data = _setupStatusCache;
+  if (!data) return;
+  const pending = data.cards.filter(c => c.state === 'bad' || c.state === 'warn');
+  const summary = document.getElementById('diagnostic-summary');
+  if (summary) {
+    summary.innerHTML = pending.length
+      ? `<div class="diagnostic-summary-head">
+          <strong>当前建议</strong>
+          <span>${pending.length} 项需要你确认或补齐</span>
+        </div>${pending.map(_diagSuggestionHtml).join('')}`
+      : `<div class="diagnostic-summary-head ok">
+          <strong>当前建议</strong>
+          <span>关键配置都已就绪，可以直接使用。</span>
+        </div>`;
+  }
+  const grid = document.getElementById('diagnostic-grid');
+  if (grid) grid.innerHTML = data.cards.map(_diagCard).join('');
+  const setup = document.getElementById('setup-card');
+  const list = document.getElementById('setup-list');
+  if (setup && list) {
+    const important = data.cards.filter(c => ['model', 'keys', 'remote', 'profile'].includes(c.key));
+    list.innerHTML = important.map(_setupItemHtml).join('');
+    setup.hidden = isSetupStatusDismissed() || (important.every(c => c.state === 'ok') && msgCount > 0);
+  }
+  const top = document.getElementById('top-status-pill');
+  if (top) {
+    const bad = data.cards.filter(c => c.state === 'bad').length;
+    const warn = data.cards.filter(c => c.state === 'warn').length;
+    top.className = 'top-status-pill ' + (bad ? 'bad' : warn ? 'warn' : 'ok');
+    top.textContent = bad ? `${bad} 项需处理` : warn ? `${warn} 项建议` : '状态就绪';
+    top.title = pending.length ? pending.map(c => `${c.title}: ${c.body}`).join('\n') : '状态就绪';
+  }
+  const securityHelp = document.getElementById('security-help-card');
+  if (securityHelp) {
+    const security = data.stats?.security || {};
+    securityHelp.hidden = !!(security.workspace_root && security.auth_secret);
+  }
+}
+
+window.loadSetupStatus = loadSetupStatus;
+window.dismissSetupStatus = dismissSetupStatus;
+
 async function loadSettingsUI() {
   const cfg = loadConfig();
   try {
@@ -2607,6 +2889,7 @@ async function loadSettingsUI() {
     }
     setChannelStatus('email', en.email);
   } catch { /* 离线 */ }
+  loadSetupStatus();
 }
 
 function emailChannelValues() {
@@ -3295,6 +3578,22 @@ function refreshWelcomeGreeting() {
   if (el) el.textContent = getTimeGreeting();
 }
 
+function setupCardHtml() {
+  return `<div class="setup-card" id="setup-card" hidden>
+    <div class="setup-card-head">
+      <div>
+        <div class="setup-card-title">启动检查</div>
+        <div class="setup-card-sub">模型、访问、安全和档案配好后，Captain 就能稳定接活。</div>
+      </div>
+      <div class="setup-card-actions">
+        <button type="button" class="btn-sm" onclick="openSettings('setup')">查看</button>
+        <button type="button" class="setup-dismiss" onclick="dismissSetupStatus(event)" aria-label="关闭启动检查">×</button>
+      </div>
+    </div>
+    <div class="setup-list" id="setup-list"></div>
+  </div>`;
+}
+
 function welcomeHtml() {
   if (workMode === 'coworker') {
     const sub = t('welcome_coworker');
@@ -3310,6 +3609,7 @@ function welcomeHtml() {
     <div class="welcome-sub">${sub}</div>
     <div class="welcome-chips"></div>
     <div class="welcome-scenarios"></div>
+    ${setupCardHtml()}
   </div>`;
 }
 
@@ -4235,7 +4535,10 @@ function applyI18n() {
   if (sessionTitle) syncChatTopbarTitle();
   _wbUpdateProgressFraction();
   const area = document.getElementById('chat-messages');
-  if (area && !area.querySelector('.msg')) area.innerHTML = welcomeHtml();
+  if (area && !area.querySelector('.msg')) {
+    area.innerHTML = welcomeHtml();
+    renderSetupStatus();
+  }
   renderSessions(allSessions);
   renderShortcutsList();
   renderQuickActions();
@@ -4299,31 +4602,47 @@ function openTemplates() {
   const overlay = document.getElementById('templates-overlay');
   const grid = document.getElementById('templates-grid');
   grid.innerHTML = WORKFLOW_TEMPLATES.map((t, i) => `
-    <div onclick="useTemplate(${i})" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;
-      padding:16px;cursor:pointer;transition:border-color .15s"
+    <button type="button" data-workflow-template="${i}" style="text-align:left;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:12px;
+      padding:16px;cursor:pointer;transition:border-color .15s;width:100%"
       onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div style="font-size:24px;margin-bottom:8px">${t.icon}</div>
-      <div style="font-weight:600;margin-bottom:4px">${t.title}</div>
-      <div style="font-size:13px;color:var(--muted)">${t.desc}</div>
-    </div>
+      <div style="font-size:24px;margin-bottom:8px">${escHtml(t.icon)}</div>
+      <div style="font-weight:600;margin-bottom:4px">${escHtml(t.title)}</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.4">${escHtml(t.desc)}</div>
+      <div style="font-size:12px;color:var(--accent);margin-top:10px">开始执行</div>
+    </button>
   `).join('');
-  overlay.style.display = 'flex';
+  overlay.classList.add('open');
 }
 
 function closeTemplates() {
-  document.getElementById('templates-overlay').style.display = 'none';
+  document.getElementById('templates-overlay')?.classList.remove('open');
 }
 
 function useTemplate(idx) {
   const t = WORKFLOW_TEMPLATES[idx];
+  if (!t) return;
+  if (taskRunning) {
+    alert('当前已有任务在执行，请先等待完成或停止后再启动模板。');
+    return;
+  }
   closeTemplates();
+  switchView('chat');
+  closeMobileSidebar();
   const input = document.getElementById('chat-inp');
   if (input) {
     input.value = t.prompt;
     input.dispatchEvent(new Event('input'));
     input.focus();
   }
+  if (typeof onSendClick === 'function') onSendClick();
 }
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest?.('[data-workflow-template]');
+  if (!btn) return;
+  e.preventDefault();
+  useTemplate(parseInt(btn.dataset.workflowTemplate, 10));
+});
 
 async function loadProfile() {
   try {
@@ -4524,7 +4843,10 @@ function setWorkMode(mode, opts = {}) {
     const sub = document.querySelector('#chat-empty .welcome-sub');
     if (sub) sub.textContent = t(`welcome_${workMode}`);
     const area = document.getElementById('chat-messages');
-    if (area && !area.querySelector('.msg')) area.innerHTML = welcomeHtml();
+    if (area && !area.querySelector('.msg')) {
+      area.innerHTML = welcomeHtml();
+      renderSetupStatus();
+    }
   }
 }
 
