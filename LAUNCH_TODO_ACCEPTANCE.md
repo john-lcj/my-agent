@@ -117,7 +117,7 @@
 
 ### P0-5 官网下载链路验收
 
-状态：`[!]`
+状态：`[x]`
 
 目标：官网介绍页上的下载、购买、联系、更新说明都能完成闭环。
 
@@ -138,8 +138,9 @@
 
 - 本地 `landing/index.html` 已改为 macOS DMG 优先：Apple Silicon 与 Intel Mac 两个下载入口，命令行作为备用安装方式。
 - 本地静态检查通过：安全卖点第一、数据本地化第二；二维码资源存在；联系邮箱为 `luchangjie@outlook.com`；两个 DMG 链接已写入。
-- 线上检查：`https://github.com/john-lcj/my-agent/releases` 可访问；但 `releases/latest/download/Captain_0.1.0_arm64.dmg` 与 `Captain_0.1.0_x86_64.dmg` 当前返回 404。
-- 阻塞原因：GitHub 还没有创建 Release 并上传两个 DMG。完成 P0-5 需要先发布 Release，然后再部署新版 `landing/index.html` 到 `https://irestart-your-life.club/` 并复测。
+- GitHub Release 已创建：`https://github.com/john-lcj/my-agent/releases/tag/v0.1.0`。
+- 线上检查通过：官网首页、二维码、Apple Silicon DMG、Intel DMG、Release 页面均返回 200。
+- 下载资产大小：Apple Silicon `127726785` bytes；Intel `129140352` bytes；`SHA256SUMS.txt` 已上传。
 
 ## P1 强烈建议完成
 
