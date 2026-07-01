@@ -85,7 +85,13 @@ class OpenAILLM:
             )
         client = self._clients.get(key)
         if client is None:
-            client = AsyncOpenAI(api_key=key, base_url=self.base_url)
+            kwargs = {"api_key": key, "base_url": self.base_url}
+            if (self.name or "").lower() == "openrouter":
+                kwargs["default_headers"] = {
+                    "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "https://irestart-your-life.club"),
+                    "X-OpenRouter-Title": os.environ.get("OPENROUTER_APP_TITLE", "Captain"),
+                }
+            client = AsyncOpenAI(**kwargs)
             self._clients[key] = client
         return client
 

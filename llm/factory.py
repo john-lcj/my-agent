@@ -83,7 +83,8 @@ def build_llm(provider: str | None = None, model: str | None = None,
 def _build_ext_llm(model_id: str):
     """解析 ext:<provider> → 用其 base_url+key+model 直接构建 OpenAI 兼容 LLM。
 
-    ext:xiaomi → 读 VISION_*(用户用视觉那套配的小米);其余 ext:<prov> → 读 model_keys.json。
+    ext:xiaomi → 读 VISION_*(用户用视觉那套配的小米);其余 ext:<prov> → 读 ModelKeyStore
+    (macOS App 下会从 Keychain 取 key,JSON 里只留元数据)。
     """
     import json
     import os as _os
@@ -95,12 +96,9 @@ def _build_ext_llm(model_id: str):
         base = _os.environ.get("VISION_BASE_URL", "").strip() or None
         mname = _os.environ.get("VISION_MODEL", "").strip()
     else:
-        v: dict = {}
         try:
-            path = _os.path.join(Config.LOG_DIR, "model_keys.json")
-            data = json.load(open(path, encoding="utf-8")) if _os.path.isfile(path) else {}
-            raw = data.get(prov) or {}
-            v = raw if isinstance(raw, dict) else {"key": raw}
+            from server.model_keys import ModelKeyStore
+            v = ModelKeyStore(path=_os.path.join(Config.LOG_DIR, "model_keys.json")).get_config(prov)
         except Exception:
             v = {}
         key = str(v.get("key", "")).strip()
@@ -138,6 +136,15 @@ def _build_single(provider: str | None = None, model: str | None = None, api_key
     if p == "claude":
         from llm.claude_llm import ClaudeLLM
         return ClaudeLLM(model=api_name or Config.CLAUDE_MODEL)
+    if p == "openrouter":
+        import os as _os
+        from llm.openai_llm import OpenAILLM
+        return OpenAILLM(
+            model=api_name or Config.OPENROUTER_MODEL,
+            api_key_env="OPENROUTER_API_KEY",
+            base_url=_os.environ.get("OPENROUTER_BASE_URL", "").strip() or Config.OPENROUTER_BASE_URL,
+            name="openrouter",
+        )
     if p == "deepseek":
         from llm.deepseek_llm import DeepSeekLLM
         # 显式 api_key 优先;否则自动用 key 池(多 key 时按调用轮换,绕开单 key 并发上限)。

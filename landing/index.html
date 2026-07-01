@@ -145,6 +145,14 @@
   .install-steps { margin-bottom: 24px; }
   .install-steps li { color: var(--dim); font-size: 14px; margin-bottom: 8px; padding-left: 4px; }
   .install-steps li b { color: var(--txt); }
+  .download-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 16px 0 18px; }
+  .download-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+    background: #111114; text-align: left; transition: border-color .15s, transform .1s; }
+  .download-card:hover { border-color: var(--accent2); transform: translateY(-1px); }
+  .download-card strong { display: block; font-size: 15px; margin-bottom: 3px; color: var(--txt); }
+  .download-card span { display: block; font-size: 12px; color: var(--dim); }
+  .download-fallback { font-size: 12px; color: var(--dim); margin: 8px 0 18px; line-height: 1.7; }
+  .download-fallback a { color: var(--accent2); text-decoration: underline; text-underline-offset: 3px; }
   .pay-tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
   .pay-tab { padding: 7px 20px; border-radius: 8px; border: 1px solid var(--border);
     background: none; color: var(--dim); font-size: 13px; cursor: pointer; transition: all .15s; }
@@ -176,11 +184,12 @@
   footer a { color: var(--dim); margin: 0 12px; }
   footer a:hover { color: var(--txt); }
 
-  @media (max-width: 640px) {
-    section { padding: 64px 0; } .hero { padding: 80px 0 64px; }
-    .nav-links { display: none; } h1 { letter-spacing: -1px; }
-    .modal-box { padding: 28px 20px; }
-  }
+	  @media (max-width: 640px) {
+	    section { padding: 64px 0; } .hero { padding: 80px 0 64px; }
+	    .nav-links { display: none; } h1 { letter-spacing: -1px; }
+	    .modal-box { padding: 28px 20px; }
+	    .download-grid { grid-template-columns: 1fr; }
+	  }
 </style>
 </head>
 <body>
@@ -190,7 +199,7 @@
     <div class="nav-logo">⚡ <span>Captain</span></div>
     <div class="nav-links">
       <a href="#features">功能</a>
-      <a href="#how">安装</a>
+      <a href="#how">下载</a>
       <a href="#pricing">定价</a>
       <a href="#faq">FAQ</a>
     </div>
@@ -214,7 +223,7 @@
         购买 Pro
       </button>
     </div>
-    <p class="hero-hint">macOS · Windows · Linux · MIT 开源</p>
+	    <p class="hero-hint">macOS DMG 下载 · 命令行备用安装 · MIT 开源</p>
     <div class="terminal">
       <div class="term-bar">
         <div class="term-dot" style="background:#ff5f57"></div>
@@ -257,13 +266,13 @@
 <!-- HOW -->
 <section id="how" style="background:var(--surface)">
   <div class="container">
-    <div class="section-label">安装流程</div>
-    <h2>三步开始使用</h2>
-    <p class="section-sub">终端运行一行命令，5 分钟内完成安装。</p>
+    <div class="section-label">下载与安装</div>
+    <h2>下载 App，拖进 Applications</h2>
+    <p class="section-sub">macOS 用户优先下载 DMG；命令行安装作为备用方案保留。</p>
     <div class="steps">
-      <div class="step"><div class="step-num">1</div><h3>运行安装脚本</h3><p>终端粘贴一行 curl 命令，自动下载代码、配置环境、生成配置文件。</p></div>
-      <div class="step"><div class="step-num">2</div><h3>填写 API Key</h3><p>在 .env 里填入你的 DeepSeek / OpenAI API Key，直接对接大模型，我们不做中间商。</p></div>
-      <div class="step"><div class="step-num">3</div><h3>打开浏览器使用</h3><p>运行 captain.sh / captain.bat 启动，浏览器打开 localhost:8000 即可开始对话。</p></div>
+      <div class="step"><div class="step-num">1</div><h3>选择芯片版本</h3><p>Apple Silicon 选 arm64，Intel Mac 选 x86_64。下载后打开 DMG。</p></div>
+      <div class="step"><div class="step-num">2</div><h3>拖入 Applications</h3><p>把 Captain 拖进应用程序文件夹；首次打开如有安全提示，到系统设置允许即可。</p></div>
+      <div class="step"><div class="step-num">3</div><h3>配置模型 Key</h3><p>在 App 的模型接入页填入 OpenRouter、DeepSeek 或其他平台 Key，点击测试连接。</p></div>
     </div>
     <div style="text-align:center;margin-top:48px">
       <button class="btn-primary" onclick="openInstallModal()" style="font-size:15px">查看安装命令</button>
@@ -348,13 +357,27 @@
 <!-- 安装弹窗 -->
 <div class="modal-overlay" id="install-modal" onclick="if(event.target===this)closeInstallModal()">
   <div class="modal-box">
-    <h3>安装 Captain</h3>
+    <h3>下载 Captain</h3>
+    <p style="margin-bottom:10px">选择与你的 Mac 芯片匹配的安装包。下载后打开 DMG，把 Captain 拖入 Applications。</p>
+    <div class="download-grid">
+      <a class="download-card" id="download-arm64" href="https://github.com/john-lcj/my-agent/releases/latest/download/Captain_0.1.0_arm64.dmg">
+        <strong>Apple Silicon</strong>
+        <span>M1 / M2 / M3 / M4 · arm64 DMG</span>
+      </a>
+      <a class="download-card" id="download-x64" href="https://github.com/john-lcj/my-agent/releases/latest/download/Captain_0.1.0_x86_64.dmg">
+        <strong>Intel Mac</strong>
+        <span>x86_64 DMG</span>
+      </a>
+    </div>
+    <p class="download-fallback">
+      如果下载失败，请打开 <a href="https://github.com/john-lcj/my-agent/releases" target="_blank">GitHub Releases</a> 选择最新版安装包。未签名测试版首次打开时，macOS 可能需要在“系统设置 -> 隐私与安全”里允许打开。
+    </p>
     <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button onclick="switchOS('mac',this)" class="pay-tab active" style="flex:1">🍎 macOS / Linux</button>
-      <button onclick="switchOS('win',this)" class="pay-tab" style="flex:1">🪟 Windows</button>
+      <button onclick="switchOS('mac',this)" class="pay-tab active" style="flex:1">命令行备用</button>
+      <button onclick="switchOS('win',this)" class="pay-tab" style="flex:1">Windows 备用</button>
     </div>
     <div id="install-mac">
-      <p style="margin-bottom:10px">在终端运行以下命令（自动安装 Python、git）：</p>
+      <p style="margin-bottom:10px">源码/命令行备用安装：</p>
       <div class="install-cmd">
         curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash
         <button class="copy-btn" onclick="copyInstall('mac')">复制</button>

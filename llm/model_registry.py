@@ -10,12 +10,23 @@ from typing import Optional
 from config import Config
 
 
+def _is_real_key(value: str | None) -> bool:
+    raw = (value or "").strip()
+    if not raw:
+        return False
+    low = raw.lower()
+    if low in {"xxx", "sk-xxx", "sk-deepseek-xxx", "sk-ant-xxx", "your-api-key", "replace-me"}:
+        return False
+    return "xxx" not in low and "placeholder" not in low
+
+
 @dataclass(frozen=True)
 class ModelSpec:
     id: str
     provider: str
     label: str
     context: int
+    api_name: str = ""
 
 
 # 所有可通过 /model 切换的模型
@@ -24,7 +35,10 @@ MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("deepseek-v4-flash", "deepseek", "DeepSeek V4 Flash", 1_000_000),
     ModelSpec("deepseek-v4-pro", "deepseek", "DeepSeek V4 Pro", 1_000_000),
     ModelSpec("gpt-4o-mini", "openai", "GPT-4o mini", 128_000),
+    ModelSpec("claude-sonnet-5", "claude", "Claude Sonnet 5", 1_000_000),
     ModelSpec("claude-sonnet-4-20250514", "claude", "Claude Sonnet 4", 200_000),
+    ModelSpec("openrouter-claude-sonnet-5", "openrouter", "OpenRouter · Claude Sonnet 5", 1_000_000, "anthropic/claude-sonnet-5"),
+    ModelSpec("openrouter-claude-sonnet-latest", "openrouter", "OpenRouter · Claude Sonnet Latest", 1_000_000, "~anthropic/claude-sonnet-latest"),
     ModelSpec("ollama-local", "ollama", "Ollama 本地", 128_000),
 )
 
@@ -40,7 +54,8 @@ _PROVIDER_DEFAULT: dict[str, str] = {
     "mock": "mock",
     "deepseek": "deepseek-v4-flash",
     "openai": "gpt-4o-mini",
-    "claude": "claude-sonnet-4-20250514",
+    "claude": "claude-sonnet-5",
+    "openrouter": "openrouter-claude-sonnet-latest",
     "ollama": "ollama-local",
     "router": "deepseek-v4-flash",
 }
@@ -69,20 +84,20 @@ def extra_models() -> list[dict]:
     vm = os.environ.get("VISION_MODEL", "").strip()
     vk = (os.environ.get("VISION_API_KEY", "").strip()
           or os.environ.get("OPENAI_API_KEY", "").strip())
-    if vm and vk:
+    if vm and _is_real_key(vk):
         out.append({"id": "ext:xiaomi", "label": f"小米 MiMo · {vm}",
                     "provider": "openai", "context": 200_000})
     try:
-        import json as _json
-        path = os.path.join(Config.LOG_DIR, "model_keys.json")
-        data = _json.load(open(path, encoding="utf-8")) if os.path.isfile(path) else {}
-        for prov, v in data.items():
-            if prov in ("deepseek", "openai", "claude", "xiaomi_vision", "image"):
+        from server.model_keys import ModelKeyStore
+        store = ModelKeyStore(path=os.path.join(Config.LOG_DIR, "model_keys.json"))
+        data = store.get_masked()
+        for prov, public_cfg in data.items():
+            if prov in ("deepseek", "openai", "claude", "openrouter", "xiaomi_vision", "image"):
                 continue
-            cfg = v if isinstance(v, dict) else {"key": v}
-            if cfg.get("key") and cfg.get("model"):
+            cfg = store.get_config(prov)
+            if public_cfg.get("kind") == "chat" and _is_real_key(cfg.get("key")) and cfg.get("model"):
                 out.append({"id": f"ext:{prov}",
-                            "label": f"{cfg.get('label', prov)} · {cfg['model']}",
+                            "label": f"{public_cfg.get('label', prov)} · {cfg['model']}",
                             "provider": "openai", "context": 128_000})
     except Exception:
         pass
@@ -111,11 +126,15 @@ def get_model(model_id: str | None) -> ModelSpec:
 
 def api_model_name(spec: ModelSpec) -> str:
     """传给 API 的 model 字段。"""
+    if spec.api_name:
+        return spec.api_name
     if spec.provider == "ollama":
         return Config.OLLAMA_MODEL
     if spec.provider == "openai" and spec.id != "gpt-4o-mini":
         return spec.id
     if spec.provider == "claude" and spec.id != "claude-sonnet-4-20250514":
+        return spec.id
+    if spec.provider == "openrouter":
         return spec.id
     if spec.provider == "deepseek":
         return spec.id
@@ -134,11 +153,13 @@ def is_provider_configured(provider: str) -> bool:
     if p == "mock":
         return Config.PROVIDER == "mock"
     if p == "deepseek":
-        return bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())
+        return _is_real_key(os.environ.get("DEEPSEEK_API_KEY", ""))
     if p == "openai":
-        return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+        return _is_real_key(os.environ.get("OPENAI_API_KEY", ""))
+    if p == "openrouter":
+        return _is_real_key(os.environ.get("OPENROUTER_API_KEY", ""))
     if p == "claude":
-        return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+        return _is_real_key(os.environ.get("ANTHROPIC_API_KEY", ""))
     if p == "ollama":
         # 仅看是否配了地址;**不做网络探测**(探测会给每次列模型加 ~1.5s 延迟、
         # 还会放大前端竞态)。真不可用时,实际调用时再报错即可。
@@ -171,5 +192,6 @@ def format_models_help(current_model_id: str) -> str:
     lines += [
         "",
         "DeepSeek 官方 API 模型: deepseek-v4-flash(默认) / deepseek-v4-pro",
+        "OpenRouter: openrouter-claude-sonnet-latest / openrouter-claude-sonnet-5",
     ]
     return "\n".join(lines)

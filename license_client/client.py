@@ -17,6 +17,14 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+try:
+    from server.keychain_store import get_secret, secret_ref, set_secret, should_use_for_path
+except Exception:  # pragma: no cover - license client must remain standalone-friendly
+    get_secret = None
+    set_secret = None
+    secret_ref = None
+    should_use_for_path = None
+
 # ── 配置默认值（全部动态读取，测试时可随时覆盖 env）────────────────────────
 _DEFAULT_SERVER     = "https://license.irestart-your-life.club"
 _DEFAULT_CACHE_TTL  = 7 * 86400
@@ -37,6 +45,27 @@ def _cache_ttl() -> int:
 
 def _grace_period() -> int:
     return int(os.environ.get("CAPTAIN_LICENSE_GRACE", str(_DEFAULT_GRACE)))
+
+
+def _keychain_license_key() -> str:
+    if not (get_secret and secret_ref and should_use_for_path):
+        return ""
+    try:
+        if should_use_for_path(os.getcwd()):
+            return get_secret(secret_ref("env", LICENSE_KEY_ENV))
+    except Exception:
+        return ""
+    return ""
+
+
+def _store_license_key(key: str) -> None:
+    if not (set_secret and secret_ref and should_use_for_path):
+        return
+    try:
+        if should_use_for_path(os.getcwd()):
+            set_secret(secret_ref("env", LICENSE_KEY_ENV), key)
+    except Exception:
+        pass
 
 
 # ── 机器唯一 ID ───────────────────────────────────────────────────────────────
@@ -138,7 +167,7 @@ def check_license(key: Optional[str] = None) -> LicenseStatus:
         return LicenseStatus(valid=True, plan="pro",
                              expires_at=time.time() + 365 * 86400)
 
-    key = (key or os.environ.get(LICENSE_KEY_ENV, "")).strip().upper() or None
+    key = (key or os.environ.get(LICENSE_KEY_ENV, "") or _keychain_license_key()).strip().upper() or None
     mid = get_machine_id()
     cache = _read_cache()
 
@@ -190,6 +219,7 @@ def check_license(key: Optional[str] = None) -> LicenseStatus:
     _write_cache({"key": key, "plan": result["plan"],
                   "expires_at": result.get("expires_at"),
                   "cached_at": time.time(), "machine_id": mid})
+    _store_license_key(key)
     return LicenseStatus(valid=True, plan=result["plan"],
                          expires_at=result.get("expires_at"))
 
@@ -206,5 +236,6 @@ def activate(key: str, email: str = "") -> LicenseStatus:
     _write_cache({"key": key, "plan": result["plan"],
                   "expires_at": result.get("expires_at"),
                   "cached_at": time.time(), "machine_id": mid})
+    _store_license_key(key)
     return LicenseStatus(valid=True, plan=result["plan"],
                          expires_at=result.get("expires_at"))

@@ -8,6 +8,9 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import urllib.error
+import zipfile
+from io import BytesIO
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -39,13 +42,16 @@ def test_frontend_assets_served():
     c = _client()
     if c is None:
         return
-    assert c.get("/").status_code == 200
+    index = c.get("/")
+    assert index.status_code == 200
+    assert "no-store" in index.headers.get("cache-control", "")
     for asset, mime in [("/styles.css", "text/css"),
                         ("/app.js", "javascript"),
                         ("/app.boot.js", "javascript")]:
         r = c.get(asset, headers=_H)
         assert r.status_code == 200, f"{asset} → {r.status_code}"
         assert mime in r.headers.get("content-type", "")
+        assert "no-store" in r.headers.get("cache-control", "")
     # 显式路由不应抢掉 /healthz
     assert c.get("/healthz").status_code == 200
 
@@ -63,6 +69,94 @@ def test_readonly_endpoints_reachable():
         r = c.get(path, headers=_H)
         assert r.status_code == 200, f"{path} → {r.status_code}"
         r.json()   # 可解析为 JSON
+
+
+def test_system_diagnostics_and_update_check(monkeypatch):
+    c = _client()
+    if c is None:
+        return
+    import server.routers.system as system_routes
+
+    monkeypatch.setattr(system_routes, "_github_latest_release", lambda: {
+        "tag_name": "v9.9.9",
+        "html_url": "https://example.com/releases/v9.9.9",
+        "assets": [
+            {"name": "Captain_9.9.9_arm64.dmg", "browser_download_url": "https://example.com/Captain_arm64.dmg"}
+        ],
+    })
+    r = c.get("/api/system/update/check", headers=_H)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["latest"] == "9.9.9"
+    assert body["download_url"].endswith(".dmg")
+
+    r = c.get("/api/system/diagnostics", headers=_H)
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+    r = c.get("/api/system/diagnostics/export", headers=_H)
+    assert r.status_code == 200
+    assert "zip" in r.headers.get("content-type", "")
+
+
+def test_system_diagnostics_export_redacts_secrets(monkeypatch, tmp_path):
+    c = _client()
+    if c is None:
+        return
+    import server.routers.system as system_routes
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(system_routes.Config, "LOG_DIR", str(log_dir))
+    (log_dir / "trace.jsonl").write_text(
+        "OPENAI_API_KEY=sk-testsecret123456789\n"
+        "token Bearer abcdefghijklmnopqrstuvwxyz\n",
+        encoding="utf-8",
+    )
+    (log_dir / "audit.log").write_text(
+        "github token ghp_1234567890abcdefghijklmnopqrstuv CAPT-PRO-ABCD-EFGH-IJKL\n",
+        encoding="utf-8",
+    )
+    (log_dir / "runtime.json").write_text(
+        '{"access_token":"remote-token-123456","auth_secret":"secret-value-123456"}',
+        encoding="utf-8",
+    )
+
+    r = c.get("/api/system/diagnostics/export", headers=_H)
+    assert r.status_code == 200
+    with zipfile.ZipFile(BytesIO(r.content)) as z:
+        names = set(z.namelist())
+        assert "logs/trace.tail.jsonl" in names
+        assert "logs/audit.tail.log" in names
+        assert "config/runtime.json" in names
+        combined = "\n".join(z.read(name).decode("utf-8", errors="replace") for name in names)
+
+    assert "sk-testsecret123456789" not in combined
+    assert "ghp_1234567890abcdefghijklmnopqrstuv" not in combined
+    assert "CAPT-PRO-ABCD-EFGH-IJKL" not in combined
+    assert "remote-token-123456" not in combined
+    assert "secret-value-123456" not in combined
+    assert "OPENAI_API_KEY=<redacted>" in combined
+    assert "ghp_<redacted>" in combined
+    assert "CAPT-PRO-<redacted>" in combined
+
+
+def test_system_update_check_release_missing(monkeypatch):
+    c = _client()
+    if c is None:
+        return
+    import server.routers.system as system_routes
+
+    def missing_release():
+        raise urllib.error.HTTPError("https://api.github.com/repos/john-lcj/my-agent/releases/latest", 404, "Not Found", None, None)
+
+    monkeypatch.setattr(system_routes, "_github_latest_release", missing_release)
+    r = c.get("/api/system/update/check", headers=_H)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["release_missing"] is True
+    assert "发布安装包" in body["message"]
 
 
 def test_auth_required_for_remote():

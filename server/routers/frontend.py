@@ -29,14 +29,21 @@ def register_frontend(app, frontend_dir: str) -> None:
                 status_code=503,
             )
         with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(
+                f.read(),
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
 
     def _make_asset_route(fname: str, media: str):
         async def _serve():
             path = os.path.join(frontend_dir, fname)
             if not os.path.isfile(path):
                 return HTMLResponse("Not Found", status_code=404)
-            return FileResponse(path, media_type=media)
+            return FileResponse(
+                path,
+                media_type=media,
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
         return _serve
 
     for fname, media in _ASSETS.items():

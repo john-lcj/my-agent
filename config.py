@@ -41,14 +41,26 @@ load_env()
 # 兼容:若用户在 cwd 放了另一份 .env,也合并进来(不覆盖已有变量)。
 load_env(os.path.join(os.getcwd(), ".env"))
 
+try:
+    from server.keychain_store import get_secret, secret_ref, should_use_for_path
+    if should_use_for_path(_PROJECT_ROOT):
+        for _env_key in ("AGENT_API_TOKEN", "AUTH_SECRET", "CAPTAIN_LICENSE_KEY"):
+            _secret = get_secret(secret_ref("env", _env_key))
+            if _secret:
+                os.environ[_env_key] = _secret
+except Exception:
+    pass
+
 
 class Config:
     # 选择模型 provider:mock / openai / claude / deepseek / router
     PROVIDER = os.environ.get("AGENT_PROVIDER", "mock")
 
     OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+    CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
     DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek/deepseek-chat")
+    OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "~anthropic/claude-sonnet-latest")
+    OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     # 会话首选模型 id(与 /model 一致;可被 runtime.json 覆盖)
     MODEL = os.environ.get("AGENT_MODEL", DEEPSEEK_MODEL)
     OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")

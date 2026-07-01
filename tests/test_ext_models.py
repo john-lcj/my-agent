@@ -23,6 +23,25 @@ def test_xiaomi_absent_without_vision(monkeypatch):
     assert "ext:xiaomi" not in {m["id"] for m in extra_models()}
 
 
+def test_placeholder_env_key_not_configured(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-xxx")
+    from llm.model_registry import is_provider_configured
+    assert is_provider_configured("deepseek") is False
+
+
+def test_openrouter_model_registry_and_factory(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    from llm.factory import build_llm
+    from llm.model_registry import api_model_name, get_model, is_provider_configured
+    spec = get_model("openrouter-claude-sonnet-latest")
+    assert spec.provider == "openrouter"
+    assert api_model_name(spec) == "~anthropic/claude-sonnet-latest"
+    assert is_provider_configured("openrouter") is True
+    llm = build_llm(model="openrouter-claude-sonnet-latest", with_fallback=False)
+    assert getattr(llm, "name", "") == "openrouter"
+    assert getattr(llm, "model", "") == "~anthropic/claude-sonnet-latest"
+
+
 def test_normalize_passes_ext_through():
     from llm.model_registry import normalize_model_id
     assert normalize_model_id("ext:xiaomi") == "ext:xiaomi"

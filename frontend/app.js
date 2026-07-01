@@ -2535,6 +2535,98 @@ function syncAccessTokenUI() {
 
 let _customProviders = [];   // 本地新加、尚未保存的自定义端点 id
 
+const RECOMMENDED_MODEL_PROVIDERS = ['openrouter', 'deepseek', 'openai', 'claude'];
+const MODEL_PROVIDER_COPY = {
+  openrouter: {
+    summary: '推荐优先配置。一个 Key 可接入 Claude、OpenAI、Gemini 等模型，适合客户版统一入口。',
+    keyHint: 'OpenRouter API Key',
+    urlHint: '默认 https://openrouter.ai/api/v1',
+    modelHint: '推荐 ~anthropic/claude-sonnet-latest；也可填其他 OpenRouter 模型名',
+  },
+  deepseek: {
+    summary: '国内网络友好、成本低，适合日常对话、写作和轻量执行。',
+    keyHint: 'DeepSeek API Key',
+  },
+  openai: {
+    summary: '适合需要 OpenAI 官方模型、工具调用和兼容生态的场景。',
+    keyHint: 'OpenAI API Key',
+  },
+  claude: {
+    summary: '适合长文档、代码审阅和复杂推理；直连 Anthropic 时填这里。',
+    keyHint: 'Anthropic API Key',
+  },
+  gemini: { summary: 'Google Gemini OpenAI 兼容接口，适合多模态和长上下文。' },
+  xai: { summary: 'xAI Grok 接口，适合需要 Grok 系列模型时使用。' },
+  groq: { summary: '高速推理平台，适合轻量、低延迟任务。' },
+  qwen: { summary: '通义千问 OpenAI 兼容接口，适合国内模型生态。' },
+  kimi: { summary: 'Moonshot/Kimi 接口，适合长文本和中文场景。' },
+  zhipu: { summary: '智谱 GLM OpenAI 兼容接口。' },
+  perplexity: { summary: 'Perplexity 接口，适合联网问答类模型。' },
+  xiaomi_vision: { summary: '看图能力接口，用于图片理解和多模态输入。' },
+  image: { summary: '图像生成接口，用于文生图能力。' },
+};
+
+function modelProviderCopy(prov) {
+  return MODEL_PROVIDER_COPY[prov] || { summary: 'OpenAI 兼容端点；填入 base URL、模型名和 Key 后即可测试。' };
+}
+
+function modelProviderBadge(k) {
+  if (k.verified) return '<span class="mk-badge ok">已验证</span>';
+  if (k.configured) return '<span class="mk-badge configured">已配置</span>';
+  return '<span class="mk-badge empty">未配置</span>';
+}
+
+function modelProviderSort(a, b, keys) {
+  const ka = keys[a] || {};
+  const kb = keys[b] || {};
+  const kindRank = kind => kind === 'chat' ? 0 : kind === 'vision' ? 1 : 2;
+  const builtinDelta = Number(kb.builtin) - Number(ka.builtin);
+  if (builtinDelta) return builtinDelta;
+  const kindDelta = kindRank(ka.kind) - kindRank(kb.kind);
+  if (kindDelta) return kindDelta;
+  return String(ka.label || a).localeCompare(String(kb.label || b), 'zh-Hans-CN');
+}
+
+function modelProviderCard(prov, k, recommended) {
+  const copy = modelProviderCopy(prov);
+  const isCustom = !k.builtin;
+  const simpleBuiltin = ['deepseek', 'openai', 'claude'].includes(prov);
+  const showUrlModel = isCustom || !simpleBuiltin || k.kind === 'vision' || k.kind === 'image';
+  const keyPh = k.configured ? '已配置，留空不改动' : (copy.keyHint || 'API Key');
+  return `<div class="mk-card${recommended ? ' recommended' : ''}" data-prov="${escAttr(prov)}">
+    <div class="mk-card-head">
+      <div class="mk-title-wrap">
+        <h3>${escHtml(k.label || prov)} <span>${escHtml(k.kind || 'chat')}</span></h3>
+        <p>${escHtml(copy.summary)}</p>
+      </div>
+      <div class="mk-head-side">
+        ${recommended ? '<span class="mk-recommend">推荐</span>' : ''}
+        ${modelProviderBadge(k)}
+      </div>
+    </div>
+    <div class="mk-fields">
+      <label class="mk-field">
+        <span>API Key</span>
+        <input class="field-input mk-key" type="password" placeholder="${escAttr(keyPh)}" autocomplete="off"/>
+      </label>
+      ${showUrlModel ? `<label class="mk-field">
+        <span>Base URL</span>
+        <input class="field-input mk-url" placeholder="${escAttr(copy.urlHint || '例如 https://api.example.com/v1')}" value="${escAttr(k.base_url || '')}"/>
+      </label>
+      <label class="mk-field">
+        <span>模型名</span>
+        <input class="field-input mk-model" placeholder="${escAttr(copy.modelHint || '例如 moonshot-v1-8k')}" value="${escAttr(k.model || '')}"/>
+      </label>` : ''}
+    </div>
+    <div class="mk-actions">
+      <button class="btn-sm primary" type="button" onclick="saveProvider('${escAttr(prov)}')" data-i18n="mkSave">保存</button>
+      <button class="btn-sm" type="button" onclick="testProvider('${escAttr(prov)}')" data-i18n="mkTest">测试连接</button>
+      ${isCustom ? `<button class="btn-sm" type="button" onclick="deleteProvider('${escAttr(prov)}')" data-i18n="mkDelete">删除</button>` : ''}
+      <div class="mk-status" aria-live="polite"></div>
+    </div>
+  </div>`;
+}
+
 // 渲染模型接入列表:每行一个接口,含状态徽标 + key/base_url/model 输入 + 测试/保存
 async function loadModelKeys() {
   const box = document.getElementById('model-providers');
@@ -2543,30 +2635,17 @@ async function loadModelKeys() {
   try { keys = (await (await fetch('/api/keys')).json()).keys || {}; } catch { return; }
   // 把本地新加的自定义端点也并进来(还没保存,后端列表里没有)
   for (const id of _customProviders) if (!keys[id]) keys[id] = { label: id, kind:'chat', builtin:false, configured:false, verified:false, key:'', base_url:'', model:'' };
-  const order = Object.keys(keys).sort((a,b)=> (keys[b].builtin?1:0)-(keys[a].builtin?1:0));
-  box.innerHTML = order.map(prov => {
-    const k = keys[prov];
-    const badge = k.verified ? '<span style="color:#3a9">✓ 已验证</span>'
-               : k.configured ? '<span style="color:var(--accent)">● 已配置</span>'
-               : '<span style="color:var(--dim)">○ 未配置</span>';
-    const isCustom = !k.builtin;
-    const showUrlModel = isCustom || k.kind === 'vision' || k.kind === 'image';
-    return `<div class="expert-card" style="margin-bottom:8px" data-prov="${escHtml(prov)}">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h3 style="margin:0">${escHtml(k.label||prov)} <span style="font-size:11px;color:var(--dim)">${escHtml(k.kind)}</span></h3>
-        <span style="font-size:12px">${badge}</span>
-      </div>
-      <input class="field-input mk-key" type="password" style="margin-top:6px" placeholder="${k.configured?'已配置(留空不改动)':'API Key'}" autocomplete="off"/>
-      ${showUrlModel ? `<input class="field-input mk-url" style="margin-top:6px" placeholder="base_url(如 https://api.moonshot.cn/v1)" value="${escHtml(k.base_url||'')}"/>
-      <input class="field-input mk-model" style="margin-top:6px" placeholder="模型名(如 moonshot-v1-8k)" value="${escHtml(k.model||'')}"/>` : ''}
-      <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn-sm primary" onclick="saveProvider('${escHtml(prov)}')" data-i18n="mkSave">保存</button>
-        <button class="btn-sm" onclick="testProvider('${escHtml(prov)}')" data-i18n="mkTest">测试连接</button>
-        ${isCustom ? `<button class="btn-sm" onclick="deleteProvider('${escHtml(prov)}')" data-i18n="mkDelete">删除</button>`:''}
-        <span class="mk-status" style="font-size:12px;color:var(--dim);align-self:center"></span>
-      </div>
-    </div>`;
-  }).join('');
+  const all = Object.keys(keys);
+  const recommended = RECOMMENDED_MODEL_PROVIDERS.filter(p => keys[p]);
+  const rest = all.filter(p => !recommended.includes(p)).sort((a, b) => modelProviderSort(a, b, keys));
+  const recommendedHtml = recommended.map(prov => modelProviderCard(prov, keys[prov], true)).join('');
+  const restHtml = rest.map(prov => modelProviderCard(prov, keys[prov], false)).join('');
+  box.innerHTML = `<div class="mk-section-label">推荐接入</div>
+    <div class="mk-grid recommended">${recommendedHtml}</div>
+    ${rest.length ? `<details class="mk-more">
+      <summary>更多模型平台 <span>${rest.length} 个</span></summary>
+      <div class="mk-grid more">${restHtml}</div>
+    </details>` : ''}`;
   applyI18n();
 }
 
@@ -2597,12 +2676,43 @@ async function testProvider(prov) {
   if (e.key && e.key.value.trim()) body.key = e.key.value.trim();
   if (e.url) body.base_url = (e.url.value||'').trim();
   if (e.model) body.model = (e.model.value||'').trim();
+  e.status.style.color = 'var(--muted)';
   e.status.textContent = '测试中…';
   try {
     const d = await (await fetch('/api/models/test', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json();
-    if (d.ok) { e.status.innerHTML = `<span style="color:#3a9">✓ 连通 ${d.latency_ms||''}ms</span>`; await loadModelKeys(); }
-    else e.status.innerHTML = `<span style="color:#d66">✗ ${escHtml(d.error||'失败')}</span>`;
-  } catch { e.status.textContent = '测试失败(网络)'; }
+    if (d.ok) {
+      e.status.style.color = '#3a9';
+      e.status.textContent = `✓ 连接成功 ${d.latency_ms || ''}ms`.trim();
+      await loadModelKeys();
+    } else {
+      e.status.style.color = '#d66';
+      e.status.textContent = '测试失败：' + friendlyModelError(d.error || '未知错误');
+    }
+  } catch {
+    e.status.style.color = '#d66';
+    e.status.textContent = '测试失败：网络连接异常';
+  }
+}
+
+function friendlyModelError(raw) {
+  const msg = String(raw || '');
+  const low = msg.toLowerCase();
+  if (low.includes('insufficient credits') || low.includes('never purchased credits') || msg.includes('账号余额不足')) {
+    return '账号余额不足或未购买额度。请到对应模型平台充值/开通 credits 后再试。';
+  }
+  if (low.includes('401') || low.includes('unauthorized') || low.includes('invalid_api_key') || msg.includes('鉴权失败')) {
+    return 'API Key 无效或不属于当前账号，请重新填写。';
+  }
+  if (low.includes('404') || low.includes('not found') || msg.includes('模型名或 base_url')) {
+    return '模型名或 base URL 不正确，请核对平台文档。';
+  }
+  if (low.includes('429') || low.includes('rate limit') || msg.includes('限流')) {
+    return '平台限流或额度暂不可用，请稍后重试。';
+  }
+  if (low.includes('timeout') || low.includes('network') || low.includes('connect') || msg.includes('网络')) {
+    return '网络连接失败，请检查 base URL、代理或本机网络。';
+  }
+  return msg.length > 180 ? msg.slice(0, 180) + '…' : msg;
 }
 
 async function deleteProvider(prov) {
@@ -2670,6 +2780,8 @@ function formatTokenCount(n) {
 
 let _setupStatusCache = null;
 const SETUP_DISMISS_KEY = 'captain-setup-dismissed-this-session';
+const ONBOARDING_DONE_KEY = 'captain-onboarding-done';
+const ONBOARDING_SNOOZE_KEY = 'captain-onboarding-snoozed-this-session';
 
 function _diagCard({ key, title, state, stateText, body, action, tab }) {
   return `<div class="diagnostic-card ${state}" data-diag="${escAttr(key || '')}">
@@ -2712,6 +2824,114 @@ function dismissSetupStatus(e) {
   e?.stopPropagation();
   try { sessionStorage.setItem(SETUP_DISMISS_KEY, '1'); } catch {}
   renderSetupStatus();
+}
+
+function isOnboardingDone() {
+  try { return localStorage.getItem(ONBOARDING_DONE_KEY) === '1'; } catch { return false; }
+}
+
+function isOnboardingSnoozed() {
+  try { return sessionStorage.getItem(ONBOARDING_SNOOZE_KEY) === '1'; } catch { return false; }
+}
+
+function onboardingStepHtml(step) {
+  const color = step.state === 'ok' ? '#3a9' : step.state === 'bad' ? '#d66' : 'var(--accent)';
+  const symbol = step.state === 'ok' ? '✓' : step.state === 'bad' ? '!' : '•';
+  return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center">
+    <div style="width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb, ${color} 16%, transparent);color:${color};font-weight:700">${symbol}</div>
+    <div>
+      <div style="font-size:14px;font-weight:700;color:var(--txt)">${escHtml(step.title)}</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.55;margin-top:2px">${escHtml(step.body)}</div>
+    </div>
+    ${step.tab ? `<button type="button" class="btn-sm" onclick="openSettings('${escAttr(step.tab)}')">${escHtml(step.action || '去处理')}</button>` : ''}
+  </div>`;
+}
+
+function buildOnboardingSteps(data) {
+  const cards = data?.cards || [];
+  const byKey = Object.fromEntries(cards.map(c => [c.key, c]));
+  const keys = data?.keys || {};
+  const verifiedCount = Object.values(keys).filter(k => k && k.verified).length;
+  const configuredCount = Object.values(keys).filter(k => k && k.configured).length;
+  const lic = data?.license || {};
+  const pro = lic.plan === 'pro' || lic.is_pro;
+  const modelOk = byKey.model?.state === 'ok' && byKey.keys?.state === 'ok';
+  return [
+    {
+      title: '认识 Captain',
+      state: 'ok',
+      body: 'Captain 会理解目标、拆解计划、执行任务，并把过程记录到本机。',
+    },
+    {
+      title: '激活授权码',
+      state: pro ? 'ok' : 'warn',
+      body: pro ? `Pro 已激活${lic.days_left != null ? `，剩余 ${lic.days_left} 天` : ''}。` : '没有授权码也可先体验基础功能；购买后在这里激活 Pro。',
+      action: '去激活',
+      tab: 'about',
+    },
+    {
+      title: '配置模型 Key',
+      state: modelOk ? 'ok' : (configuredCount ? 'warn' : 'bad'),
+      body: modelOk ? '默认模型已经可用。' : (configuredCount ? '已有 Key，请确认默认模型指向可用平台。' : '建议先配置 OpenRouter 或 DeepSeek，否则无法稳定对话。'),
+      action: '配置模型',
+      tab: 'keys',
+    },
+    {
+      title: '测试连接',
+      state: verifiedCount ? 'ok' : (configuredCount ? 'warn' : 'bad'),
+      body: verifiedCount ? `${verifiedCount} 个模型接口已验证。` : (configuredCount ? 'Key 已保存，但建议点“测试连接”确认额度、模型名和网络都正常。' : '先保存模型 Key，再测试连接。'),
+      action: '测试模型',
+      tab: 'keys',
+    },
+    {
+      title: '开始使用',
+      state: modelOk ? 'ok' : 'warn',
+      body: modelOk ? '可以开始提问，或切到 Cowork 把任务交给 Captain。' : '模型未完全就绪时也能浏览界面，但真实任务可能不可用。',
+    },
+  ];
+}
+
+function renderOnboarding() {
+  const overlay = document.getElementById('onboarding-overlay');
+  const stepsEl = document.getElementById('onboarding-steps');
+  if (!overlay || !stepsEl || !_setupStatusCache) return;
+  const steps = buildOnboardingSteps(_setupStatusCache);
+  const done = steps.filter(s => s.state === 'ok').length;
+  const state = document.getElementById('onboarding-state');
+  if (state) state.textContent = `${done}/${steps.length} 已完成`;
+  stepsEl.innerHTML = steps.map(onboardingStepHtml).join('');
+}
+
+async function openOnboarding(force) {
+  try { if (force) localStorage.removeItem(ONBOARDING_DONE_KEY); } catch {}
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  await loadSetupStatus();
+  renderOnboarding();
+}
+
+function closeOnboarding() {
+  document.getElementById('onboarding-overlay')?.classList.remove('open');
+}
+
+function finishOnboarding(done) {
+  try {
+    if (done) localStorage.setItem(ONBOARDING_DONE_KEY, '1');
+    else sessionStorage.setItem(ONBOARDING_SNOOZE_KEY, '1');
+  } catch {}
+  closeOnboarding();
+}
+
+function maybeShowOnboarding() {
+  if (isOnboardingDone() || isOnboardingSnoozed()) return;
+  if (!_setupStatusCache) return;
+  const hasMessages = Number(window.msgCount || msgCount || 0) > 0;
+  const cards = _setupStatusCache.cards || [];
+  const essentialsReady = cards
+    .filter(c => ['model', 'keys'].includes(c.key))
+    .every(c => c.state === 'ok');
+  if (!hasMessages || !essentialsReady) openOnboarding(false);
 }
 
 async function loadSetupStatus() {
@@ -2813,6 +3033,7 @@ async function loadSetupStatus() {
   ];
   _setupStatusCache = { cards, cfg, models, keys, stats, license: lic, profile, channels: channelsData, tokenSavedInBrowser };
   renderSetupStatus();
+  renderOnboarding();
   return _setupStatusCache;
 }
 
@@ -2858,6 +3079,9 @@ function renderSetupStatus() {
 
 window.loadSetupStatus = loadSetupStatus;
 window.dismissSetupStatus = dismissSetupStatus;
+window.openOnboarding = openOnboarding;
+window.closeOnboarding = closeOnboarding;
+window.finishOnboarding = finishOnboarding;
 
 async function loadSettingsUI() {
   const cfg = loadConfig();
@@ -3736,7 +3960,7 @@ const I18N = {
     loading: '加载中…',
     btnCancel: '取消',
     emailEnable: '启用渠道',
-    modelKeyHint: '填入对应平台的 API Key 即可启用该模型,保存后自动出现在上方「默认模型」中。已配置的留空表示不改动。Key 仅保存在本机服务端(logs/model_keys.json),不会回显明文。',
+    modelKeyHint: '主流 API 已预置；填 Key 后点「测试」真连一次验证。macOS App 会把 Key 存进 Keychain，服务端不回显明文。',
     custTabExperts: '执行专家',
     taskPromptLbl: '执行指令(prompt)',
     taskDeliverTo: '投递邮箱(留空=发给自己)',
@@ -4106,7 +4330,7 @@ const I18N = {
     loading: 'Loading…',
     btnCancel: 'Cancel',
     emailEnable: 'Enable channel',
-    modelKeyHint: 'Enter the API key for each platform to enable that model. After saving it appears under \'Default model\' above. Leave a configured key blank to keep it unchanged. Keys are stored only on the local server (logs/model_keys.json) and never echoed back in plaintext.',
+    modelKeyHint: 'Mainstream APIs are preconfigured. Enter a key and test the connection. On macOS, Captain stores keys in Keychain and never echoes plaintext back.',
     custTabExperts: 'Execution experts',
     taskPromptLbl: 'Instruction (prompt)',
     taskDeliverTo: 'Delivery email (blank = send to yourself)',
@@ -4719,15 +4943,38 @@ async function doUpdate() {
   const btn = document.getElementById('btn-update');
   const status = document.getElementById('update-status');
   btn.disabled = true;
-  btn.textContent = '更新中…';
+  btn.textContent = '检查中…';
   status.textContent = '';
   try {
+    const checkRes = await fetch('/api/system/update/check', { cache: 'no-store' });
+    const check = await checkRes.json();
+    if (!checkRes.ok || !check.ok) {
+      status.style.color = 'var(--danger, #e55)';
+      status.textContent = '检查更新失败：' + (check.error || `HTTP ${checkRes.status}`);
+      return;
+    }
+    if (check.release_missing) {
+      status.style.color = 'var(--muted)';
+      status.textContent = check.message || '当前暂无可下载安装包。';
+      return;
+    }
+    if (check.already_latest) {
+      status.style.color = 'var(--muted)';
+      status.textContent = `✓ 已是最新版本 ${check.current || ''}`.trim();
+      return;
+    }
+    status.style.color = 'var(--muted)';
+    status.textContent = `发现新版本 ${check.latest || ''}，正在处理…`.trim();
+    btn.textContent = '更新中…';
     const r = await fetch('/api/system/update', { method: 'POST' });
     const d = await r.json();
     if (!d.ok) {
       status.style.color = 'var(--danger, #e55)';
       const fallback = d.fallback_command ? `\n备用更新命令：${d.fallback_command}` : '';
       status.textContent = '失败：' + (d.error || '未知错误') + fallback;
+    } else if (d.opened_url) {
+      status.style.color = 'var(--muted)';
+      status.textContent = d.message || ('已打开下载页面：' + d.opened_url);
     } else if (d.already_latest) {
       status.style.color = 'var(--muted)';
       status.textContent = '✓ 已是最新版本' + (d.fallback_command ? `；备用命令：${d.fallback_command}` : '');
@@ -4751,6 +4998,39 @@ async function doUpdate() {
   } finally {
     btn.disabled = false;
     btn.textContent = '⬆ 检查并更新';
+  }
+}
+
+async function openLogsFolder() {
+  const status = document.getElementById('diagnostics-status');
+  if (status) { status.style.color = 'var(--muted)'; status.textContent = '正在打开日志…'; }
+  try {
+    const r = await fetch('/api/system/logs/open', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || '打开失败');
+    if (status) status.textContent = '已打开：' + (d.path || '日志目录');
+  } catch (e) {
+    if (status) { status.style.color = 'var(--danger, #e55)'; status.textContent = '打开日志失败：' + (e.message || e); }
+  }
+}
+
+async function downloadDiagnostics() {
+  const status = document.getElementById('diagnostics-status');
+  if (status) { status.style.color = 'var(--muted)'; status.textContent = '正在生成诊断包…'; }
+  try {
+    const r = await fetch('/api/system/diagnostics/export', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const name = m ? m[1] : 'captain-diagnostics.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    if (status) status.textContent = '诊断包已导出';
+  } catch (e) {
+    if (status) { status.style.color = 'var(--danger, #e55)'; status.textContent = '导出诊断包失败：' + (e.message || e); }
   }
 }
 
@@ -5140,6 +5420,7 @@ document.addEventListener('visibilitychange', () => {
 loadSlashCommands();
 loadSkillLabels();
 loadSettingsUI();
+loadSetupStatus().then(() => maybeShowOnboarding()).catch(()=>{});
 
 /* FRONTEND_CONTRACT 别名 */
 function connectWS() { connect(); }

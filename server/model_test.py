@@ -12,6 +12,26 @@ import time
 __test__ = False
 
 
+def friendly_error_message(error: Exception | str) -> str:
+    msg = str(error)
+    low = msg.lower()
+    if "402" in msg or "insufficient credits" in low or "never purchased credits" in low:
+        hint = "账号余额不足或未购买额度:请到对应平台充值/开通 credits 后再测试"
+    elif "429" in msg or "rate limit" in low or "too many requests" in low:
+        hint = "触发限流:请稍后再试或更换可用额度的 Key"
+    elif "403" in msg or "permission" in low or "forbidden" in low:
+        hint = "权限不足:该 Key 没有调用此模型的权限"
+    elif "401" in msg or "unauthorized" in low or "invalid_api_key" in low or "authentication" in low:
+        hint = "鉴权失败:API Key 不对"
+    elif "404" in msg or "not found" in low or "model" in low and "exist" in low:
+        hint = "模型名或 base_url 不对(404)"
+    elif "connect" in low or "timeout" in low or "resolve" in low or "network" in low:
+        hint = "网络连不上该 base_url(检查地址/网络)"
+    else:
+        hint = "调用失败"
+    return f"{hint}。原始信息:{msg[:160]}"
+
+
 async def test_endpoint(sdk: str, kind: str, base_url: str, api_key: str, model: str) -> dict:
     if not api_key:
         return {"ok": False, "error": "未填 API Key"}
@@ -41,15 +61,5 @@ async def test_endpoint(sdk: str, kind: str, base_url: str, api_key: str, model:
                     model=model, max_tokens=1,
                     messages=[{"role": "user", "content": "hi"}])
     except Exception as e:
-        msg = str(e)
-        low = msg.lower()
-        if "401" in msg or "unauthorized" in low or "invalid_api_key" in low or "authentication" in low:
-            hint = "鉴权失败:API Key 不对"
-        elif "404" in msg or "not found" in low or "model" in low and "exist" in low:
-            hint = "模型名或 base_url 不对(404)"
-        elif "connect" in low or "timeout" in low or "resolve" in low or "network" in low:
-            hint = "网络连不上该 base_url(检查地址/网络)"
-        else:
-            hint = "调用失败"
-        return {"ok": False, "error": f"{hint}:{msg[:200]}"}
+        return {"ok": False, "error": friendly_error_message(e)}
     return {"ok": True, "latency_ms": round((time.time() - t0) * 1000)}

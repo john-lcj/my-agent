@@ -1,13 +1,19 @@
 """系统管理端点：update + stats (从 app.py 抽出，行为不变)。"""
 from __future__ import annotations
 import asyncio
+import json
 import os
+import re
 import time as _time
+import shutil
+import urllib.error
+import zipfile
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from config import Config
+from server.keychain_store import secret_ref, set_secret, should_use_for_path
 
 
 def _project_root() -> str:
@@ -16,6 +22,10 @@ def _project_root() -> str:
 
 def _env_path() -> str:
     return os.path.join(_project_root(), ".env")
+
+
+def _app_support_root() -> str:
+    return os.path.dirname(_project_root())
 
 
 def _write_env_value(key: str, value: str) -> None:
@@ -39,6 +49,103 @@ def _write_env_value(key: str, value: str) -> None:
         out.append(f"{key}={value}\n")
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(out)
+
+
+def _current_version() -> str:
+    try:
+        import re
+        text = open(os.path.join(_project_root(), "pyproject.toml"), encoding="utf-8").read()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return "0.1.0"
+
+
+def _github_latest_release() -> dict:
+    import urllib.request
+    url = os.environ.get(
+        "CAPTAIN_RELEASE_API",
+        "https://api.github.com/repos/john-lcj/my-agent/releases/latest",
+    )
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _release_download_url(release: dict) -> str:
+    assets = release.get("assets") or []
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    prefer = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
+    for asset in assets:
+        name = (asset.get("name") or "").lower()
+        if name.endswith(".dmg") and prefer in name:
+            return asset.get("browser_download_url") or ""
+    for asset in assets:
+        name = (asset.get("name") or "").lower()
+        if name.endswith(".dmg"):
+            return asset.get("browser_download_url") or ""
+    return release.get("html_url") or "https://github.com/john-lcj/my-agent/releases"
+
+
+def _open_url(url: str) -> None:
+    import subprocess
+    if os.name == "nt":
+        os.startfile(url)  # type: ignore[attr-defined]
+    elif hasattr(os, "uname") and os.uname().sysname == "Darwin":
+        subprocess.Popen(["open", url])
+    else:
+        subprocess.Popen(["xdg-open", url])
+
+
+_SECRET_REPLACEMENTS: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"ghp_[A-Za-z0-9_]{20,}"), "ghp_<redacted>"),
+    (re.compile(r"github_pat_[A-Za-z0-9_]+"), "github_pat_<redacted>"),
+    (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-<redacted>"),
+    (re.compile(r"CAPT-PRO-[A-Z0-9]{4}(?:-[A-Z0-9]{4}){1,}", re.I), "CAPT-PRO-<redacted>"),
+    (re.compile(r"(?i)\b(Bearer)\s+[A-Za-z0-9._~+/=\-]{8,}"), r"\1 <redacted>"),
+    (re.compile(r"(?i)\b(X-Agent-Token\s*:?)\s*[A-Za-z0-9._~+/=\-]{4,}"), r"\1 <redacted>"),
+    (re.compile(
+        r"(?im)^([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|PASS|LICENSE_KEY)[A-Z0-9_]*\s*=\s*).+$"
+    ), r"\1<redacted>"),
+    (re.compile(
+        r'(?i)("?(?:api[_-]?key|access[_-]?token|auth[_-]?secret|license[_-]?key|password|secret)"?\s*:\s*)"[^"]+"'
+    ), r'\1"<redacted>"'),
+)
+
+
+def _redact_text(text: str) -> str:
+    out = text or ""
+    for pattern, replacement in _SECRET_REPLACEMENTS:
+        out = pattern.sub(replacement, out)
+    return out
+
+
+def _read_text_tail(path: str, limit: int = 200_000) -> str:
+    with open(path, "rb") as f:
+        try:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size > limit:
+                f.seek(size - limit)
+                prefix = f"[captain diagnostics] 文件较大，仅包含最后 {limit} bytes。\n"
+            else:
+                f.seek(0)
+                prefix = ""
+            data = f.read()
+        except OSError:
+            f.seek(0)
+            prefix = ""
+            data = f.read(limit)
+    return prefix + data.decode("utf-8", errors="replace")
+
+
+def _write_redacted_member(z: zipfile.ZipFile, source: str, arcname: str,
+                           limit: int = 200_000) -> None:
+    if not os.path.isfile(source):
+        return
+    z.writestr(arcname, _redact_text(_read_text_tail(source, limit=limit)))
 
 
 def register_system(app, task_store, template_store, vault, ext_channels,
@@ -100,8 +207,109 @@ def register_system(app, task_store, template_store, vault, ext_channels,
         if len(token) > 128 or any(ch.isspace() for ch in token):
             return JSONResponse({"ok": False, "error": "访问码不能包含空白，且长度不能超过 128"}, status_code=400)
         _write_env_value("AGENT_API_TOKEN", token)
+        if should_use_for_path(_project_root()):
+            set_secret(secret_ref("env", "AGENT_API_TOKEN"), token)
         os.environ["AGENT_API_TOKEN"] = token
         return JSONResponse({"ok": True, "configured": True})
+
+    @app.get("/api/system/update/check")
+    async def system_update_check() -> JSONResponse:
+        current = _current_version()
+        try:
+            release = _github_latest_release()
+            latest = str(release.get("tag_name") or release.get("name") or "").lstrip("v")
+            url = _release_download_url(release)
+            return JSONResponse({
+                "ok": True,
+                "current": current,
+                "latest": latest or current,
+                "already_latest": bool(latest and latest == current),
+                "download_url": url,
+                "release_url": release.get("html_url") or url,
+            })
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return JSONResponse({
+                    "ok": True,
+                    "current": current,
+                    "latest": current,
+                    "already_latest": True,
+                    "release_missing": True,
+                    "message": "当前 GitHub 仓库还没有发布安装包。请先在 GitHub 创建 Release 并上传 DMG 后再使用自动更新。",
+                    "release_url": "https://github.com/john-lcj/my-agent/releases",
+                })
+            return JSONResponse({"ok": False, "current": current, "error": f"GitHub 返回 HTTP {e.code}"}, status_code=502)
+        except Exception as e:
+            return JSONResponse({"ok": False, "current": current, "error": str(e)}, status_code=500)
+
+    @app.get("/api/system/diagnostics")
+    async def diagnostics_status() -> JSONResponse:
+        root = _project_root()
+        return JSONResponse({
+            "ok": True,
+            "project_root": root,
+            "log_dir": Config.LOG_DIR,
+            "desktop": os.environ.get("CAPTAIN_DESKTOP", "") == "1",
+            "keychain": should_use_for_path(root),
+            "python": os.sys.executable,
+            "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
+            "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
+        })
+
+    @app.post("/api/system/logs/open")
+    async def open_logs() -> JSONResponse:
+        path = Config.LOG_DIR
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif os.uname().sysname == "Darwin":
+                import subprocess
+                subprocess.Popen(["open", path])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", path])
+            return JSONResponse({"ok": True, "path": path})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e), "path": path}, status_code=500)
+
+    @app.get("/api/system/diagnostics/export")
+    async def export_diagnostics():
+        import tempfile
+        root = _project_root()
+        stamp = _time.strftime("%Y%m%d-%H%M%S")
+        out_dir = os.path.join(tempfile.gettempdir(), "captain-diagnostics")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"captain-diagnostics-{stamp}.zip")
+        summary = {
+            "generated_at": stamp,
+            "project_root": root,
+            "log_dir": Config.LOG_DIR,
+            "desktop": os.environ.get("CAPTAIN_DESKTOP", "") == "1",
+            "keychain": should_use_for_path(root),
+            "python": os.sys.executable,
+            "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
+            "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
+        }
+        with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            z.writestr("summary.json", __import__("json").dumps(summary, ensure_ascii=False, indent=2))
+            redacted_files = [
+                (os.path.join(Config.LOG_DIR, "trace.jsonl"), "logs/trace.tail.jsonl"),
+                (os.path.join(Config.LOG_DIR, "audit.log"), "logs/audit.tail.log"),
+                (os.path.join(Config.LOG_DIR, "journal.md"), "logs/journal.tail.md"),
+                (os.path.join(Config.LOG_DIR, "runtime.json"), "config/runtime.json"),
+                (os.path.join(Config.LOG_DIR, "task_patterns.json"), "config/task_patterns.json"),
+                (os.path.join(root, "desktop", "src-tauri", "tauri.conf.json"), "desktop/tauri.conf.json"),
+            ]
+            for path, arcname in redacted_files:
+                _write_redacted_member(z, path, arcname)
+            for name in ("backend.out.log", "backend.err.log"):
+                path = os.path.join(_app_support_root(), name)
+                _write_redacted_member(z, path, f"desktop/{name}")
+        return FileResponse(
+            out_path,
+            media_type="application/zip",
+            filename=os.path.basename(out_path),
+        )
 
     @app.post("/api/system/update")
     async def system_update() -> JSONResponse:
@@ -118,15 +326,63 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash"
         )
 
-        import shutil
         portable_git = os.path.join(root, "runtime", "git", "bin", "git.exe")
         if os.path.exists(portable_git):
             git_cmd = portable_git
         elif shutil.which("git"):
             git_cmd = "git"
         else:
+            if os.environ.get("CAPTAIN_DESKTOP", "") == "1":
+                try:
+                    release = _github_latest_release()
+                    url = _release_download_url(release)
+                    _open_url(url)
+                    return JSONResponse({
+                        "ok": True,
+                        "already_latest": False,
+                        "opened_url": url,
+                        "message": "已打开最新安装包页面。下载 DMG 后拖入 Applications 覆盖即可。",
+                        "fallback_command": fallback_command,
+                    })
+                except urllib.error.HTTPError as e:
+                    if e.code == 404:
+                        return JSONResponse({
+                            "ok": False,
+                            "error": "当前 GitHub 仓库还没有发布安装包。请先创建 Release 并上传 DMG。",
+                            "fallback_command": fallback_command,
+                        }, status_code=404)
+                    return JSONResponse({"ok": False, "error": f"GitHub 返回 HTTP {e.code}",
+                                         "fallback_command": fallback_command}, status_code=502)
+                except Exception as e:
+                    return JSONResponse({"ok": False, "error": f"检查 GitHub Release 失败:{e}",
+                                         "fallback_command": fallback_command}, status_code=500)
             return JSONResponse({"ok": False, "error": "未找到 git",
                                  "fallback_command": fallback_command}, status_code=500)
+
+        if not os.path.isdir(os.path.join(root, ".git")) and os.environ.get("CAPTAIN_DESKTOP", "") == "1":
+            try:
+                release = _github_latest_release()
+                url = _release_download_url(release)
+                _open_url(url)
+                return JSONResponse({
+                    "ok": True,
+                    "already_latest": False,
+                    "opened_url": url,
+                    "message": "已打开最新安装包页面。下载 DMG 后拖入 Applications 覆盖即可。",
+                    "fallback_command": fallback_command,
+                })
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return JSONResponse({
+                        "ok": False,
+                        "error": "当前 GitHub 仓库还没有发布安装包。请先创建 Release 并上传 DMG。",
+                        "fallback_command": fallback_command,
+                    }, status_code=404)
+                return JSONResponse({"ok": False, "error": f"GitHub 返回 HTTP {e.code}",
+                                     "fallback_command": fallback_command}, status_code=502)
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": f"检查 GitHub Release 失败:{e}",
+                                     "fallback_command": fallback_command}, status_code=500)
 
         portable_pip = os.path.join(root, "runtime", "python", "Scripts", "pip.exe")
         venv_pip_win = os.path.join(root, ".venv", "Scripts", "pip.exe")

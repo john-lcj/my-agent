@@ -6,7 +6,11 @@
   "scripts": {
     "check": "node scripts/check-prereqs.mjs",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "macos:install-support": "bash scripts/install-macos-support.sh",
+    "macos:prepare-bundle": "bash scripts/prepare-macos-bundle.sh",
+    "macos:package": "bash scripts/package-macos.sh",
+    "macos:release-assets": "bash scripts/prepare-github-release.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.6.3"

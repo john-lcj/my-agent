@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.model_keys import ModelKeyStore, PROVIDER_PRESETS
+from server.model_test import friendly_error_message
 from server.model_test import test_endpoint as _test_endpoint  # 别名:避免 pytest 误收集
 
 
@@ -39,11 +40,18 @@ def test_save_key_base_url_model_and_env(tmp_path, monkeypatch):
     assert os.environ["VISION_MODEL"] == "mimo-v2-omni"
 
 
-def test_custom_endpoint_stored(tmp_path):
+def test_mainstream_endpoint_preset_stored(tmp_path):
     s = _store(tmp_path)
     s.update("kimi", key="sk-k", base_url="https://api.moonshot.cn/v1", model="moonshot-v1-8k", label="Kimi")
     m = s.get_masked()["kimi"]
-    assert m["builtin"] is False and m["label"] == "Kimi" and m["configured"] is True
+    assert m["builtin"] is True and m["label"] == "Kimi / Moonshot" and m["configured"] is True
+
+
+def test_custom_endpoint_stored(tmp_path):
+    s = _store(tmp_path)
+    s.update("custom_vendor", key="sk-c", base_url="https://api.example.com/v1", model="custom-chat", label="Custom")
+    m = s.get_masked()["custom_vendor"]
+    assert m["builtin"] is False and m["label"] == "Custom" and m["configured"] is True
 
 
 def test_backward_compat_old_string_format(tmp_path):
@@ -53,6 +61,15 @@ def test_backward_compat_old_string_format(tmp_path):
     s = ModelKeyStore(path=str(p))
     assert s.get_masked()["deepseek"]["configured"] is True
     assert os.environ["DEEPSEEK_API_KEY"] == "sk-old"
+
+
+def test_placeholder_key_is_not_configured(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-xxx")
+    s = _store(tmp_path)
+    assert s.get_masked()["deepseek"]["configured"] is False
+    assert s.get_config("deepseek")["key"] == ""
+    s.update("deepseek", key="sk-deepseek-xxx")
+    assert s.get_masked()["deepseek"]["configured"] is False
 
 
 def test_verified_state(tmp_path):
@@ -74,3 +91,9 @@ def test_test_endpoint_no_key_is_clear_error():
 def test_test_endpoint_no_model():
     r = asyncio.run(_test_endpoint("openai", "chat", "", "sk-x", ""))
     assert not r["ok"] and "模型" in r["error"]
+
+
+def test_model_error_insufficient_credits_is_friendly():
+    msg = friendly_error_message("Error code: 402 - Insufficient credits. This account never purchased credits.")
+    assert "账号余额不足" in msg
+    assert "充值" in msg

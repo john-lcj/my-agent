@@ -30,6 +30,9 @@
         "icons/icon.ico"
       ],
       "identifier": "club.irestart.captain",
+      "resources": [
+        "resources/app"
+      ],
       "shortDescription": "Captain AI Agent",
       "targets": "all"
     },
