@@ -28,9 +28,13 @@
 curl -fsSL https://irestart-your-life.club/install.sh | bash
 ```
 
-**Windows**（在 PowerShell 运行）
+**Windows**（在 PowerShell 运行，推荐复制整段）
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command '$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p'
+$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"
+$p = Join-Path $env:TEMP "captain-install.ps1"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -UseBasicParsing -Uri $u -OutFile $p
+powershell -NoProfile -ExecutionPolicy Bypass -File $p
 ```
 
 安装完成后：

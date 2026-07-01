@@ -1,0 +1,14 @@
+{
+  "name": "captain-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Captain desktop shell for macOS and Windows.",
+  "scripts": {
+    "check": "node scripts/check-prereqs.mjs",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3"
+  }
+}

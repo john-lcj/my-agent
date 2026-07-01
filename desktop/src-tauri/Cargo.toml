@@ -1,0 +1,17 @@
+[package]
+name = "captain-desktop"
+version = "0.1.0"
+description = "Captain desktop shell"
+authors = ["captain"]
+edition = "2021"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

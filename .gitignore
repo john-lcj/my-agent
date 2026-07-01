@@ -47,6 +47,12 @@ report/
 .coverage.*
 htmlcov/
 coverage.xml
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/dist/
+!desktop/dist/
+!desktop/dist/.gitkeep
 scripts/*
 !scripts/setup_wizard.py
 *.pem

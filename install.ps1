@@ -2,7 +2,11 @@
 #  Captain — Windows 一键安装脚本 (PowerShell · Portable)
 #
 #  在 PowerShell 粘贴运行：
-#    powershell -NoProfile -ExecutionPolicy Bypass -Command '$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; $p = Join-Path $env:TEMP "captain-install.ps1"; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile($u, $p); powershell -NoProfile -ExecutionPolicy Bypass -File $p'
+#    $u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"
+#    $p = Join-Path $env:TEMP "captain-install.ps1"
+#    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+#    Invoke-WebRequest -UseBasicParsing -Uri $u -OutFile $p
+#    powershell -NoProfile -ExecutionPolicy Bypass -File $p
 # ============================================================
 param(
     [switch]$UpdateOnly
