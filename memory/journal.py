@@ -14,6 +14,8 @@ import os
 import re
 import time
 
+from observability.log_rotation import rotate_if_needed
+
 
 _SEP = "\n\n---\n\n"
 _DIALOGUE_TURNS = 24
@@ -52,6 +54,7 @@ class Journal:
         if next_steps:
             lines.append("**下一步**:" + "；".join(s.strip() for s in next_steps if s.strip()))
         entry = "\n".join(lines)
+        rotate_if_needed(self.path)
         existing = self._read()
         with open(self.path, "w", encoding="utf-8") as f:
             f.write((existing + _SEP + entry) if existing else ("# 协作日志\n\n" + entry))

@@ -9,6 +9,7 @@ import os
 from dataclasses import asdict
 
 from core.types import Event, EventType
+from observability.log_rotation import append_text
 
 
 class FileTracer:
@@ -24,8 +25,7 @@ class FileTracer:
             "type": event.type.value,
             "payload": _safe(event.payload),
         }
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        append_text(self.path, json.dumps(record, ensure_ascii=False) + "\n")
         if self.echo and event.type != EventType.ASSISTANT_TOKEN:
             # token 已由 Channel 流式展示,再 echo 会重复刷屏
             print(f"  · trace[{event.type.value}] {record['payload']}")

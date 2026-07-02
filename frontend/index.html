@@ -336,19 +336,22 @@
     <div class="settings-shell">
       <nav class="settings-nav">
         <div class="settings-nav-title" id="settings-nav-title" data-i18n="settingsNavTitle">设置</div>
-        <div class="settings-nav-group" id="nav-group-common" data-i18n="navGroupCommon">常用</div>
-        <div class="settings-nav-item active" data-tab="profile" id="nav-profile" onclick="switchSettingsTab('profile', this)">我的档案</div>
-        <div class="settings-nav-item" data-tab="setup" id="nav-setup" onclick="switchSettingsTab('setup', this)">启动检查</div>
-        <div class="settings-nav-item" data-tab="general" id="nav-general" onclick="switchSettingsTab('general', this)" data-i18n="settingsGeneral">通用</div>
-        <div class="settings-nav-item" data-tab="usage" onclick="switchSettingsTab('usage', this)" id="nav-usage" data-i18n="settingsUsage">用量</div>
-        <div class="settings-nav-item" data-tab="keys" onclick="switchSettingsTab('keys', this)" id="nav-keys" data-i18n="modelKeyTitle">模型 API Key</div>
-        <div class="settings-nav-group" id="nav-group-advanced" data-i18n="navGroupAdvanced">高级</div>
+        <div class="settings-nav-group" id="nav-group-foundation">基础</div>
+        <div class="settings-nav-item active" data-tab="profile" id="nav-profile" onclick="switchSettingsTab('profile', this)">账户</div>
+        <div class="settings-nav-item" data-tab="keys" onclick="switchSettingsTab('keys', this)" id="nav-keys">模型</div>
+        <div class="settings-nav-item" data-tab="security" id="nav-security" onclick="switchSettingsTab('security', this)">安全</div>
+        <div class="settings-nav-item" data-tab="diagnostics" id="nav-diagnostics" onclick="switchSettingsTab('diagnostics', this)">诊断</div>
+        <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)">关于</div>
+        <div class="settings-nav-group" id="nav-group-automation">自动化</div>
         <div class="settings-nav-item" data-tab="channels" id="nav-channels" onclick="switchSettingsTab('channels', this)" data-i18n="navChannels">连接器</div>
         <div class="settings-nav-item" data-tab="tasks" id="nav-tasks" onclick="switchSettingsTab('tasks', this)" data-i18n="settingsTasks">定时任务</div>
         <div class="settings-nav-item" data-tab="goals" id="nav-goals" onclick="switchSettingsTab('goals', this)">目标</div>
         <div class="settings-nav-item" data-tab="monitors" id="nav-monitors" onclick="switchSettingsTab('monitors', this)">监控</div>
-        <div class="settings-nav-item" data-tab="governance" id="nav-governance" onclick="switchSettingsTab('governance', this)" data-i18n="settingsGovernance">治理</div>
-        <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)" data-i18n="settingsAbout">关于</div>
+        <div class="settings-nav-group" id="nav-group-system">系统</div>
+        <div class="settings-nav-item" data-tab="general" id="nav-general" onclick="switchSettingsTab('general', this)">偏好</div>
+        <div class="settings-nav-item" data-tab="usage" onclick="switchSettingsTab('usage', this)" id="nav-usage">用量</div>
+        <div class="settings-nav-item" data-tab="setup" id="nav-setup" onclick="switchSettingsTab('setup', this)">启动检查</div>
+        <div class="settings-nav-item" data-tab="governance" id="nav-governance" onclick="switchSettingsTab('governance', this)">审计日志</div>
       </nav>
       <div class="settings-content">
         <div class="settings-section" id="settings-setup">
@@ -364,8 +367,34 @@
         </div>
         <!-- 用户档案 -->
         <div class="settings-section active" id="settings-profile">
-          <h2>我的档案</h2>
-          <p class="settings-desc">把你的称呼、背景和偏好告诉 Captain。之后它会用这些信息理解你的目标、调整语气，并减少每次重复交代上下文。</p>
+          <h2>账户</h2>
+          <p class="settings-desc">管理 Pro 授权和个人档案。授权决定可用能力，档案帮助 Captain 理解你的背景、偏好和长期目标。</p>
+          <div class="account-license-panel">
+            <div class="account-panel-head">
+              <div>
+                <div class="account-panel-title">Pro 授权</div>
+                <div class="account-panel-desc">购买后邮件收到的 <code>CAPT-PRO-XXXX-XXXX-XXXX</code> 格式授权码。</div>
+              </div>
+              <button type="button" class="btn-sm" onclick="loadLicenseStatus(true)">重新校验</button>
+            </div>
+            <div class="license-status-card" id="license-status-card">
+              <div class="license-status-main">
+                <span class="license-plan-badge" id="license-plan-badge">FREE</span>
+                <span id="license-status-text">正在读取授权状态…</span>
+              </div>
+              <div class="license-status-grid">
+                <div><span>到期</span><strong id="license-expires">—</strong></div>
+                <div><span>机器</span><strong id="license-machine">—</strong></div>
+                <div><span>本机保存</span><strong id="license-storage">—</strong></div>
+              </div>
+            </div>
+            <div class="field-row compact">
+              <input id="license-key-input" type="text" class="field-input" placeholder="CAPT-PRO-XXXX-XXXX-XXXX" autocomplete="off"/>
+              <button type="button" class="btn-sm primary account-activate-btn" onclick="doActivate()">激活</button>
+            </div>
+            <div id="activate-status" class="field-hint account-status"></div>
+          </div>
+          <div class="settings-subhead">个人档案</div>
           <div class="field-group" style="margin-top:16px">
             <div class="field-label">名字</div>
             <input id="profile-name" type="text" class="field-input" placeholder="例如：李明"/>
@@ -392,8 +421,8 @@
         </div>
 
         <div class="settings-section" id="settings-general">
-          <h2 id="settings-general-title" data-i18n="settingsGeneral">通用</h2>
-          <p class="settings-desc" id="settings-general-desc" data-i18n="settingsGeneralSub">默认模型、治理档位与会话成本上限</p>
+          <h2 id="settings-general-title">偏好</h2>
+          <p class="settings-desc" id="settings-general-desc">语言、默认模型、会话成本和最大执行步数。</p>
         <div class="field-group">
           <div class="field-label" id="lbl-lang" data-i18n="lblLang">语言</div>
           <select id="cfg-lang" onchange="setLanguage(this.value)">
@@ -407,33 +436,6 @@
           <div class="field-hint" id="model-hint-empty" style="display:none;margin-top:6px"></div>
         </div>
         <div class="field-group">
-          <div class="field-label" data-i18n="tokenTitle">访问令牌(远程访问用)</div>
-          <div class="field-hint" style="margin-bottom:8px">仅手机/Tailscale 等远程访问需要。这里设置服务端 <code>AGENT_API_TOKEN</code>，并同步保存到本浏览器；可以填数字访问码，也可以填随机字符串。</div>
-          <div class="access-token-saved" id="access-token-saved" hidden>
-            <span>服务端与本浏览器已保存访问令牌</span>
-            <button class="btn-sm" type="button" onclick="showAccessTokenEditor()">修改</button>
-            <button class="btn-sm" type="button" onclick="clearAccessToken()">清除本浏览器</button>
-          </div>
-          <div class="field-row" id="access-token-editor">
-            <div class="field-group">
-              <input class="field-input" id="cfg-access-token" type="password" inputmode="numeric"
-                     placeholder="输入访问码或令牌" autocomplete="off"/>
-            </div>
-            <div class="field-group" style="align-self:flex-end">
-              <button class="btn-sm primary" type="button" onclick="saveAccessToken()" data-i18n="btnSettingsSave">保存</button>
-            </div>
-          </div>
-          <div id="access-token-result" class="field-hint" style="margin-top:6px"></div>
-        </div>
-        <div class="field-group">
-          <div class="field-label" id="lbl-gov" data-i18n="lblGov">治理档位</div>
-          <select id="cfg-governance-mode">
-            <option value="conservative" data-i18n="govConservative">保守(写操作多确认)</option>
-            <option value="balanced" data-i18n="govBalanced">平衡</option>
-            <option value="aggressive" data-i18n="govAggressive">激进(写操作自动放行)</option>
-          </select>
-        </div>
-        <div class="field-group">
           <div class="field-label" id="lbl-max-cost" data-i18n="lblMaxCost">金额上限(USD,留空不限)</div>
           <input class="field-input" id="cfg-max-cost" placeholder="例如 0.10" type="number" step="0.01"/>
         </div>
@@ -441,6 +443,43 @@
           <div class="field-label" id="lbl-max-steps" data-i18n="lblMaxSteps">最大步数</div>
           <input class="field-input" id="cfg-max-steps" placeholder="留空 / 0 = 无限制" type="number" min="0"/>
         </div>
+        </div>
+        <div class="settings-section" id="settings-security">
+          <h2>安全</h2>
+          <p class="settings-desc">管理远程访问令牌、自动执行边界和本地工作区保护。这里的设置决定 Captain 能从哪里访问、写到哪里、遇到风险时是否确认。</p>
+          <div class="field-group">
+            <div class="field-label">访问令牌（远程访问用）</div>
+            <div class="field-hint" style="margin-bottom:8px">仅手机、Tailscale 或外网访问需要。这里会设置服务端 <code>AGENT_API_TOKEN</code>，并同步保存到本浏览器；本机使用可以留空。</div>
+            <div class="access-token-saved" id="access-token-saved" hidden>
+              <span>服务端与本浏览器已保存访问令牌</span>
+              <button class="btn-sm" type="button" onclick="showAccessTokenEditor()">修改</button>
+              <button class="btn-sm" type="button" onclick="clearAccessToken()">清除本浏览器</button>
+            </div>
+            <div class="field-row compact" id="access-token-editor">
+              <input class="field-input" id="cfg-access-token" type="password" inputmode="numeric"
+                     placeholder="输入访问码或令牌" autocomplete="off"/>
+              <button class="btn-sm primary" type="button" onclick="saveAccessToken()">保存</button>
+            </div>
+            <div id="access-token-result" class="field-hint" style="margin-top:6px"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-label" id="lbl-gov">治理档位</div>
+            <select id="cfg-governance-mode">
+              <option value="conservative">保守：写入、删除、联网等高风险动作会更多确认</option>
+              <option value="balanced">平衡：常规任务自动推进，风险动作再确认</option>
+              <option value="aggressive">激进：更少打断，适合可信本机环境</option>
+            </select>
+            <div class="field-hint" style="margin-top:6px">建议客户默认使用“平衡”；涉及敏感数据或生产文件时使用“保守”。</div>
+          </div>
+          <div class="security-help-card" id="security-help-card">
+            <div class="security-help-title">安全边界设置</div>
+            <div class="security-help-desc">
+              <code>AGENT_WORKSPACE_ROOT</code> 会把文件读写限制在项目工作区内；
+              <code>AUTH_SECRET</code> 用来保护登录态和远程访问。修改 <code>.env</code> 后需要重启服务。
+            </div>
+            <pre class="security-help-code">AGENT_WORKSPACE_ROOT=/Users/luchangjie/Desktop/my agent
+AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;print(secrets.token_urlsafe(32))"</pre>
+          </div>
         </div>
         <div class="settings-section" id="settings-keys">
           <h2 data-i18n="modelKeyTitle">模型接入</h2>
@@ -631,68 +670,59 @@
 
         <!-- 治理 -->
         <div class="settings-section" id="settings-governance">
-          <h2 id="settings-governance-title" data-i18n="settingsGovernance">治理</h2>
-          <p class="settings-desc" id="settings-governance-desc" data-i18n="settingsGovernanceDesc">近 7 天裁决分布</p>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:10px" id="gov-stats-hint" data-i18n="govStatsHint">近 7 天治理裁决统计(来自 trace)</div>
-        <div id="gov-stats-summary" style="display:none;margin-bottom:12px"></div>
-        <div id="gov-stats-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
-        <div class="security-help-card" id="security-help-card">
-          <div class="security-help-title">安全边界设置</div>
-          <div class="security-help-desc">
-            <code>AGENT_WORKSPACE_ROOT</code> 会把文件读写限制在项目工作区内；
-            <code>AUTH_SECRET</code> 用来保护登录态和远程访问。修改 <code>.env</code> 后需要重启服务。
-          </div>
-          <pre class="security-help-code">AGENT_WORKSPACE_ROOT=/Users/luchangjie/Desktop/my agent
-AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;print(secrets.token_urlsafe(32))"</pre>
-        </div>
-        <div style="margin-top:16px">
-          <div style="font-size:13px;font-weight:500;margin-bottom:8px">审计日志（最近 50 条）
+          <h2 id="settings-governance-title" data-i18n="settingsGovernance">审计日志</h2>
+          <p class="settings-desc" id="settings-governance-desc" data-i18n="settingsGovernanceDesc">查看 Captain 最近做过哪些动作、为什么允许或拒绝。</p>
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px">最近审计记录
             <button class="btn-sm" style="margin-left:8px" onclick="loadAuditLog()">刷新</button>
           </div>
-          <div id="audit-log-table" style="font-size:11px;color:var(--muted)">点击刷新加载…</div>
+          <div id="audit-log-table" style="font-size:12px;color:var(--muted)">点击刷新加载…</div>
         </div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px" id="gov-stats-hint" data-i18n="govStatsHint">近 7 天安全裁决概览</div>
+        <div id="gov-stats-summary" style="display:none;margin-bottom:12px"></div>
+        <div id="gov-stats-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
+        </div>
+        <div class="settings-section" id="settings-diagnostics">
+          <h2>诊断</h2>
+          <p class="settings-desc">用于客户支持和现场排障：检查更新、打开日志、导出诊断包或备份数据。</p>
+          <div class="diagnostics-panel">
+            <div class="settings-subhead">更新</div>
+            <div class="diagnostic-row">
+              <button type="button" class="btn-sm primary" id="btn-update" onclick="doUpdate()">检查并更新</button>
+              <span id="update-status" class="field-hint diagnostic-status"></span>
+            </div>
+          </div>
+          <div class="diagnostics-panel">
+            <div class="settings-subhead">日志和诊断包</div>
+            <p class="field-hint">诊断包会自动脱敏，不包含模型 Key、授权码或访问令牌明文。</p>
+            <div class="diagnostic-row">
+              <button type="button" class="btn-sm" onclick="openLogsFolder()">打开日志</button>
+              <button type="button" class="btn-sm" onclick="downloadDiagnostics()">导出诊断包</button>
+              <span id="diagnostics-status" class="field-hint diagnostic-status"></span>
+            </div>
+          </div>
+          <div class="diagnostics-panel">
+            <div class="settings-subhead">备份</div>
+            <p class="field-hint">导出对话、配置和工作流数据，迁移到新机器时可再导入。</p>
+            <div class="diagnostic-row">
+              <button type="button" class="btn-sm" onclick="downloadBackup()">导出备份</button>
+              <button type="button" class="btn-sm" onclick="document.getElementById('backup-import-input').click()">导入备份</button>
+              <input id="backup-import-input" type="file" accept="application/json,.json" style="display:none" onchange="importBackupFile(this)">
+              <span id="backup-status" class="field-hint diagnostic-status"></span>
+            </div>
+          </div>
         </div>
         <div class="settings-section" id="settings-about">
           <h2 id="settings-about-title" data-i18n="settingsAbout">关于</h2>
-          <p class="settings-desc" id="settings-about-desc" data-i18n="settingsAboutDesc">Captain Agent 平台</p>
-        <div style="color:var(--muted);font-size:14px;line-height:1.8;max-width:520px">
+          <p class="settings-desc" id="settings-about-desc">本地优先的 AI Agent 工作台。</p>
+        <div style="color:var(--muted);font-size:14px;line-height:1.8;max-width:620px">
           <p><strong style="color:var(--txt)">Captain</strong> <span id="about-version" style="font-size:12px;color:var(--muted)"></span></p>
           <p id="about-tagline" data-i18n="aboutTagline">听懂目标 · 自己拆解执行 · 治理可审计</p>
           <br>
-          <p id="about-features" data-i18n="aboutFeatures">单 Agent 自治 + 主动反思 + 多模态/语音 + 加密保险库 + 浏览器/连接器 + 手机直连/邮件</p>
+          <p id="about-features">Captain 以安全和数据本地化为核心：你的模型 Key、授权码和项目资料优先留在本机；它能理解模糊目标，拆解计划，使用工具推进任务，并留下可审计记录。</p>
           <p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button type="button" class="btn-sm" id="btn-open-shortcuts" onclick="openShortcuts()" data-i18n="shortcutsLink">键盘快捷键</button>
             <button type="button" class="btn-sm" data-testid="reopen-onboarding" onclick="openOnboarding(true)">重新打开引导</button>
-          </p>
-          <p style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
-            <span style="font-size:13px;color:var(--txt);font-weight:600">激活 Pro 授权码</span><br>
-            <span style="font-size:12px;color:var(--muted)">购买后邮件收到的 CAPT-PRO-XXXX-XXXX-XXXX 格式授权码</span>
-          </p>
-          <p style="display:flex;gap:8px;margin-top:8px">
-            <input id="license-key-input" type="text" placeholder="CAPT-PRO-XXXX-XXXX-XXXX"
-              style="flex:1;background:var(--input-bg,#1e1e24);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--txt);font-size:13px;outline:none"/>
-            <button type="button" onclick="doActivate()"
-              style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap">
-              激活
-            </button>
-          </p>
-          <p id="activate-status" style="font-size:12px;margin-top:6px;min-height:18px"></p>
-          <p style="margin-top:16px">
-            <button type="button" class="btn-sm" id="btn-update" onclick="doUpdate()" style="background:var(--accent);color:#fff;border:none;padding:7px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
-              ⬆ 检查并更新
-            </button>
-            <span id="update-status" style="margin-left:10px;font-size:13px;color:var(--muted)"></span>
-          </p>
-          <p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn-sm" onclick="openLogsFolder()">打开日志</button>
-            <button type="button" class="btn-sm" onclick="downloadDiagnostics()">导出诊断包</button>
-            <span id="diagnostics-status" style="font-size:13px;color:var(--muted)"></span>
-          </p>
-          <p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn-sm" onclick="downloadBackup()">导出备份</button>
-            <button type="button" class="btn-sm" onclick="document.getElementById('backup-import-input').click()">导入备份</button>
-            <input id="backup-import-input" type="file" accept="application/json,.json" style="display:none" onchange="importBackupFile(this)">
-            <span id="backup-status" style="font-size:13px;color:var(--muted)"></span>
           </p>
         </div>
         </div>

@@ -13,18 +13,39 @@ def test_audit_writes_jsonl():
     import observability.audit as au
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "audit.log")
+        old_path = au._audit_path
         au._audit_path = lambda: path  # 重定向到临时文件
-        au.audit(trace_id="t1", agent="captain", capability="shell.run",
-                 args={"command": "ls", "secret": "should-not-appear"},
-                 decision="allow", ok=True)
-        au.audit(trace_id="t1", agent="captain", capability="fs.write",
-                 args={"path": "/etc/x"}, decision="ask", ok=False, detail="拒绝")
-        lines = [json.loads(l) for l in open(path, encoding="utf-8").read().splitlines()]
+        try:
+            au.audit(trace_id="t1", agent="captain", capability="shell.run",
+                     args={"command": "ls", "secret": "should-not-appear"},
+                     decision="allow", ok=True)
+            au.audit(trace_id="t1", agent="captain", capability="fs.write",
+                     args={"path": "/etc/x"}, decision="ask", ok=False, detail="拒绝")
+            lines = [json.loads(l) for l in open(path, encoding="utf-8").read().splitlines()]
+        finally:
+            au._audit_path = old_path
         assert len(lines) == 2
         assert lines[0]["cap"] == "shell.run" and lines[0]["decision"] == "allow"
         # 只摘录白名单参数键,secret 不入日志
         assert lines[0]["args"] == {"command": "ls"}
         assert lines[1]["ok"] is False and lines[1]["args"]["path"] == "/etc/x"
+
+
+def test_log_rotation_keeps_bounded_backups():
+    from observability.log_rotation import append_text
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "trace.jsonl")
+        append_text(path, "a" * 20, limit=12, backups=2)
+        assert os.path.isfile(path)
+        assert not os.path.exists(path + ".1")
+        append_text(path, "b" * 20, limit=12, backups=2)
+        assert os.path.isfile(path + ".1")
+        append_text(path, "c" * 20, limit=12, backups=2)
+        assert os.path.isfile(path + ".1")
+        assert os.path.isfile(path + ".2")
+        append_text(path, "d" * 20, limit=12, backups=2)
+        assert not os.path.exists(path + ".3")
+        assert open(path, encoding="utf-8").read() == "d" * 20
 
 
 def test_extract_artifacts():

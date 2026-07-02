@@ -99,6 +99,13 @@
     font-size: 18px; font-weight: 700; margin: 0 auto 16px; }
   .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
   .step p { color: var(--dim); font-size: 14px; line-height: 1.6; }
+  .support-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 14px; margin-top: 36px; }
+  .support-card { background: rgba(13,13,15,.45); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px; }
+  .support-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .support-card p, .support-card li { color: var(--dim); font-size: 13px; line-height: 1.65; }
+  .support-card ul { padding-left: 18px; }
+  .support-card code { color: var(--accent2); background: #0a0a0c; padding: 1px 5px; border-radius: 4px; }
 
   /* pricing */
   #pricing { background: radial-gradient(ellipse 60% 40% at 50% 100%,rgba(124,108,240,.1) 0%,transparent 70%); }
@@ -277,6 +284,24 @@
     <div style="text-align:center;margin-top:48px">
       <button class="btn-primary" onclick="openInstallModal()" style="font-size:15px">查看安装命令</button>
     </div>
+    <div class="support-grid">
+      <div class="support-card">
+        <h3>首次打不开怎么办？</h3>
+        <p>当前测试版未做 Apple 公证。若提示“Apple 无法检查是否包含恶意软件”，请打开“系统设置 -> 隐私与安全”，在安全提示里点击“仍要打开”。</p>
+      </div>
+      <div class="support-card">
+        <h3>更新和重装</h3>
+        <p>App 内进入“设置 -> 诊断 -> 检查并更新”。如果更新失败，回到本页重新下载最新版 DMG，覆盖拖入 Applications 即可。</p>
+      </div>
+      <div class="support-card">
+        <h3>需要客服排障时</h3>
+        <ul>
+          <li>打开 Captain 的“设置 -> 诊断”。</li>
+          <li>先点“打开日志”查看本机日志目录。</li>
+          <li>再点“导出诊断包”，发邮件到 <a href="mailto:luchangjie@outlook.com" style="color:var(--accent2)">luchangjie@outlook.com</a>。</li>
+        </ul>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -335,7 +360,7 @@
     <div class="faq-list">
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">我的对话数据会上传到你们服务器吗？<span class="faq-arrow">+</span></div><div class="faq-a">不会。Captain 完全在你的本机运行，对话历史、文件、密钥都存在本地。我们的服务器只做授权码验证，不接触任何对话内容。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">需要我自己的 LLM API Key 吗？<span class="faq-arrow">+</span></div><div class="faq-a">是的。你需要自备 DeepSeek / OpenAI / Anthropic 等的 API Key，填在本地 .env 文件里。推荐 DeepSeek，价格极低，日常使用成本不超过 ¥5/月。</div></div>
-      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">支持。macOS、Windows、Linux 均可安装。Windows 用户在 PowerShell 运行安装命令即可，脚本会先下载到临时文件，再用 <code>powershell -File</code> 执行，自动安装依赖。</div></div>
+      <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">支持 Windows 吗？<span class="faq-arrow">+</span></div><div class="faq-a">Windows 适配在路线图里，但当前优先交付 macOS App。Windows 用户可以先用命令行备用安装，正式桌面版会在后续成熟后发布。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">Pro 授权可以换电脑用吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。Pro 支持最多 2 台设备同时激活。换新电脑时，联系我们注销旧设备即可重新激活。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">不满意可以退款吗？<span class="faq-arrow">+</span></div><div class="faq-a">可以。购买后 7 天内发邮件申请全额退款，无需理由。</div></div>
       <div class="faq-item" onclick="toggleFaq(this)"><div class="faq-q">是开源的吗？<span class="faq-arrow">+</span></div><div class="faq-a">核心代码在 GitHub 开源（MIT 协议），可自行搭建。Pro 授权是对商业使用的支持，开源代码本身不受限制。</div></div>
@@ -370,7 +395,8 @@
       </a>
     </div>
     <p class="download-fallback">
-      如果下载失败，请打开 <a href="https://github.com/john-lcj/my-agent/releases" target="_blank">GitHub Releases</a> 选择最新版安装包。未签名测试版首次打开时，macOS 可能需要在“系统设置 -> 隐私与安全”里允许打开。
+      如果下载失败，请打开 <a href="https://github.com/john-lcj/my-agent/releases" target="_blank">GitHub Releases</a> 选择最新版安装包。
+      如果首次打开提示“Apple 无法检查是否包含恶意软件”，请到“系统设置 -> 隐私与安全”，在 Captain 的安全提示旁点击“仍要打开”。
     </p>
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button onclick="switchOS('mac',this)" class="pay-tab active" style="flex:1">命令行备用</button>
@@ -391,9 +417,9 @@
       </div>
     </div>
     <ol class="install-steps">
-      <li>安装完成后，编辑 <b>~/captain/.env</b>，填入你的 DeepSeek API Key</li>
-      <li>运行 <b>captain.sh</b>（macOS）或 <b>captain.bat</b>（Windows）启动服务</li>
-      <li>浏览器打开 <b>http://localhost:8000</b> 开始使用</li>
+      <li>macOS App：打开 DMG，把 <b>Captain</b> 拖进 <b>Applications</b>。</li>
+      <li>首次启动后，在 <b>设置 -> 模型</b> 填入 OpenRouter、DeepSeek 或其他模型 Key，并点击“测试连接”。</li>
+      <li>更新失败或运行异常时，在 <b>设置 -> 诊断</b> 打开日志或导出诊断包发给我们。</li>
     </ol>
     <p style="font-size:13px;color:var(--dim);margin-bottom:20px">
       没有 API Key？→ <a href="https://platform.deepseek.com" target="_blank" style="color:var(--accent2)">DeepSeek 注册</a>（新用户有免费额度）

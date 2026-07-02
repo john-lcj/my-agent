@@ -10,6 +10,8 @@ import json
 import os
 import time
 
+from observability.log_rotation import append_text
+
 # 只摘录这些参数键(安全相关),其余忽略;值截断到 200 字符。
 _ARG_KEYS = ("path", "command", "to", "group_id", "user_id", "query", "agent", "task", "url")
 
@@ -74,7 +76,6 @@ def audit(*, trace_id: str = "", agent: str = "", capability: str = "",
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        append_text(path, json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         pass

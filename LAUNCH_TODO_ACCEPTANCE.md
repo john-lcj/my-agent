@@ -146,7 +146,7 @@
 
 ### P1-1 设置页信息架构收口
 
-状态：`[ ]`
+状态：`[x]`
 
 完成定义：
 
@@ -159,9 +159,17 @@
 - 新客户能在 1 分钟内找到授权、模型、诊断。
 - 设置页按钮和说明无重叠、无长英文错误。
 
+验收记录：
+
+- 设置页基础入口已收口为：账户、模型、安全、诊断、关于；授权码已移到「账户」，远程访问令牌和安全边界移到「安全」，更新/日志/诊断包/备份移到「诊断」。
+- 启动检查入口在当前无待办状态下不显示；顶部状态提示也只在存在待处理建议时出现。
+- About 页已改为产品说明，不再混放授权、更新和诊断操作。
+- 浏览器人工验收通过：账户页和诊断页无按钮/说明重叠；基础入口刷新后仍按客户路径显示。
+- 自动检查通过：`node --check frontend/app.js`、`git diff --check`、`python3 -m pytest -q tests/test_app_api_smoke.py tests/test_model_keys.py tests/test_ext_models.py`。
+
 ### P1-2 审计日志产品化
 
-状态：`[ ]`
+状态：`[x]`
 
 完成定义：
 
@@ -173,9 +181,17 @@
 - 治理页能看到最近审计记录。
 - 空日志时显示空状态，不报错。
 
+验收记录：
+
+- 「治理」已改为「审计日志」，首屏优先展示最近审计记录，统计概览放在日志下方。
+- 审计表已产品化为：时间、操作、结果、原因、任务；能力名、裁决和执行结果转为客户可读中文。
+- 页面不再直接展示 `args` JSON 字符串；原始 JSONL 仍只保留在日志/诊断包里用于排障。
+- 浏览器人工验收通过：最近 50 条审计记录可见，首屏表格无重叠，无 JSON 原文。
+- 自动检查通过：`node --check frontend/app.js`、`git diff --check`、`python3 -m pytest -q tests/test_app_api_smoke.py tests/test_observability.py`。
+
 ### P1-3 日志轮转
 
-状态：`[ ]`
+状态：`[x]`
 
 完成定义：
 
@@ -187,9 +203,16 @@
 - 人工构造大日志后触发轮转。
 - 旧日志不会无限增长。
 
+验收记录：
+
+- 新增通用日志轮转模块，默认 `20MB`、保留 `3` 份备份；可用 `AGENT_LOG_MAX_BYTES` 和 `AGENT_LOG_BACKUPS` 调整。
+- 已接入 `trace.jsonl`、`audit.log`、`journal.md` 的写入链路；诊断包仍只打包最近 tail 片段。
+- 人工构造临时大日志通过：最终只保留 `trace.jsonl`、`trace.jsonl.1`、`trace.jsonl.2`，没有 `.3` 无限增长。
+- 自动检查通过：`python3 -m pytest -q tests/test_observability.py tests/test_journal.py tests/test_app_api_smoke.py`、`node --check frontend/app.js`、`git diff --check`。
+
 ### P1-4 授权码体验
 
-状态：`[ ]`
+状态：`[x]`
 
 完成定义：
 
@@ -203,9 +226,18 @@
 - 无效授权显示中文原因。
 - 重启后授权状态保持。
 
+验收记录：
+
+- 账户页新增授权状态卡：展示 Pro/Free、剩余天数、到期时间、机器号、本机保存方式，并提供「重新校验」按钮。
+- `/api/license/status` 新增 `expires_at`、`machine_id_short`、`keychain`、`error`，支持 `?refresh=1` 强制重新校验。
+- 激活成功后自动刷新授权状态；常见网络、过期、无效、设备上限错误已中文化。
+- 授权客户端保留原有缓存逻辑，并在 macOS App/Keychain 启用路径下继续把 `CAPTAIN_LICENSE_KEY` 写入 Keychain。
+- 接口验收通过：当前返回 `plan=pro`、`days_left=364`、`expires_at=True`、`machine_id_short=7cea57200593`。
+- 自动检查通过：`python3 -m pytest -q tests/test_license.py tests/test_app_api_smoke.py`、`node --check frontend/app.js`、`git diff --check`。
+
 ### P1-5 官网安装说明与故障排查
 
-状态：`[ ]`
+状态：`[x]`
 
 完成定义：
 
@@ -217,6 +249,13 @@
 
 - 新用户按官网说明能完成安装。
 - 联系方式正确。
+
+验收记录：
+
+- 官网下载区新增 macOS 安装和排障说明：拖入 Applications、首次打开 Gatekeeper 提示处理、App 内检查更新。
+- 已加入日志/诊断包发送方式：`设置 -> 诊断 -> 导出诊断包`，发送到 `luchangjie@outlook.com`。
+- FAQ 已调整 Windows 表述：当前优先交付 macOS App，Windows 桌面版后续成熟后发布。
+- 静态验收通过：macOS 安装说明、Gatekeeper 文案、诊断包说明、联系邮箱、Apple Silicon/Intel DMG 链接、二维码资源均存在。
 
 ## P2 成熟版增强
 

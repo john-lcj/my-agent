@@ -1734,7 +1734,7 @@ async function renderSkillsPage() {
 
 /* ══ 设置 / 自定义(Claude 式双栏面板)════════════════════════════ */
 function openSettings(tab) {
-  tab = tab || 'general';
+  tab = tab || 'profile';
   document.getElementById('settings-overlay').classList.add('open');
   switchSettingsTab(tab);
   loadSettingsUI();
@@ -1751,12 +1751,13 @@ function switchSettingsTab(tab, el) {
   });
   if (tab === 'tasks') refreshTasks();
   if (tab === 'setup') loadSetupStatus();
+  if (tab === 'security') loadSetupStatus();
   if (tab === 'governance') { loadGovStats(); loadAuditLog(); }
   if (tab === 'usage') loadUsageStats();
-  if (tab === 'channels' || tab === 'general' || tab === 'keys') loadSettingsUI();
+  if (tab === 'channels' || tab === 'general' || tab === 'keys' || tab === 'security') loadSettingsUI();
   if (tab === 'goals') renderGoals();
   if (tab === 'monitors') renderMonitors();
-  if (tab === 'profile') loadProfile();
+  if (tab === 'profile') { loadProfile(); loadLicenseStatus(false); }
   if (tab === 'about') fetch('/api/version').then(r=>r.json()).then(d=>{
     const el = document.getElementById('about-version');
     if (el) el.textContent = 'v' + (d.version || '');
@@ -2208,7 +2209,105 @@ function copyWritingOutput() {
   try { navigator.clipboard.writeText(el.value); if (typeof toast === 'function') toast('已复制'); } catch {}
 }
 
-/* ── 设置:治理 Audit Log ── */
+/* ── 设置:审计日志 ── */
+function auditActionLabel(row) {
+  const cap = row.action || row.tool || row.capability || row.cap || '';
+  const map = {
+    'fs.read': '读取文件',
+    'fs.write': '写入文件',
+    'fs.list': '浏览文件夹',
+    'fs.search': '搜索文件',
+    'shell.run': '运行命令',
+    'web.search': '网页搜索',
+    'web.fetch': '读取网页',
+    'browser.open': '打开浏览器',
+    'browser.click': '操作浏览器',
+    'email.send': '发送邮件',
+    'secret.list': '读取密钥清单',
+    'skill.find_files': '查找工作区文件',
+    'exa.search': '联网搜索',
+    'noop': '系统检查',
+  };
+  return map[cap] || cap || '系统动作';
+}
+
+function auditDecisionLabel(decision) {
+  return {
+    allow: '已放行',
+    ask: '需确认',
+    block: '已拒绝',
+    deny: '已拒绝',
+  }[decision] || (decision || '未记录');
+}
+
+function auditDecisionClass(decision) {
+  if (decision === 'allow') return 'allow';
+  if (decision === 'block' || decision === 'deny') return 'block';
+  if (decision === 'ask') return 'ask';
+  return 'unknown';
+}
+
+function auditResultLabel(row) {
+  if (row.ok === true) return { text: '成功', cls: 'ok' };
+  if (row.ok === false) return { text: '失败', cls: 'fail' };
+  return { text: '未记录', cls: 'muted' };
+}
+
+function auditTimeLabel(ts) {
+  if (!ts) return '—';
+  if (typeof ts === 'number') {
+    return new Date(ts * 1000).toLocaleString('zh-CN', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+  }
+  const date = new Date(String(ts).replace(' ', 'T'));
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleString('zh-CN', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+  }
+  return String(ts);
+}
+
+function auditArgsSummary(args) {
+  const parts = [];
+  const labels = {
+    path: '路径',
+    command: '命令',
+    to: '收件人',
+    query: '查询',
+    url: '网页',
+    task: '任务',
+    agent: 'Agent',
+    user_id: '用户',
+    group_id: '群组',
+  };
+  Object.keys(labels).forEach(key => {
+    if (args && args[key]) parts.push(`${labels[key]}：${String(args[key]).slice(0, 120)}`);
+  });
+  return parts.join('；');
+}
+
+function auditReason(row) {
+  const detail = String(row.detail || '').trim();
+  if (detail) return detail;
+  const args = auditArgsSummary(row.args || {});
+  if (args) return args;
+  const decision = row.decision || '';
+  if (decision === 'allow') return '符合当前安全策略';
+  if (decision === 'ask') return '需要用户确认后继续';
+  if (decision === 'block' || decision === 'deny') return '安全策略已阻止';
+  return '无补充说明';
+}
+
+function auditTaskLabel(row) {
+  const trace = row.trace || row.trace_id || '';
+  if (row.task) return String(row.task);
+  if (row.args?.task) return String(row.args.task);
+  if (!trace) return '当前会话';
+  return `会话 ${String(trace).slice(0, 8)}`;
+}
+
 async function loadAuditLog() {
   const box = document.getElementById('audit-log-table'); if (!box) return;
   box.innerHTML = '加载中…';
@@ -2216,26 +2315,25 @@ async function loadAuditLog() {
     const d = await (await fetch('/api/audit?limit=50')).json();
     const rows = d.records || d.logs || d.entries || (Array.isArray(d) ? d : []);
     if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无审计日志</div>'; return; }
-    box.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="color:var(--dim);text-align:left">
-        <th style="padding:4px 8px">时间</th><th style="padding:4px 8px">操作</th>
-        <th style="padding:4px 8px">裁决</th><th style="padding:4px 8px">结果</th><th style="padding:4px 8px">摘要</th>
+    box.innerHTML = `<table class="audit-table">
+      <thead><tr>
+        <th>时间</th><th>操作</th><th>结果</th><th>原因</th><th>任务</th>
       </tr></thead>
       <tbody>${rows.map(r => {
-        const ts = r.ts || r.timestamp || r.created_at;
-        const time = typeof ts === 'number'
-          ? new Date(ts * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
-          : (ts || '—');
-        const dec = r.decision || r.verdict || '';
-        const color = dec==='allow'?'#3cb371':dec==='block'?'#c84444':'#c89b3c';
-        const args = r.args && Object.keys(r.args).length ? JSON.stringify(r.args) : '';
-        const ok = r.ok === true ? '成功' : (r.ok === false ? '失败' : '—');
-        return `<tr style="border-top:1px solid var(--border)">
-          <td style="padding:4px 8px;color:var(--dim)">${escHtml(time)}</td>
-          <td style="padding:4px 8px">${escHtml(r.action||r.tool||r.capability||r.cap||'')}</td>
-          <td style="padding:4px 8px;color:${color}">${escHtml(dec)}</td>
-          <td style="padding:4px 8px;color:var(--dim)">${escHtml(ok)}</td>
-          <td style="padding:4px 8px;color:var(--dim)">${escHtml(r.detail || args || '')}</td>
+        const decision = r.decision || r.verdict || '';
+        const result = auditResultLabel(r);
+        return `<tr>
+          <td class="audit-time">${escHtml(auditTimeLabel(r.ts || r.timestamp || r.created_at))}</td>
+          <td>
+            <div class="audit-action">${escHtml(auditActionLabel(r))}</div>
+            <div class="audit-sub">${escHtml(r.cap || r.capability || r.tool || '')}</div>
+          </td>
+          <td>
+            <span class="audit-badge ${auditDecisionClass(decision)}">${escHtml(auditDecisionLabel(decision))}</span>
+            <span class="audit-result ${result.cls}">${escHtml(result.text)}</span>
+          </td>
+          <td class="audit-reason">${escHtml(auditReason(r))}</td>
+          <td class="audit-task">${escHtml(auditTaskLabel(r))}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
@@ -2867,7 +2965,7 @@ function buildOnboardingSteps(data) {
       state: pro ? 'ok' : 'warn',
       body: pro ? `Pro 已激活${lic.days_left != null ? `，剩余 ${lic.days_left} 天` : ''}。` : '没有授权码也可先体验基础功能；购买后在这里激活 Pro。',
       action: '去激活',
-      tab: 'about',
+      tab: 'profile',
     },
     {
       title: '配置模型 Key',
@@ -2991,8 +3089,8 @@ async function loadSetupStatus() {
       body: remoteHost
         ? `服务绑定 ${security.web_host}:${security.web_port || '8000'}；手机浏览器需要填访问码，本浏览器${tokenSavedInBrowser ? '已保存。' : '未保存。'}`
         : '本机使用可不填；手机/Tailscale 访问时需要访问令牌。',
-      action: '通用设置',
-      tab: 'general',
+      action: '安全设置',
+      tab: 'security',
     },
     {
       key: 'security',
@@ -3000,8 +3098,8 @@ async function loadSetupStatus() {
       state: security.workspace_root && security.auth_secret ? 'ok' : 'warn',
       stateText: security.workspace_root && security.auth_secret ? '稳妥' : '可加固',
       body: `${security.workspace_root ? '工作区已限制' : '未设置 AGENT_WORKSPACE_ROOT'}；${security.auth_secret ? 'AUTH_SECRET 已设置' : 'AUTH_SECRET 建议随机化'}。`,
-      action: '查看治理',
-      tab: 'governance',
+      action: '安全设置',
+      tab: 'security',
     },
     {
       key: 'profile',
@@ -3028,7 +3126,7 @@ async function loadSetupStatus() {
       stateText: (lic.plan || 'free').toUpperCase(),
       body: lic.days_left != null ? `授权剩余 ${lic.days_left} 天。` : 'Free 可用基础功能；Pro 开启主动任务和高级工作流。',
       action: '激活授权',
-      tab: 'about',
+      tab: 'profile',
     },
   ];
   _setupStatusCache = { cards, cfg, models, keys, stats, license: lic, profile, channels: channelsData, tokenSavedInBrowser };
@@ -3057,18 +3155,22 @@ function renderSetupStatus() {
   if (grid) grid.innerHTML = data.cards.map(_diagCard).join('');
   const setup = document.getElementById('setup-card');
   const list = document.getElementById('setup-list');
+  const navSetup = document.getElementById('nav-setup');
+  const hasPending = pending.length > 0;
+  if (navSetup) navSetup.hidden = !hasPending;
   if (setup && list) {
     const important = data.cards.filter(c => ['model', 'keys', 'remote', 'profile'].includes(c.key));
     list.innerHTML = important.map(_setupItemHtml).join('');
-    setup.hidden = isSetupStatusDismissed() || (important.every(c => c.state === 'ok') && msgCount > 0);
+    setup.hidden = !hasPending || isSetupStatusDismissed();
   }
   const top = document.getElementById('top-status-pill');
   if (top) {
     const bad = data.cards.filter(c => c.state === 'bad').length;
     const warn = data.cards.filter(c => c.state === 'warn').length;
+    top.hidden = !hasPending;
     top.className = 'top-status-pill ' + (bad ? 'bad' : warn ? 'warn' : 'ok');
-    top.textContent = bad ? `${bad} 项需处理` : warn ? `${warn} 项建议` : '状态就绪';
-    top.title = pending.length ? pending.map(c => `${c.title}: ${c.body}`).join('\n') : '状态就绪';
+    top.textContent = bad ? `${bad} 项需处理` : `${warn} 项建议`;
+    top.title = pending.map(c => `${c.title}: ${c.body}`).join('\n');
   }
   const securityHelp = document.getElementById('security-help-card');
   if (securityHelp) {
@@ -4056,10 +4158,17 @@ const I18N = {
     debateSummary: '辩论总结',
     debateHost: '主持人',
     navGroupCommon: '常用',
+    navGroupFoundation: '基础',
+    navGroupAutomation: '自动化',
+    navGroupSystem: '系统',
+    navAccount: '账户',
+    navModels: '模型',
+    navSecurity: '安全',
+    navDiagnostics: '诊断',
     navGroupAdvanced: '高级',
     navChannels: '连接器',
     navTasks: '定时任务',
-    navGovernance: '治理',
+    navGovernance: '审计日志',
     navAbout: '关于',
     settingsNavTitle: '设置',
     btnSettingsRefresh: '刷新状态',
@@ -4098,26 +4207,26 @@ const I18N = {
     usageLoadFailed: '加载失败',
     usageTasksUnit: '次',
     renameHint: '双击可重命名',
-    settingsGeneral: '通用',
-    settingsGeneralDesc: '语言、默认模型、治理档位与会话成本上限',
+    settingsGeneral: '偏好',
+    settingsGeneralDesc: '语言、默认模型、会话成本和最大执行步数。',
     lblLang: '语言',
     lblModel: '默认模型',
     lblGov: '治理档位',
-    govConservative: '保守(写操作多确认)',
-    govBalanced: '平衡',
-    govAggressive: '激进(写操作自动放行)',
+    govConservative: '保守：写入、删除、联网等高风险动作会更多确认',
+    govBalanced: '平衡：常规任务自动推进，风险动作再确认',
+    govAggressive: '激进：更少打断，适合可信本机环境',
     lblMaxCost: '金额上限(USD,留空不限)',
     lblMaxSteps: '最大步数',
     settingsChannelsDesc: '手机直连(Tailscale)+ 邮件',
     settingsTasks: '定时任务',
     settingsTasksDesc: '到点自动执行，无人值守时默认只读',
-    settingsGovernance: '治理',
-    settingsGovernanceDesc: '近 7 天裁决分布',
+    settingsGovernance: '审计日志',
+    settingsGovernanceDesc: '近 7 天裁决分布与最近审计记录',
     settingsAbout: '关于',
-    settingsAboutDesc: 'Captain Agent 平台',
+    settingsAboutDesc: '本地优先的 AI Agent 工作台。',
     aboutTagline: '听懂目标 · 自己拆解执行 · 治理可审计',
-    aboutFeatures: '单 Agent 自治 + 主动反思 + 多模态/语音 + 加密保险库 + 浏览器/连接器 + 手机直连/邮件',
-    govStatsHint: '近 7 天治理裁决统计(来自 trace)',
+    aboutFeatures: 'Captain 以安全和数据本地化为核心：你的模型 Key、授权码和项目资料优先留在本机；它能理解模糊目标，拆解计划，使用工具推进任务，并留下可审计记录。',
+    govStatsHint: '近 7 天安全裁决概览',
     govHitRate: '免确认命中率',
     govHitRateHint: 'Agent 调用工具时,无需弹窗、直接放行的比例。只读操作自动放行、本任务/路径已授权复用都算命中。',
     govAllow: '放行',
@@ -4426,10 +4535,17 @@ const I18N = {
     debateSummary: 'Debate summary',
     debateHost: 'Moderator',
     navGroupCommon: 'General',
+    navGroupFoundation: 'Basics',
+    navGroupAutomation: 'Automation',
+    navGroupSystem: 'System',
+    navAccount: 'Account',
+    navModels: 'Models',
+    navSecurity: 'Security',
+    navDiagnostics: 'Diagnostics',
     navGroupAdvanced: 'Advanced',
     navChannels: 'Connectors',
     navTasks: 'Scheduled tasks',
-    navGovernance: 'Governance',
+    navGovernance: 'Audit log',
     navAbout: 'About',
     settingsNavTitle: 'Settings',
     btnSettingsRefresh: 'Refresh',
@@ -4468,26 +4584,26 @@ const I18N = {
     usageLoadFailed: 'Failed to load',
     usageTasksUnit: 'tasks',
     renameHint: 'double-click to rename',
-    settingsGeneral: 'General',
-    settingsGeneralDesc: 'Language, default model, governance, and budget',
+    settingsGeneral: 'Preferences',
+    settingsGeneralDesc: 'Language, default model, cost cap, and max execution steps.',
     lblLang: 'Language',
     lblModel: 'Default model',
     lblGov: 'Governance',
-    govConservative: 'Conservative (more write confirmations)',
-    govBalanced: 'Balanced',
-    govAggressive: 'Aggressive (auto-approve writes)',
+    govConservative: 'Conservative: confirm more writes, deletes, and network actions',
+    govBalanced: 'Balanced: continue routine work, confirm risky actions',
+    govAggressive: 'Aggressive: fewer interruptions for trusted local use',
     lblMaxCost: 'Cost cap (USD, empty = unlimited)',
     lblMaxSteps: 'Max steps',
     settingsChannelsDesc: 'Phone direct (Tailscale) + Email',
     settingsTasks: 'Scheduled tasks',
     settingsTasksDesc: 'Run prompts on schedule (unattended, read-only by default)',
-    settingsGovernance: 'Governance',
-    settingsGovernanceDesc: 'Decision distribution (last 7 days)',
+    settingsGovernance: 'Audit log',
+    settingsGovernanceDesc: 'Decision distribution and recent audit entries',
     settingsAbout: 'About',
-    settingsAboutDesc: 'Captain Agent platform',
+    settingsAboutDesc: 'A local-first AI agent workspace.',
     aboutTagline: 'Understand goals · execute autonomously · auditable governance',
-    aboutFeatures: 'Autonomous agent + proactive reflection + multimodal/voice + encrypted vault + browser/connectors + phone/email',
-    govStatsHint: 'Governance stats from trace (last 7 days)',
+    aboutFeatures: 'Captain puts security and local data first: model keys, license codes, and project files stay on your machine by default. It understands fuzzy goals, makes plans, uses tools, and leaves an auditable trail.',
+    govStatsHint: 'Security decision overview (last 7 days)',
     govHitRate: 'Auto-allow rate',
     govHitRateHint: 'Share of tool calls allowed without a confirmation prompt (read-only, task/path grants, etc.).',
     govAllow: 'Allowed',
@@ -4689,6 +4805,10 @@ function applyI18n() {
     'foot-customize': 'footCustomize',
     'foot-settings': 'footSettings',
     'nav-usage': 'navUsage',
+    'nav-profile': 'navAccount',
+    'nav-keys': 'navModels',
+    'nav-security': 'navSecurity',
+    'nav-diagnostics': 'navDiagnostics',
     'nav-general': 'settingsGeneral',
     'nav-channels': 'navChannels',
     'nav-tasks': 'navTasks',
@@ -4696,6 +4816,9 @@ function applyI18n() {
     'nav-about': 'navAbout',
     'nav-group-common': 'navGroupCommon',
     'nav-group-advanced': 'navGroupAdvanced',
+    'nav-group-foundation': 'navGroupFoundation',
+    'nav-group-automation': 'navGroupAutomation',
+    'nav-group-system': 'navGroupSystem',
     'settings-nav-title': 'settingsNavTitle',
     'settings-general-title': 'settingsGeneral',
     'settings-usage-title': 'settingsUsage',
@@ -4911,6 +5034,58 @@ async function saveProfile() {
   } catch { status.style.color='#e55'; status.textContent='网络错误'; }
 }
 
+function formatLicenseDate(expiresAt) {
+  if (!expiresAt) return '—';
+  const ms = Number(expiresAt) > 100000000000 ? Number(expiresAt) : Number(expiresAt) * 1000;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function friendlyLicenseError(error) {
+  const raw = String(error || '').trim();
+  if (!raw) return '授权验证失败，请稍后重试';
+  const lower = raw.toLowerCase();
+  if (lower.includes('connect') || lower.includes('network') || raw.includes('无法连接')) return '无法连接授权服务器，请检查网络后重试';
+  if (lower.includes('expired') || raw.includes('过期')) return '授权码已过期，请联系客服续费';
+  if (lower.includes('not found') || lower.includes('invalid') || raw.includes('不存在')) return '授权码不存在或格式不正确';
+  if (lower.includes('device') || raw.includes('设备') || raw.includes('上限')) return '授权设备数量已达上限，请联系客服处理';
+  return raw;
+}
+
+async function loadLicenseStatus(refresh) {
+  const card = document.getElementById('license-status-card');
+  if (!card) return;
+  const badge = document.getElementById('license-plan-badge');
+  const text = document.getElementById('license-status-text');
+  const expires = document.getElementById('license-expires');
+  const machine = document.getElementById('license-machine');
+  const storage = document.getElementById('license-storage');
+  if (text) text.textContent = refresh ? '正在重新校验授权…' : '正在读取授权状态…';
+  try {
+    const r = await fetch('/api/license/status' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' });
+    const d = await r.json();
+    const isPro = d.is_pro || d.plan === 'pro';
+    if (badge) {
+      badge.textContent = isPro ? 'PRO' : 'FREE';
+      badge.className = 'license-plan-badge ' + (isPro ? 'pro' : 'free');
+    }
+    if (text) {
+      if (isPro) {
+        const offline = d.offline ? '，当前使用离线缓存' : '';
+        text.textContent = `Pro 已激活${d.days_left != null ? `，剩余 ${d.days_left} 天` : ''}${offline}`;
+      } else {
+        text.textContent = d.error ? friendlyLicenseError(d.error) : '当前为 Free，可输入授权码升级 Pro';
+      }
+    }
+    if (expires) expires.textContent = formatLicenseDate(d.expires_at);
+    if (machine) machine.textContent = d.machine_id_short || '—';
+    if (storage) storage.textContent = d.keychain ? 'Keychain' : '本地缓存';
+  } catch (e) {
+    if (text) text.textContent = '授权状态读取失败，请稍后重试';
+  }
+}
+
 async function doActivate() {
   const input = document.getElementById('license-key-input');
   const status = document.getElementById('activate-status');
@@ -4929,13 +5104,14 @@ async function doActivate() {
       status.style.color = '#3ecf8e';
       status.textContent = `✓ 激活成功！${d.plan === 'pro' ? 'Pro' : d.plan} 版，剩余 ${d.days_left} 天`;
       input.value = '';
+      loadLicenseStatus(true);
     } else {
       status.style.color = '#e55';
-      status.textContent = '✗ ' + (d.error || '激活失败');
+      status.textContent = '✗ ' + friendlyLicenseError(d.error || '激活失败');
     }
   } catch {
     status.style.color = '#e55';
-    status.textContent = '网络错误，请重试';
+    status.textContent = friendlyLicenseError('无法连接授权服务器');
   }
 }
 
@@ -4997,7 +5173,7 @@ async function doUpdate() {
     status.textContent = '网络错误，请重试';
   } finally {
     btn.disabled = false;
-    btn.textContent = '⬆ 检查并更新';
+    btn.textContent = '检查并更新';
   }
 }
 
@@ -5373,7 +5549,7 @@ document.addEventListener('keydown', (e) => {
   if (!modKey(e)) return;
   const k = e.key.toLowerCase();
   if (k === 'n') { e.preventDefault(); newChat(); return; }
-  if (e.key === ',') { e.preventDefault(); openSettings('general'); return; }
+  if (e.key === ',') { e.preventDefault(); openSettings('profile'); return; }
   if (k === '/' || k === 'k') { e.preventDefault(); document.getElementById('chat-inp')?.focus(); }
 });
 

@@ -505,6 +505,7 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .field-input::placeholder{color:var(--dim)}
 #update-status{white-space:pre-wrap;line-height:1.45}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field-row.compact{grid-template-columns:minmax(0,1fr) auto;align-items:end}
 .field-hint{font-size:11px;color:var(--dim);margin-top:3px}
 .access-token-saved{display:flex;align-items:center;justify-content:space-between;gap:8px;
   border:1px solid rgba(21,128,61,.24);border-radius:var(--r-sm);background:rgba(21,128,61,.055);
@@ -613,6 +614,44 @@ option{background:var(--card)}
 .settings-content .settings-desc{font-size:13px;color:var(--muted);margin-bottom:20px}
 .settings-section{display:none}
 .settings-section.active{display:block}
+.settings-subhead{font-size:13px;font-weight:650;color:var(--txt);margin:18px 0 8px}
+.account-license-panel,.diagnostics-panel{border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--panel);padding:14px;margin-bottom:12px}
+.account-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.account-panel-title{font-size:14px;font-weight:700;color:var(--txt)}
+.account-panel-desc{font-size:12px;color:var(--muted);line-height:1.55;margin-top:3px}
+.account-activate-btn{min-width:72px;min-height:34px}
+.account-status{min-height:18px;margin-top:8px;word-break:break-word}
+.license-status-card{border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--bg);padding:11px;margin:10px 0 12px}
+.license-status-main{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt);margin-bottom:10px}
+.license-plan-badge{display:inline-flex;align-items:center;border-radius:var(--r-pill);padding:3px 8px;
+  font-size:11px;font-weight:800;background:var(--panel);color:var(--dim)}
+.license-plan-badge.pro{background:rgba(21,128,61,.12);color:var(--green)}
+.license-plan-badge.free{background:rgba(184,134,11,.12);color:var(--yellow)}
+.license-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.license-status-grid div{min-width:0;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px;background:var(--panel)}
+.license-status-grid span{display:block;font-size:10px;color:var(--dim);margin-bottom:3px}
+.license-status-grid strong{display:block;font-size:12px;color:var(--txt);font-weight:650;word-break:break-word}
+.diagnostic-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.diagnostic-status{min-width:min(260px,100%);word-break:break-word;white-space:pre-wrap}
+.audit-table{width:100%;border-collapse:collapse;font-size:12px}
+.audit-table th{padding:7px 8px;color:var(--dim);font-weight:600;text-align:left;border-bottom:1px solid var(--border)}
+.audit-table td{padding:8px;border-top:1px solid var(--border);vertical-align:top}
+.audit-time,.audit-sub,.audit-task{color:var(--dim)}
+.audit-action{font-weight:650;color:var(--txt);margin-bottom:2px}
+.audit-sub{font-size:11px;word-break:break-word}
+.audit-reason{color:var(--muted);line-height:1.45;word-break:break-word;max-width:280px}
+.audit-task{word-break:break-word}
+.audit-badge{display:inline-flex;align-items:center;border-radius:var(--r-pill);padding:2px 7px;
+  font-size:11px;font-weight:650;margin-right:6px;white-space:nowrap}
+.audit-badge.allow{background:rgba(21,128,61,.1);color:var(--green)}
+.audit-badge.ask{background:rgba(184,134,11,.12);color:var(--yellow)}
+.audit-badge.block{background:rgba(220,38,38,.1);color:var(--red)}
+.audit-badge.unknown{background:var(--panel);color:var(--dim)}
+.audit-result{font-size:11px;color:var(--dim);white-space:nowrap}
+.audit-result.ok{color:var(--green)}
+.audit-result.fail{color:var(--red)}
 .diagnostic-summary{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--panel);
   padding:12px;margin-bottom:14px;display:grid;gap:8px}
 .diagnostic-summary:empty{display:none}
@@ -992,6 +1031,14 @@ option{background:var(--card)}
     border-right:none;border-bottom:1px solid var(--border);padding:8px}
   .settings-nav-item{flex:0 0 auto}
   .settings-content{padding:14px}
+  .field-row,.field-row.compact{grid-template-columns:1fr}
+  .account-activate-btn{width:100%}
+  .license-status-grid{grid-template-columns:1fr}
+  .audit-table,.audit-table tbody,.audit-table tr,.audit-table td{display:block;width:100%}
+  .audit-table thead{display:none}
+  .audit-table tr{border:1px solid var(--border);border-radius:var(--r-sm);padding:8px;margin-bottom:8px;background:var(--panel)}
+  .audit-table td{border:0;padding:4px 2px}
+  .audit-reason{max-width:none}
   /* 欢迎区 / 专家网格更紧凑 */
   .welcome-scenarios{grid-template-columns:1fr}
   .expert-grid{grid-template-columns:1fr}

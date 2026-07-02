@@ -152,7 +152,7 @@ class LicenseStatus:
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────────
-def check_license(key: Optional[str] = None) -> LicenseStatus:
+def check_license(key: Optional[str] = None, force: bool = False) -> LicenseStatus:
     """
     检查授权状态。key 优先级：参数 > 环境变量 > 缓存中的 key。
 
@@ -183,7 +183,7 @@ def check_license(key: Optional[str] = None) -> LicenseStatus:
                                  error="未激活，请运行 captain activate <授权码>")
 
         # 缓存仍在 TTL 内 → 直接信任，省去网络
-        if time.time() - cached_at < _cache_ttl():
+        if not force and time.time() - cached_at < _cache_ttl():
             return LicenseStatus(valid=True, plan=plan, expires_at=expires_at)
 
         # 缓存过期 → 联网刷新
