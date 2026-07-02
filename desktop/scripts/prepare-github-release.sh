@@ -52,8 +52,7 @@ make_updater_bundle() {
   rm -rf "$mount"
 
   if [[ -f "$UPDATER_KEY" ]]; then
-    (cd "$DESKTOP_ROOT" && TAURI_PRIVATE_KEY="$UPDATER_KEY" TAURI_KEY_PASSWORD="$UPDATER_PASS" \
-      npx tauri signer sign "$tgz" -k "$UPDATER_KEY" -p "$UPDATER_PASS" -f "$sig_file")
+    (cd "$DESKTOP_ROOT" && npx tauri signer sign "$tgz" --private-key-path "$UPDATER_KEY" -p "$UPDATER_PASS")
   else
     fail "缺少 updater 私钥: $UPDATER_KEY"
   fi
