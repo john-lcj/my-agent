@@ -1,6 +1,6 @@
 [package]
 name = "captain-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Captain desktop shell"
 authors = ["captain"]
 edition = "2021"
