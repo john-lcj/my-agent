@@ -1749,6 +1749,7 @@ function switchSettingsTab(tab, el) {
   document.querySelectorAll('#settings-overlay .settings-section').forEach(s => {
     s.classList.toggle('active', s.id === 'settings-' + tab);
   });
+  updateSettingsFooter(tab);
   if (tab === 'tasks') refreshTasks();
   if (tab === 'setup') loadSetupStatus();
   if (tab === 'security') loadSetupStatus();
@@ -1763,7 +1764,14 @@ function switchSettingsTab(tab, el) {
     if (el) el.textContent = 'v' + (d.version || '');
   }).catch(()=>{});
 }
-function openCustomize(tab) {
+const READONLY_SETTINGS_TABS = new Set(['about', 'diagnostics', 'governance', 'setup', 'usage']);
+
+function updateSettingsFooter(tab) {
+  const saveBtn = document.getElementById('btn-settings-save');
+  if (!saveBtn) return;
+  saveBtn.style.display = READONLY_SETTINGS_TABS.has(tab) ? 'none' : '';
+}
+
   tab = tab || 'skills';
   document.getElementById('customize-overlay').classList.add('open');
   switchCustomizeTab(tab);
@@ -2935,13 +2943,16 @@ function isOnboardingSnoozed() {
 function onboardingStepHtml(step) {
   const color = step.state === 'ok' ? '#3a9' : step.state === 'bad' ? '#d66' : 'var(--accent)';
   const symbol = step.state === 'ok' ? '✓' : step.state === 'bad' ? '!' : '•';
+  const actionBtn = step.onClick
+    ? `<button type="button" class="btn-sm" onclick="${step.onClick}">${escHtml(step.action || '去处理')}</button>`
+    : (step.tab ? `<button type="button" class="btn-sm" onclick="openSettings('${escAttr(step.tab)}')">${escHtml(step.action || '去处理')}</button>` : '');
   return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center">
     <div style="width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb, ${color} 16%, transparent);color:${color};font-weight:700">${symbol}</div>
     <div>
       <div style="font-size:14px;font-weight:700;color:var(--txt)">${escHtml(step.title)}</div>
       <div style="font-size:12px;color:var(--muted);line-height:1.55;margin-top:2px">${escHtml(step.body)}</div>
     </div>
-    ${step.tab ? `<button type="button" class="btn-sm" onclick="openSettings('${escAttr(step.tab)}')">${escHtml(step.action || '去处理')}</button>` : ''}
+    ${actionBtn}
   </div>`;
 }
 
@@ -2977,9 +2988,9 @@ function buildOnboardingSteps(data) {
     {
       title: '测试连接',
       state: verifiedCount ? 'ok' : (configuredCount ? 'warn' : 'bad'),
-      body: verifiedCount ? `${verifiedCount} 个模型接口已验证。` : (configuredCount ? 'Key 已保存，但建议点“测试连接”确认额度、模型名和网络都正常。' : '先保存模型 Key，再测试连接。'),
-      action: '测试模型',
-      tab: 'keys',
+      body: verifiedCount ? `${verifiedCount} 个模型接口已验证。` : (configuredCount ? 'Key 已保存，建议在此直接测试连接。' : '先保存模型 Key，再测试连接。'),
+      action: '测试连接',
+      onClick: 'runOnboardingConnectionTest()',
     },
     {
       title: '开始使用',
@@ -3023,13 +3034,20 @@ function finishOnboarding(done) {
 
 function maybeShowOnboarding() {
   if (isOnboardingDone() || isOnboardingSnoozed()) return;
-  if (!_setupStatusCache) return;
-  const hasMessages = Number(window.msgCount || msgCount || 0) > 0;
-  const cards = _setupStatusCache.cards || [];
-  const essentialsReady = cards
-    .filter(c => ['model', 'keys'].includes(c.key))
-    .every(c => c.state === 'ok');
-  if (!hasMessages || !essentialsReady) openOnboarding(false);
+  openOnboarding(false);
+}
+
+async function runOnboardingConnectionTest() {
+  const keys = _setupStatusCache?.keys || {};
+  const configured = Object.entries(keys).filter(([, v]) => v && v.configured);
+  if (!configured.length) {
+    openSettings('keys');
+    return;
+  }
+  const [prov] = configured[0];
+  await testProvider(prov);
+  await loadSetupStatus();
+  renderOnboarding();
 }
 
 async function loadSetupStatus() {
@@ -3182,6 +3200,7 @@ function renderSetupStatus() {
 window.loadSetupStatus = loadSetupStatus;
 window.dismissSetupStatus = dismissSetupStatus;
 window.openOnboarding = openOnboarding;
+window.runOnboardingConnectionTest = runOnboardingConnectionTest;
 window.closeOnboarding = closeOnboarding;
 window.finishOnboarding = finishOnboarding;
 

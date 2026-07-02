@@ -34,10 +34,29 @@
         "resources/app"
       ],
       "shortDescription": "Captain AI Agent",
-      "targets": "all"
+      "targets": "all",
+      "macOS": {
+        "entitlements": "entitlements/Captain.entitlements",
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      }
+    },
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "endpoints": [
+        "https://github.com/john-lcj/my-agent/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4MkUyREM1NkNFQjk4RjkKUldUNW1PdHN4UzB1K0Q5bkJ1d1FDTVZiSVFXc3FpbkJ1dlJ5bEpwOTVGM3lOWkY3S3hBRkFqZGsK"
     },
     "security": {
       "csp": null
+    },
+    "systemTray": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
     },
     "windows": []
   }

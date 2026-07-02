@@ -13,11 +13,21 @@ use std::{
     time::Duration,
 };
 
-use tauri::{Manager, WindowEvent, WindowUrl};
+use tauri::{
+    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
+    WindowEvent, WindowUrl,
+};
 
 #[derive(Default)]
 struct BackendState {
     child: Mutex<Option<Child>>,
+}
+
+struct LaunchInfo {
+    port: u16,
+    preferred_port: u16,
+    port_switched: bool,
+    root: PathBuf,
 }
 
 impl Drop for BackendState {
@@ -408,16 +418,20 @@ fn port_available(port: u16) -> bool {
     TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
-fn pick_port() -> u16 {
-    if let Ok(raw) = env::var("AGENT_WEB_PORT") {
-        if let Ok(port) = raw.parse::<u16>() {
-            if port_available(port) {
-                return port;
-            }
-        }
+fn pick_port() -> (u16, u16, bool) {
+    let preferred = env::var("AGENT_WEB_PORT")
+        .ok()
+        .and_then(|raw| raw.parse::<u16>().ok())
+        .unwrap_or(8000);
+
+    if port_available(preferred) {
+        return (preferred, preferred, false);
     }
 
-    (8000..=8099).find(|port| port_available(*port)).unwrap_or(8000)
+    let fallback = (8000..=8099)
+        .find(|port| port_available(*port))
+        .unwrap_or(preferred);
+    (fallback, preferred, fallback != preferred)
 }
 
 fn wait_for_backend(port: u16) -> bool {
@@ -430,14 +444,75 @@ fn wait_for_backend(port: u16) -> bool {
     false
 }
 
-fn backend_error_page(root: &Path, port: u16) -> io::Result<PathBuf> {
-    let log_dir = root
-        .parent()
+fn escape_js_string(raw: &str) -> String {
+    raw.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+fn app_version(root: &Path) -> String {
+    let version = file_text(&root.join("VERSION"));
+    if version.is_empty() {
+        env!("CARGO_PKG_VERSION").to_string()
+    } else {
+        version
+    }
+}
+
+fn bundle_stamp(root: &Path) -> String {
+    file_text(&root.join(".captain_bundle_stamp"))
+}
+
+fn support_log_dir(root: &Path) -> PathBuf {
+    root.parent()
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.to_path_buf());
+        .unwrap_or_else(|| root.to_path_buf())
+}
+
+fn open_logs_dir(root: &Path) {
+    let dir = support_log_dir(root);
+    if cfg!(target_os = "macos") {
+        let _ = Command::new("open").arg(&dir).spawn();
+    } else if cfg!(windows) {
+        let _ = Command::new("explorer").arg(dir).spawn();
+    } else {
+        let _ = Command::new("xdg-open").arg(dir).spawn();
+    }
+}
+
+fn diagnostic_summary(info: &LaunchInfo) -> String {
+    let err_log = support_log_dir(&info.root).join("backend.err.log");
+    format!(
+        "Captain 诊断摘要\n版本: {}\nBundle stamp: {}\n期望端口: {}\n实际端口: {}\n端口已切换: {}\n项目目录: {}\n错误日志: {}",
+        app_version(&info.root),
+        bundle_stamp(&info.root),
+        info.preferred_port,
+        info.port,
+        if info.port_switched { "是" } else { "否" },
+        info.root.display(),
+        err_log.display(),
+    )
+}
+
+fn backend_error_page(info: &LaunchInfo) -> io::Result<PathBuf> {
+    let log_dir = support_log_dir(&info.root);
     fs::create_dir_all(&log_dir)?;
     let path = log_dir.join("backend-start-error.html");
     let err_log = log_dir.join("backend.err.log");
+    let summary = diagnostic_summary(info);
+    let summary_json = format!("\"{}\"", escape_js_string(&summary));
+    let port_note = if info.port_switched {
+        format!(
+            "期望端口 <code>{}</code> 已被占用，App 已尝试改用 <code>{}</code>，但后端仍未就绪。",
+            info.preferred_port, info.port
+        )
+    } else {
+        format!(
+            "本地服务未能在端口 <code>{}</code> 上就绪。",
+            info.port
+        )
+    };
     let html = format!(
         r#"<!doctype html><meta charset="utf-8">
 <title>Captain 启动失败</title>
@@ -445,16 +520,19 @@ fn backend_error_page(root: &Path, port: u16) -> io::Result<PathBuf> {
 body{{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f7f5f1;color:#24221f;margin:0;padding:40px;line-height:1.7}}
 .box{{max-width:760px;margin:auto;background:#fff;border:1px solid #ded8cf;border-radius:12px;padding:28px;box-shadow:0 12px 40px rgba(0,0,0,.08)}}
 h1{{font-size:22px;margin:0 0 10px}} code{{background:#f0ece5;border-radius:6px;padding:2px 5px}} .path{{word-break:break-all}}
+.btn{{margin-top:16px;background:#7c6cf0;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}}
 </style>
 <div class="box">
 <h1>Captain 后端没有成功启动</h1>
-<p>App 已启动，但本地服务未能在端口 <code>{port}</code> 上就绪。</p>
+<p>{port_note}</p>
 <p>请先查看日志：<br><code class="path">{err_log}</code></p>
 <p>常见原因：端口被占用、Python runtime 损坏、依赖安装不完整、模型/授权配置异常。</p>
-<p>在设置里的「关于」页可以使用「打开日志」和「导出诊断包」发给维护者排查。</p>
+<p>也可在 App 的「设置 → 诊断」打开日志、导出诊断包，或复制下方摘要发给维护者。</p>
+<button class="btn" type="button" onclick="navigator.clipboard.writeText({summary_json}).then(()=>this.textContent='已复制诊断摘要')">复制诊断摘要</button>
 </div>"#,
-        port = port,
+        port_note = port_note,
         err_log = err_log.display(),
+        summary_json = summary_json,
     );
     fs::write(&path, html)?;
     Ok(path)
@@ -462,10 +540,7 @@ h1{{font-size:22px;margin:0 0 10px}} code{{background:#f0ece5;border-radius:6px;
 
 fn spawn_backend(root: &Path, port: u16) -> Result<Child, io::Error> {
     let python = resolve_python(root);
-    let log_dir = root
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.to_path_buf());
+    let log_dir = support_log_dir(root);
     let stdout = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -506,12 +581,37 @@ fn stop_backend(state: tauri::State<'_, BackendState>) {
     }
 }
 
+async fn run_updater_check(app: tauri::AppHandle) {
+    match app.updater().check().await {
+        Ok(resp) if resp.is_update_available() => {
+            let _ = resp.download_and_install().await;
+        }
+        Ok(_) => {}
+        Err(err) => eprintln!("Captain updater check failed: {err}"),
+    }
+}
+
+fn build_system_tray() -> SystemTray {
+    let show = CustomMenuItem::new("show".to_string(), "打开主窗口");
+    let logs = CustomMenuItem::new("logs".to_string(), "打开日志");
+    let update = CustomMenuItem::new("update".to_string(), "检查更新");
+    let quit = CustomMenuItem::new("quit".to_string(), "退出");
+    let menu = SystemTrayMenu::new()
+        .add_item(show)
+        .add_item(logs)
+        .add_item(update)
+        .add_native_item(SystemTrayMenuItem::Separator)
+        .add_item(quit);
+    SystemTray::new().with_menu(menu)
+}
+
 fn main() {
     tauri::Builder::default()
+        .system_tray(build_system_tray())
         .manage(BackendState::default())
         .setup(|app| {
             let root = project_root()?;
-            let port = pick_port();
+            let (port, preferred_port, port_switched) = pick_port();
             let child = spawn_backend(&root, port)?;
             {
                 let state = app.state::<BackendState>();
@@ -522,28 +622,76 @@ fn main() {
                 *guard = Some(child);
             }
 
+            let launch = LaunchInfo {
+                port,
+                preferred_port,
+                port_switched,
+                root: root.clone(),
+            };
+            app.manage(launch);
+
             let ready = wait_for_backend(port);
             let url = if ready {
                 format!("http://127.0.0.1:{}/", port)
             } else {
-                let path = backend_error_page(&root, port)?;
+                let path = backend_error_page(&LaunchInfo {
+                    port,
+                    preferred_port,
+                    port_switched,
+                    root: root.clone(),
+                })?;
                 format!("file://{}", path.to_string_lossy().replace(' ', "%20"))
             };
 
             let window_url = WindowUrl::External(url.parse()?);
 
             tauri::WindowBuilder::new(app, "main", window_url)
-            .title("Captain")
-            .inner_size(1280.0, 820.0)
-            .min_inner_size(980.0, 680.0)
-            .build()?;
+                .title("Captain")
+                .inner_size(1280.0, 820.0)
+                .min_inner_size(980.0, 680.0)
+                .build()?;
+
+            let updater_app = app.handle();
+            tauri::async_runtime::spawn(async move {
+                run_updater_check(updater_app).await;
+            });
 
             Ok(())
         })
+        .on_system_tray_event(|app, event| {
+            if let SystemTrayEvent::MenuItemClick { id, .. } = event {
+                match id.as_str() {
+                    "show" => {
+                        if let Some(window) = app.get_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "logs" => {
+                        if let Some(info) = app.try_state::<LaunchInfo>() {
+                            open_logs_dir(&info.root);
+                        }
+                    }
+                    "update" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            run_updater_check(handle).await;
+                        });
+                    }
+                    "quit" => {
+                        if let Some(state) = app.try_state::<BackendState>() {
+                            stop_backend(state);
+                        }
+                        app.exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        })
         .on_window_event(|event| {
-            if matches!(event.event(), WindowEvent::CloseRequested { .. }) {
-                let state = event.window().state::<BackendState>();
-                stop_backend(state);
+            if let WindowEvent::CloseRequested { api, .. } = event.event() {
+                api.prevent_close();
+                let _ = event.window().hide();
             }
         })
         .run(tauri::generate_context!())

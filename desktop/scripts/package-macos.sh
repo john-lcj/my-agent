@@ -40,6 +40,8 @@ for raw_arch in $TARGETS; do
   fi
 
   if [[ -d "$SOURCE_APP" ]]; then
+    bash "$SCRIPT_DIR/sign-macos-app.sh" "$SOURCE_APP"
+
     if [[ "$DMG_ARCH" == "$(uname -m)" || ("$DMG_ARCH" == "arm64" && "$(uname -m)" == "arm64") ]]; then
       mkdir -p "$(dirname "$APP_DEST")"
       rm -rf "$APP_DEST"
@@ -54,6 +56,7 @@ for raw_arch in $TARGETS; do
     ln -s /Applications "$DMG_STAGE/Applications"
     hdiutil create -volname "Captain" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_DEST"
     rm -rf "$DMG_STAGE"
+    bash "$SCRIPT_DIR/notarize-macos-app.sh" "$SOURCE_APP" "$DMG_DEST"
     ok "DMG 已生成: $DMG_DEST"
   fi
 done

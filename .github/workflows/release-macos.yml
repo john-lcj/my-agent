@@ -1,0 +1,68 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock.txt
+          python -m pip install pytest
+
+      - name: Preflight checks
+        run: bash scripts/release-preflight.sh
+
+      - name: Build macOS packages
+        env:
+          CAPTAIN_MACOS_TARGETS: arm64 x86_64
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        run: |
+          cd desktop
+          npm run macos:package
+          npm run macos:release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          OUT="release-assets/${TAG}"
+          gh release create "$TAG" \
+            "$OUT"/Captain_*_arm64.dmg \
+            "$OUT"/Captain_*_x86_64.dmg \
+            "$OUT"/Captain_*_arm64.app.tar.gz \
+            "$OUT"/Captain_*_x86_64.app.tar.gz \
+            "$OUT"/SHA256SUMS.txt \
+            "$OUT"/latest.json \
+            --title "Captain ${TAG#v}" \
+            --notes-file "$OUT/RELEASE_NOTES.md"
