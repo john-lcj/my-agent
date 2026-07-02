@@ -523,7 +523,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
           <div class="field-row">
             <div class="field-group">
               <div class="field-label" data-i18n="emailUser">账号</div>
-              <input class="field-input" id="email-user" placeholder="your@qq.com"/>
+              <input class="field-input" id="email-user" placeholder="your@qq.com" onblur="autofillEmailServers()"/>
             </div>
             <div class="field-group">
               <div class="field-label" data-i18n="emailPass">授权码</div>

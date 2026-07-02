@@ -23,9 +23,20 @@ def register_channels(app, channel_cfg, ext_channels, enable_channel_fn, enable_
         return JSONResponse({"ok": True, "config": channel_cfg.get_masked()})
 
     @app.post("/api/channels/email/test")
-    async def test_email() -> JSONResponse:
+    async def test_email(request: Request) -> JSONResponse:
         import asyncio
         from channels.email_channel import EmailChannel
+
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        values = body.get("values") if isinstance(body, dict) else None
+        if isinstance(values, dict) and values:
+            channel_cfg.update("email", values)
+        else:
+            channel_cfg.apply_to_env()
         ch = EmailChannel()
         result = await asyncio.get_event_loop().run_in_executor(None, ch.test_connection)
         return JSONResponse(result)

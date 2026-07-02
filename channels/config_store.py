@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 
+from channels.email_channel import infer_email_servers
+
 # 前端字段 -> 环境变量名(仅邮件)
 FIELD_MAP = {
     "email": {
@@ -20,6 +22,32 @@ FIELD_MAP = {
     },
 }
 SECRET_FIELDS = {"password"}
+_INVALID_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def _clean_host(host: str) -> str:
+    h = (host or "").strip()
+    return "" if h.lower() in _INVALID_HOSTS else h
+
+
+def finalize_email_cfg(cfg: dict) -> dict:
+    """保存/加载前补全常见邮箱 IMAP/SMTP,并剔除指向本机的无效主机。"""
+    out = dict(cfg or {})
+    user = str(out.get("user", "")).strip()
+    out["imap"] = _clean_host(str(out.get("imap", "")))
+    out["smtp"] = _clean_host(str(out.get("smtp", "")))
+    if not user:
+        return out
+    ih, sh, ip, sp = infer_email_servers(user)
+    if not out.get("imap") and ih:
+        out["imap"] = ih
+    if not out.get("smtp") and sh:
+        out["smtp"] = sh
+    if not str(out.get("imap_port", "")).strip():
+        out["imap_port"] = str(ip)
+    if not str(out.get("smtp_port", "")).strip():
+        out["smtp_port"] = str(sp)
+    return out
 
 
 class ChannelConfigStore:
@@ -48,6 +76,8 @@ class ChannelConfigStore:
         """把已存配置写进环境变量(覆盖,以网页配置为准)。"""
         for channel, fields in FIELD_MAP.items():
             cfg = self._data.get(channel, {})
+            if channel == "email":
+                cfg = finalize_email_cfg(cfg)
             for key, env_name in fields.items():
                 val = cfg.get(key)
                 if val is None or val == "":
@@ -59,6 +89,8 @@ class ChannelConfigStore:
         out: dict = {}
         for channel, fields in FIELD_MAP.items():
             cfg = self._data.get(channel, {})
+            if channel == "email":
+                cfg = finalize_email_cfg(cfg)
             out[channel] = {}
             for key in fields:
                 val = cfg.get(key, "")
@@ -80,6 +112,8 @@ class ChannelConfigStore:
             if key in SECRET_FIELDS and (new_val == "" or new_val == "******"):
                 continue  # 不覆盖已存的密钥
             cur[key] = new_val
+        if channel == "email":
+            self._data[channel] = finalize_email_cfg(cur)
         self._write()
         self.apply_to_env()
 

@@ -32,6 +32,42 @@ from typing import Optional
 
 from core.types import CapabilityCall, Decision, Event, EventType, Identity
 
+# 常见邮箱 IMAP/SMTP 预设(主机留空时按账号域名自动补全)
+_EMAIL_SERVER_PRESETS: dict[str, tuple[str, str, int, int]] = {
+    "qq.com": ("imap.qq.com", "smtp.qq.com", 993, 465),
+    "foxmail.com": ("imap.qq.com", "smtp.qq.com", 993, 465),
+    "163.com": ("imap.163.com", "smtp.163.com", 993, 465),
+    "126.com": ("imap.126.com", "smtp.126.com", 993, 465),
+    "yeah.net": ("imap.yeah.net", "smtp.yeah.net", 993, 465),
+    "gmail.com": ("imap.gmail.com", "smtp.gmail.com", 993, 465),
+    "outlook.com": ("outlook.office365.com", "smtp.office365.com", 993, 587),
+    "hotmail.com": ("outlook.office365.com", "smtp.office365.com", 993, 587),
+    "live.com": ("outlook.office365.com", "smtp.office365.com", 993, 587),
+    "icloud.com": ("imap.mail.me.com", "smtp.mail.me.com", 993, 587),
+    "exmail.qq.com": ("imap.exmail.qq.com", "smtp.exmail.qq.com", 993, 465),
+}
+
+
+def infer_email_servers(user: str) -> tuple[str, str, int, int]:
+    """根据邮箱域名推断 IMAP/SMTP 主机与端口;未知域名返回空主机 + 默认端口。"""
+    domain = user.rsplit("@", 1)[-1].strip().lower() if "@" in user else ""
+    return _EMAIL_SERVER_PRESETS.get(domain, ("", "", 993, 465))
+
+
+def _env_port(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _clean_host(host: str) -> str:
+    h = (host or "").strip()
+    return "" if h.lower() in {"", "localhost", "127.0.0.1", "::1"} else h
+
 
 class EmailChannel:
     name = "email"
@@ -46,12 +82,22 @@ class EmailChannel:
         password: str = "",
         poll_sec: float = 30.0,
     ) -> None:
-        self.imap_host = imap_host or os.environ.get("EMAIL_IMAP_HOST", "")
-        self.imap_port = imap_port or int(os.environ.get("EMAIL_IMAP_PORT", "993"))
-        self.smtp_host = smtp_host or os.environ.get("EMAIL_SMTP_HOST", "")
-        self.smtp_port = smtp_port or int(os.environ.get("EMAIL_SMTP_PORT", "465"))
-        self.user = user or os.environ.get("EMAIL_USER", "")
+        self.user = (user or os.environ.get("EMAIL_USER", "")).strip()
         self.password = password or os.environ.get("EMAIL_PASS", "")
+        self.imap_host = _clean_host(imap_host or os.environ.get("EMAIL_IMAP_HOST", ""))
+        self.smtp_host = _clean_host(smtp_host or os.environ.get("EMAIL_SMTP_HOST", ""))
+        self.imap_port = imap_port if imap_port else _env_port("EMAIL_IMAP_PORT", 993)
+        self.smtp_port = smtp_port if smtp_port else _env_port("EMAIL_SMTP_PORT", 465)
+        if self.user and (not self.imap_host or not self.smtp_host):
+            ih, sh, ip, sp = infer_email_servers(self.user)
+            if ih and not self.imap_host:
+                self.imap_host = ih
+            if sh and not self.smtp_host:
+                self.smtp_host = sh
+            if not os.environ.get("EMAIL_IMAP_PORT", "").strip():
+                self.imap_port = ip
+            if not os.environ.get("EMAIL_SMTP_PORT", "").strip():
+                self.smtp_port = sp
         self.poll_sec = poll_sec or float(os.environ.get("EMAIL_POLL_SEC", "30"))
         # 白名单:只响应这些发件人的邮件(逗号分隔),防陌生人驱使 agent。
         # **始终包含自己(EMAIL_USER)**——主人从 agent 自己的邮箱发任务也能被处理。
@@ -248,27 +294,55 @@ class EmailChannel:
             raise last_err
 
     def test_connection(self) -> dict:
-        """同步验证 IMAP + SMTP 登录,返回 {ok, imap, smtp, error}。供"连通测试"用。"""
-        result = {"ok": False, "imap": False, "smtp": False, "error": ""}
-        if not (self.user and self.password):
-            result["error"] = "缺少账号或授权码"
+        """同步验证 IMAP + SMTP 登录,返回 {ok, imap, smtp, error, imap_target, smtp_target}。"""
+        result = {
+            "ok": False, "imap": False, "smtp": False, "error": "",
+            "imap_target": "", "smtp_target": "",
+        }
+        if not self.user:
+            result["error"] = "请填写邮箱账号"
             return result
+        if not self.password:
+            result["error"] = "请填写邮箱授权码（QQ/163 需用授权码，不是登录密码）"
+            return result
+        if not self.imap_host:
+            result["error"] = (
+                "IMAP 服务器未配置。"
+                "请填写服务器地址（QQ: imap.qq.com，163: imap.163.com），"
+                "或填写完整邮箱账号后保存再试"
+            )
+            return result
+        if not self.smtp_host:
+            result["error"] = (
+                "SMTP 服务器未配置。"
+                "请填写服务器地址（QQ: smtp.qq.com，163: smtp.163.com）"
+            )
+            return result
+        result["imap_target"] = f"{self.imap_host}:{self.imap_port}"
+        result["smtp_target"] = f"{self.smtp_host}:{self.smtp_port}"
         ctx = ssl.create_default_context()
         try:
-            with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx) as imap:
+            with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
                 imap.login(self.user, self.password)
                 imap.select("INBOX")
                 imap.logout()
             result["imap"] = True
         except Exception as e:
-            result["error"] = f"IMAP 失败: {e}"
+            err = str(e)
+            if "Connection refused" in err or "Errno 61" in err:
+                result["error"] = (
+                    f"IMAP 无法连接 {result['imap_target']}（连接被拒绝）。"
+                    "请确认 IMAP 服务器地址是否正确，且邮箱已开启 IMAP 服务"
+                )
+            else:
+                result["error"] = f"IMAP 失败 ({result['imap_target']}): {e}"
             return result
         try:
-            with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx) as smtp:
+            with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
                 smtp.login(self.user, self.password)
             result["smtp"] = True
         except Exception as e:
-            result["error"] = f"SMTP 失败: {e}"
+            result["error"] = f"SMTP 失败 ({result['smtp_target']}): {e}"
             return result
         result["ok"] = True
         return result

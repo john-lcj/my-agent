@@ -6,7 +6,32 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from channels.email_channel import EmailChannel
+from channels.email_channel import EmailChannel, infer_email_servers
+
+
+def test_infer_email_servers_qq():
+    assert infer_email_servers("me@qq.com") == ("imap.qq.com", "smtp.qq.com", 993, 465)
+
+
+def test_infer_email_servers_unknown():
+    assert infer_email_servers("me@example.com") == ("", "", 993, 465)
+
+
+def test_email_channel_autofills_hosts_from_user():
+    os.environ.pop("EMAIL_IMAP_HOST", None)
+    os.environ.pop("EMAIL_SMTP_HOST", None)
+    ch = EmailChannel(user="me@qq.com", password="x")
+    assert ch.imap_host == "imap.qq.com"
+    assert ch.smtp_host == "smtp.qq.com"
+
+
+def test_test_connection_rejects_missing_imap_host():
+    os.environ.pop("EMAIL_IMAP_HOST", None)
+    os.environ.pop("EMAIL_SMTP_HOST", None)
+    ch = EmailChannel(user="me@example.com", password="x")
+    result = ch.test_connection()
+    assert result["ok"] is False
+    assert "IMAP" in result["error"]
 
 
 def test_allowlist_defaults_to_self():

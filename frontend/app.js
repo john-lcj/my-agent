@@ -3223,16 +3223,50 @@ async function loadSettingsUI() {
   loadSetupStatus();
 }
 
+const EMAIL_SERVER_HINTS = {
+  'qq.com': { imap: 'imap.qq.com', smtp: 'smtp.qq.com', imap_port: '993', smtp_port: '465' },
+  'foxmail.com': { imap: 'imap.qq.com', smtp: 'smtp.qq.com', imap_port: '993', smtp_port: '465' },
+  '163.com': { imap: 'imap.163.com', smtp: 'smtp.163.com', imap_port: '993', smtp_port: '465' },
+  '126.com': { imap: 'imap.126.com', smtp: 'smtp.126.com', imap_port: '993', smtp_port: '465' },
+  'yeah.net': { imap: 'imap.yeah.net', smtp: 'smtp.yeah.net', imap_port: '993', smtp_port: '465' },
+  'gmail.com': { imap: 'imap.gmail.com', smtp: 'smtp.gmail.com', imap_port: '993', smtp_port: '465' },
+  'outlook.com': { imap: 'outlook.office365.com', smtp: 'smtp.office365.com', imap_port: '993', smtp_port: '587' },
+  'hotmail.com': { imap: 'outlook.office365.com', smtp: 'smtp.office365.com', imap_port: '993', smtp_port: '587' },
+  'live.com': { imap: 'outlook.office365.com', smtp: 'smtp.office365.com', imap_port: '993', smtp_port: '587' },
+  'icloud.com': { imap: 'imap.mail.me.com', smtp: 'smtp.mail.me.com', imap_port: '993', smtp_port: '587' },
+  'exmail.qq.com': { imap: 'imap.exmail.qq.com', smtp: 'smtp.exmail.qq.com', imap_port: '993', smtp_port: '465' },
+};
+
+function inferEmailServersFromUser(user) {
+  const domain = String(user || '').trim().toLowerCase().split('@').pop();
+  return EMAIL_SERVER_HINTS[domain] || null;
+}
+
+function autofillEmailServers() {
+  const user = document.getElementById('email-user')?.value?.trim();
+  const hint = inferEmailServersFromUser(user);
+  if (!hint) return;
+  const imap = document.getElementById('email-imap');
+  const smtp = document.getElementById('email-smtp');
+  const ip = document.getElementById('email-imap-port');
+  const sp = document.getElementById('email-smtp-port');
+  if (imap && !imap.value.trim()) imap.value = hint.imap;
+  if (smtp && !smtp.value.trim()) smtp.value = hint.smtp;
+  if (ip && !ip.value.trim()) ip.value = hint.imap_port;
+  if (sp && !sp.value.trim()) sp.value = hint.smtp_port;
+}
+
 function emailChannelValues() {
+  autofillEmailServers();
   const v = {
-    imap: document.getElementById('email-imap').value,
-    smtp: document.getElementById('email-smtp').value,
-    user: document.getElementById('email-user').value,
+    imap: document.getElementById('email-imap').value.trim(),
+    smtp: document.getElementById('email-smtp').value.trim(),
+    user: document.getElementById('email-user').value.trim(),
     password: document.getElementById('email-pass').value,
   };
-  const ip = document.getElementById('email-imap-port'); if (ip && ip.value) v.imap_port = ip.value;
-  const sp = document.getElementById('email-smtp-port'); if (sp && sp.value) v.smtp_port = sp.value;
-  const al = document.getElementById('email-allowed'); if (al) v.allowed = al.value;
+  const ip = document.getElementById('email-imap-port'); if (ip && ip.value) v.imap_port = ip.value.trim();
+  const sp = document.getElementById('email-smtp-port'); if (sp && sp.value) v.smtp_port = sp.value.trim();
+  const al = document.getElementById('email-allowed'); if (al) v.allowed = al.value.trim();
   return v;
 }
 
@@ -3279,13 +3313,32 @@ async function saveChannel(channel, values) {
 async function testEmail() {
   const el = document.getElementById('email-test-result');
   el.textContent = '测试中…';
-  // 先保存当前填写的配置再测
-  await saveChannel('email', emailChannelValues());
+  const values = emailChannelValues();
+  if (!values.user) {
+    el.innerHTML = '<span style="color:var(--red)">✗ 请先填写邮箱账号</span>';
+    return;
+  }
+  if (!values.password) {
+    el.innerHTML = '<span style="color:var(--red)">✗ 请填写邮箱授权码（QQ/163 用授权码，不是登录密码）</span>';
+    return;
+  }
+  if (!values.imap || !values.smtp) {
+    el.innerHTML = '<span style="color:var(--red)">✗ 请填写 IMAP/SMTP 服务器，或先填常见邮箱账号后重试</span>';
+    return;
+  }
+  await saveChannel('email', values);
   try {
-    const res = await fetch('/api/channels/email/test', { method: 'POST' });
+    const res = await fetch('/api/channels/email/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values }),
+    });
     const r = await res.json();
     if (r.ok) el.innerHTML = '<span style="color:var(--green)">✓ IMAP + SMTP 连接成功</span>';
-    else el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(r.error||'失败')}</span>`;
+    else {
+      const target = r.imap_target ? ` <span style="color:var(--dim)">(${escHtml(r.imap_target)})</span>` : '';
+      el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(r.error||'失败')}${target}</span>`;
+    }
   } catch (e) {
     el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(String(e))}</span>`;
   }
