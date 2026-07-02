@@ -60,6 +60,8 @@ desktop/dist/
 !desktop/dist/.gitkeep
 scripts/*
 !scripts/setup_wizard.py
+!scripts/release-preflight.sh
+!scripts/release-checklist.md
 *.pem
 send_news_mail.py
 demo/
