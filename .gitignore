@@ -24,6 +24,9 @@ dist/
 .vscode/
 .DS_Store
 
+# Do not publish Markdown files to GitHub.
+*.md
+
 # eval 生成的演示产物,不入库
 personal-ai-landing.html
 personal-ai-landing/
@@ -61,7 +64,6 @@ desktop/dist/
 scripts/*
 !scripts/setup_wizard.py
 !scripts/release-preflight.sh
-!scripts/release-checklist.md
 *.pem
 send_news_mail.py
 demo/

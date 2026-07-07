@@ -9,9 +9,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "pattern": {"type": "string", "description": "文件名通配,如 *.py、index.*"},
-        "path": {"type": "string", "description": "起始目录,默认当前目录"},
-        "max_results": {"type": "integer", "description": "最多返回数,默认 100"},
+        "pattern": {"type": "string", "description": "Filename glob, such as *.py or index.*"},
+        "path": {"type": "string", "description": "Start directory; defaults to current directory"},
+        "max_results": {"type": "integer", "description": "Maximum results; defaults to 100"},
     },
     "required": ["pattern"],
 }

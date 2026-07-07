@@ -77,7 +77,7 @@ PROVIDER_PRESETS: dict[str, dict] = {
     "xiaomi_vision": {
         "label": "小米视觉(看图)", "kind": "vision", "builtin": True,
         "key_env": "VISION_API_KEY", "base_url_env": "VISION_BASE_URL", "model_env": "VISION_MODEL",
-        "default_base_url": "https://api.xiaomimimo.com/v1", "default_model": "mimo-v2-omni",
+        "default_base_url": "https://api.xiaomimimo.com/v1", "default_model": "mimo-v2.5-pro",
     },
     "image": {
         "label": "图像生成", "kind": "image", "builtin": True,
@@ -90,6 +90,16 @@ PROVIDER_PRESETS: dict[str, dict] = {
 PROVIDER_KEY_ENV: dict[str, str] = {p: m["key_env"] for p, m in PROVIDER_PRESETS.items()}
 
 _MASK = "******"
+
+
+def migrate_mimo_model(model: str) -> str:
+    """MiMo-V2 系列已下线(2026-06);旧配置自动映射到 V2.5。"""
+    m = (model or "").strip()
+    if not m:
+        return m
+    if m == "mimo-v2-omni" or (m.startswith("mimo-v2") and not m.startswith("mimo-v2.5")):
+        return "mimo-v2.5-pro"
+    return m
 
 
 def is_real_key(value: str | None) -> bool:
@@ -195,7 +205,7 @@ class ModelKeyStore:
             if cfg.get("base_url") and meta.get("base_url_env"):
                 os.environ[meta["base_url_env"]] = cfg["base_url"]
             if cfg.get("model") and meta.get("model_env"):
-                os.environ[meta["model_env"]] = cfg["model"]
+                os.environ[meta["model_env"]] = migrate_mimo_model(cfg["model"])
 
     def get_masked(self) -> dict:
         """返回每个接口的状态(不回明文)。内置预设始终出现;自定义接口附带其配置。"""
@@ -219,7 +229,7 @@ class ModelKeyStore:
                 "verified": bool(cfg.get("verified_at")),
                 "key": _MASK if has_key else "",
                 "base_url": cfg.get("base_url") or meta.get("default_base_url", ""),
-                "model": cfg.get("model") or meta.get("default_model", ""),
+                "model": migrate_mimo_model(cfg.get("model") or meta.get("default_model", "")),
                 "default_base_url": meta.get("default_base_url", ""),
                 "default_model": meta.get("default_model", ""),
             }
@@ -238,7 +248,7 @@ class ModelKeyStore:
         return {
             "key": stored_key if is_real_key(stored_key) else (env_key if is_real_key(env_key) else ""),
             "base_url": cfg.get("base_url") or meta.get("default_base_url", ""),
-            "model": cfg.get("model") or meta.get("default_model", ""),
+            "model": migrate_mimo_model(cfg.get("model") or meta.get("default_model", "")),
             "kind": meta.get("kind", "chat"),
         }
 

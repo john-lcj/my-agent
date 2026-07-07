@@ -28,6 +28,8 @@ _DEFAULT_POLICY = {
         {"pattern": r"\brm\b[^\n]*\s-f\b[^\n]*\s-r\b", "reason": "递归强制删除(分写 -f -r)不可逆。"},
         {"pattern": r"\brm\b[^\n]*--(recursive|force)", "reason": "递归/强制删除不可逆,可能误删整个工作区。"},
         {"pattern": r":\(\)\s*\{", "reason": "疑似 fork bomb,会耗尽系统资源。"},
+        {"pattern": r"git\s+push\s+(-f\b|--force\b)", "reason": "强推会覆盖远程历史、破坏协作。"},
+        {"pattern": r"git\s+push\s+.*--force", "reason": "强推会覆盖远程提交。"},
         {"pattern": r"force.*push.*\b(main|master)\b", "reason": "强推主干会覆盖他人提交。"},
         {"pattern": r"git\s+push\s+.*--force.*\b(main|master)\b", "reason": "强推主干会覆盖他人提交。"},
         {"pattern": r"mkfs", "reason": "格式化文件系统会清空磁盘数据。"},
@@ -48,6 +50,7 @@ _DEFAULT_POLICY = {
     ],
     "forbidden_paths": [
         {"pattern": r"\.env", "reason": ".env 含密钥与凭证,读写都可能泄密。"},
+        {"pattern": r"model_keys", "reason": "模型密钥文件,禁止读写。"},
         {"pattern": r"credentials", "reason": "凭证文件涉及敏感访问权限。"},
         {"pattern": r"id_rsa", "reason": "SSH 私钥泄露会危及关联主机。"},
         {"pattern": r"\.ssh/", "reason": "SSH 配置目录含私钥与信任主机信息。"},
@@ -60,7 +63,9 @@ _DEFAULT_POLICY = {
         "capabilities": ["fs.write", "gui.control", "payment.",
                          "skill.file_edit", "skill.file_append",
                          "skill.docx_writer", "skill.xlsx_writer", "skill.pptx_writer",
-                         "skill.http_request", "schedule.create", "schedule.delete"],
+                         "skill.http_request", "schedule.create", "schedule.update",
+                         "schedule.run", "schedule.delete", "channel.configure",
+                         "model_key.save", "model_key.clear"],
         "shell_patterns": [
             {"pattern": r"\brm\b", "reason": "删除文件或目录,需确认。"},
             {"pattern": r"\bmv\b", "reason": "移动/重命名会改动现有文件,需确认。"},
@@ -87,7 +92,7 @@ _DEFAULT_POLICY = {
     "capability_whitelist": {
         "readonly": ["fs.read", "fs.list", "web.search", "web.fetch"],
         "researcher": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."],
-        "executor": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule."],
+        "executor": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule.", "channel.", "model_key.", "goal.", "monitor."],
         "delegate":  ["fs.read", "fs.list", "web.search", "web.fetch"],
         "scheduler": ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."],
     },

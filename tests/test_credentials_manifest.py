@@ -28,14 +28,14 @@ class TestSecretsVaultMeta:
         self.vault.save(
             name="tencent_cloud",
             secret="sk-xxx",
-            description="腾讯云主账号",
+            description="Tencent Cloud main account",
             scope="CVM 管理、COS 读写",
         )
         rows = self.vault.list()
         assert len(rows) == 1
         r = rows[0]
         assert r["name"] == "tencent_cloud"
-        assert r["description"] == "腾讯云主账号"
+        assert r["description"] == "Tencent Cloud main account"
         assert r["scope"] == "CVM 管理、COS 读写"
         assert r["has_secret"] is True
 
@@ -83,8 +83,8 @@ class TestSecretsVaultMeta:
         assert rows[0]["name"] == "old_key"
         assert rows[0]["description"] == ""
         # 能写新字段
-        v.save(name="old_key", description="旧 key 补描述")
-        assert v.list()[0]["description"] == "旧 key 补描述"
+        v.save(name="old_key", description="Backfill description for old key")
+        assert v.list()[0]["description"] == "Backfill description for old key"
         v.close()
         os.unlink(tmp2.name)
 
@@ -115,23 +115,23 @@ class TestSecretSaveTool:
         result = asyncio.run(self.save_tool.invoke({
             "name": "tencent_cloud",
             "secret": "sk-abc",
-            "description": "腾讯云",
+            "description": "Tencent Cloud",
             "scope": "CVM/COS",
         }, self.ctx))
         assert result.ok
-        assert "腾讯云" in result.output
+        assert "Tencent Cloud" in result.output
         assert "CVM/COS" in result.output
 
     def test_list_shows_description_scope(self):
         asyncio.run(self.save_tool.invoke({
             "name": "github_token",
             "secret": "ghp_xxx",
-            "description": "GitHub 个人 token",
+            "description": "GitHub personal token",
             "scope": "repo 读写、workflow",
         }, self.ctx))
         result = asyncio.run(self.list_tool.invoke({}, self.ctx))
         assert result.ok
-        assert "GitHub 个人 token" in result.output
+        assert "GitHub personal token" in result.output
         assert "repo 读写" in result.output
 
 
@@ -168,12 +168,12 @@ class TestCredentialsManifestInjection:
         assert block == []
 
     def test_injects_when_description_present(self):
-        self.vault.save(name="tencent_cloud", secret="sk", description="腾讯云", scope="CVM")
+        self.vault.save(name="tencent_cloud", secret="sk", description="Tencent Cloud", scope="CVM")
         self.agent._inject_credentials_manifest(self.ctx)
         block = [m for m in self.ctx.messages if "[可用凭据" in m.content]
         assert len(block) == 1
         assert "tencent_cloud" in block[0].content
-        assert "腾讯云" in block[0].content
+        assert "Tencent Cloud" in block[0].content
         assert "CVM" in block[0].content
 
     def test_deduplication_on_repeat_injection(self):

@@ -1,14 +1,6 @@
 /* ══════════════════════════════════════════════════════════════════
-   AUTH — 用户登录态管理
-   token 存 localStorage('captainAuthToken')
-   所有 /api/* 请求自动带 Authorization: Bearer <token>
+   AUTH — 设备级访问令牌（单机 License 模式，无多用户登录/注册）
    ══════════════════════════════════════════════════════════════════ */
-const _AUTH_KEY = 'captainAuthToken';
-function getAuthToken()     { try { return localStorage.getItem(_AUTH_KEY) || ''; } catch { return ''; } }
-function setAuthToken(t)    { try { t ? localStorage.setItem(_AUTH_KEY, t) : localStorage.removeItem(_AUTH_KEY); } catch {} }
-function clearAuthToken()   { setAuthToken(''); }
-
-/* 兼容旧 X-Agent-Token（设备级访问令牌）*/
 function getAccessToken() { try { return localStorage.getItem('agentApiToken') || ''; } catch { return ''; } }
 function setAccessToken(t) { try { t ? localStorage.setItem('agentApiToken', t) : localStorage.removeItem('agentApiToken'); } catch {} }
 
@@ -21,10 +13,8 @@ function setAccessToken(t) { try { t ? localStorage.setItem('agentApiToken', t) 
       if (url.indexOf('/api/') !== -1) {
         init = init || {};
         const h = new Headers(init.headers || {});
-        const userTok = getAuthToken();
-        const devTok  = getAccessToken();
-        if (userTok && !h.has('Authorization')) h.set('Authorization', 'Bearer ' + userTok);
-        if (devTok  && !h.has('X-Agent-Token'))  h.set('X-Agent-Token', devTok);
+        const devTok = getAccessToken();
+        if (devTok && !h.has('X-Agent-Token')) h.set('X-Agent-Token', devTok);
         init.headers = h;
       }
     } catch (e) {}
@@ -32,150 +22,8 @@ function setAccessToken(t) { try { t ? localStorage.setItem('agentApiToken', t) 
   };
 })();
 
-/* ── Auth UI ──────────────────────────────────────────────────────── */
-let _authUser = null;
-
-function _authOverlayVisible(v) {
-  const el = document.getElementById('auth-overlay');
-  if (!el) return;
-  el.style.display = v ? 'flex' : 'none';
-}
-
-function switchAuthTab(tab) {
-  document.getElementById('auth-form-login').style.display    = tab === 'login'    ? '' : 'none';
-  document.getElementById('auth-form-register').style.display = tab === 'register' ? '' : 'none';
-  document.getElementById('auth-tab-login').classList.toggle('active', tab === 'login');
-  document.getElementById('auth-tab-reg').classList.toggle('active',   tab === 'register');
-}
-
-async function doLogin() {
-  const email = (document.getElementById('auth-login-email')?.value || '').trim();
-  const pwd   = document.getElementById('auth-login-pwd')?.value || '';
-  const errEl = document.getElementById('auth-login-err');
-  errEl.style.display = 'none';
-  try {
-    const r = await fetch('/api/auth/login', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email, password: pwd})});
-    const d = await r.json();
-    if (!d.ok) { errEl.textContent = d.error || '登录失败'; errEl.style.display=''; return; }
-    setAuthToken(d.token);
-    _authUser = d.user;
-    _authOverlayVisible(false);
-    _updateUserBadge(d.user);
-    _reconnectWs();
-    if (typeof loadSessions === 'function') loadSessions();
-  } catch(e) { errEl.textContent = '网络错误，请重试'; errEl.style.display=''; }
-}
-
-async function doRegister() {
-  const email = (document.getElementById('auth-reg-email')?.value || '').trim();
-  const pwd   = document.getElementById('auth-reg-pwd')?.value || '';
-  const errEl = document.getElementById('auth-reg-err');
-  errEl.style.display = 'none';
-  try {
-    const r = await fetch('/api/auth/register', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email, password: pwd})});
-    const d = await r.json();
-    if (!d.ok) { errEl.textContent = d.error || '注册失败'; errEl.style.display=''; return; }
-    setAuthToken(d.token);
-    _authUser = d.user;
-    _authOverlayVisible(false);
-    _updateUserBadge(d.user);
-    _reconnectWs();
-  } catch(e) { errEl.textContent = '网络错误，请重试'; errEl.style.display=''; }
-}
-
-function doLogout() {
-  clearAuthToken();
-  _authUser = null;
-  closeUserMenu();
-  const badge = document.getElementById('user-badge');
-  if (badge) badge.style.display = 'none';
-  _authOverlayVisible(true);
-}
-
-async function doRedeem() {
-  const code = (document.getElementById('redeem-code-input')?.value || '').trim();
-  if (!code) return;
-  try {
-    const r = await fetch('/api/auth/redeem', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({code})});
-    const d = await r.json();
-    if (!d.ok) { if (typeof toast==='function') toast('❌ ' + (d.error||'兑换失败')); return; }
-    setAuthToken(d.token);
-    _authUser = d.user;
-    _updateUserBadge(d.user);
-    closeUserMenu();
-    if (typeof toast==='function') toast('🎉 已升级到 ' + d.user.plan.toUpperCase() + '！');
-  } catch { if (typeof toast==='function') toast('网络错误'); }
-}
-
-function openUserMenu() {
-  const menu = document.getElementById('user-menu');
-  if (!menu) return;
-  const info = document.getElementById('user-menu-info');
-  if (info && _authUser) {
-    info.innerHTML = `<div>${_authUser.email}</div>
-      <div style="margin-top:2px">套餐: <b>${(_authUser.plan||'free').toUpperCase()}</b></div>`;
-  }
-  menu.style.display = menu.style.display === 'none' ? '' : 'none';
-}
-function closeUserMenu() {
-  const menu = document.getElementById('user-menu');
-  if (menu) menu.style.display = 'none';
-}
-document.addEventListener('click', e => {
-  if (!e.target.closest('#user-menu') && !e.target.closest('#user-badge')) closeUserMenu();
-});
-
-function _updateUserBadge(user) {
-  if (!user) return;
-  const badge   = document.getElementById('user-badge');
-  const planBdg = document.getElementById('user-plan-badge');
-  const emailEl = document.getElementById('user-email-short');
-  if (badge)   badge.style.display = 'flex';
-  if (planBdg) { planBdg.textContent = (user.plan||'free').toUpperCase();
-                 planBdg.style.background = user.plan==='pro' ? '#f0c040' : 'var(--accent)'; }
-  if (emailEl) emailEl.textContent = (user.email||'').split('@')[0];
-  _refreshQuotaBar();
-}
-
-async function _refreshQuotaBar() {
-  try {
-    const d = await (await fetch('/api/auth/me')).json();
-    if (!d.ok) return;
-    const fill = document.getElementById('user-quota-fill');
-    if (fill) fill.style.width = (d.usage?.pct || 0) + '%';
-    _authUser = d.user;
-  } catch {}
-}
-
-/* 启动时检查登录态 + 授权状态 */
-async function _authInit() {
-  /* 单机模式：读取本地授权状态，更新徽章 */
-  try {
-    const r = await fetch('/api/auth/me');
-    if (r.ok) {
-      const d = await r.json();
-      if (d.ok && d.user) {
-        _authUser = d.user;
-        _updateUserBadge(d.user);
-      }
-    }
-  } catch { /* 服务未启动，忽略 */ }
-}
-
-/* WS 重连（携带新 token）*/
-function _reconnectWs() {
-  if (typeof reconnectWebSocket === 'function') reconnectWebSocket();
-}
-
 document.addEventListener('DOMContentLoaded', () => {
-  _authInit();
   loadSetupStatus();
-  setInterval(_refreshQuotaBar, 60000);
 });
 
 /* ══ Skill 中文标签(id → 中文描述,用于调用时的友好提示)════════════ */
@@ -203,6 +51,8 @@ let thinkingEl = null;
 let streamingMsgEl = null;
 let streamingText = '';
 let streamRenderTimer = null;
+let streamRenderEl = null;
+let streamRenderText = '';
 /** 简洁模式:Chat 默认隐藏工具轨迹;开「工具轨迹」后显示 call/result */
 let conciseChat = true;
 let _activeTraceGroup = null;
@@ -416,7 +266,7 @@ function reconnectWebSocket() {
 }
 
 function wsAuthPayload() {
-  const token = getAuthToken() || getAccessToken();
+  const token = getAccessToken();
   return token ? { type: 'auth', token } : null;
 }
 
@@ -533,7 +383,7 @@ function handle(ev) {
   }
     else if (etype === 'assistant_message') {
     removeThinking();
-    const text = p.text || '';
+    const text = p.text || streamingText || '';
     const who = p.expert_role || (p.source && p.source !== 'coordinator' && p.source !== 'system' ? p.source : 'Captain');
     if (p.direct_expert) resetStreamingBubble();
     if (streamingMsgEl && !p.direct_expert) {
@@ -985,22 +835,43 @@ function setAgentContent(el, text, streaming) {
     scheduleStreamRender(el, normalized);
     return;
   }
-  if (streamRenderTimer) {
-    clearTimeout(streamRenderTimer);
-    streamRenderTimer = null;
-  }
+  clearStreamRenderTimer();
   el.innerHTML = `<div class="md">${renderMD(normalized)}</div>`;
   attachCodeCopyButtons(el);
   mergeChatImagesInto(el);
 }
 
+function clearStreamRenderTimer() {
+  if (streamRenderTimer) {
+    clearTimeout(streamRenderTimer);
+    streamRenderTimer = null;
+  }
+  streamRenderEl = null;
+  streamRenderText = '';
+}
+
 function scheduleStreamRender(el, text) {
+  streamRenderEl = el;
+  streamRenderText = text;
   if (streamRenderTimer) return;
   streamRenderTimer = setTimeout(() => {
     streamRenderTimer = null;
-    el.innerHTML = `<div class="md streaming-md">${renderMD(text)}</div>`;
-    mergeChatImagesInto(el);
-    if (el.parentElement) el.parentElement.scrollTop = el.parentElement.scrollHeight;
+    const target = streamRenderEl;
+    const latest = streamRenderText;
+    if (!target || !target.isConnected) {
+      streamRenderEl = null;
+      streamRenderText = '';
+      return;
+    }
+    target.innerHTML = `<div class="md streaming-md">${renderMD(latest)}</div>`;
+    mergeChatImagesInto(target);
+    if (target.parentElement) target.parentElement.scrollTop = target.parentElement.scrollHeight;
+    if (streamRenderEl === target && streamRenderText !== latest) {
+      scheduleStreamRender(target, streamRenderText);
+    } else {
+      streamRenderEl = null;
+      streamRenderText = '';
+    }
   }, 60);
 }
 
@@ -1137,30 +1008,137 @@ function toggleHQVoice(e) {
 }
 document.addEventListener('DOMContentLoaded', _syncHQBtn);
 
+/* ── 语音能力检测(Captain App/WKWebView 无 SpeechRecognition,走录音+ASR)── */
+function _hasSpeechRecognition() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+function _hasMediaCapture() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+}
+/** Chrome 原生听写可靠;Safari/WKWebView 常有 webkit 占位但不可用 → 走录音+ASR */
+function _preferMediaAsr() {
+  if (_hqVoice) return true;
+  if (!_hasSpeechRecognition()) return true;
+  const ua = navigator.userAgent || '';
+  const isChromium = !!(window.chrome) || /Chrom(e|ium)/.test(ua);
+  if (!isChromium && window.webkitSpeechRecognition) return true;
+  return false;
+}
+function _useMediaAsr() { return _preferMediaAsr(); }
+
+function _micToast(msg, ms = 2600) {
+  if (typeof showToast === 'function') { showToast(msg, ms); return; }
+  const el = document.getElementById('ctx-connecting-label');
+  if (el) { el.hidden = false; el.textContent = msg; setTimeout(() => { el.textContent = ''; }, ms); }
+}
+
+async function _getUserMediaAudio(timeoutMs = 12000) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('mediaDevices 不可用');
+  }
+  const p = navigator.mediaDevices.getUserMedia({ audio: true });
+  let timer;
+  const t = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('麦克风请求超时,请检查系统隐私设置')), timeoutMs);
+  });
+  try { return await Promise.race([p, t]); }
+  finally { clearTimeout(timer); }
+}
+
+function _newMediaRecorder(stream) {
+  const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+  for (const mime of cands) {
+    if (!MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(mime)) {
+      try { return new MediaRecorder(stream, { mimeType: mime }); } catch (e) { /* next */ }
+    }
+  }
+  return new MediaRecorder(stream);
+}
+function _micPermissionHint(err) {
+  const msg = (err && err.name === 'NotAllowedError')
+    ? '麦克风被拒绝。请在 系统设置 → 隐私与安全性 → 麦克风 中允许 Captain，然后重启 App。'
+    : '无法使用麦克风:' + (err && err.message ? err.message : String(err || ''));
+  alert(msg);
+}
+async function _asrBlobToInput(blob, inp, { append = true } = {}) {
+  const wav = await _blobToWav(blob);
+  const fd = new FormData();
+  fd.append('audio', wav, 'rec.wav');
+  const d = await (await fetch('/api/voice/asr', { method: 'POST', body: fd })).json();
+  if (d.ok && d.text && inp) {
+    const t = d.text.trim();
+    inp.value = append && inp.value ? (inp.value + ' ' + t) : t;
+    inp.dispatchEvent(new Event('input'));
+    return t;
+  }
+  if (!d.ok) {
+    const err = String(d.error || '');
+    if (/未配置|401|Unauthorized|Key/i.test(err)) {
+      _micToast('请到 设置→模型→小米视觉 配置 API Key');
+    } else {
+      _micToast('识别失败:' + err.slice(0, 100));
+    }
+    return '';
+  }
+  return '';
+}
+
 /* ── 高音质听写:录音 → 转 WAV → /api/voice/asr(小米识别)── */
 let _hqRec = null, _hqChunks = [], _hqStream = null;
 async function _micHQToggle() {
   const btn = document.getElementById('btn-mic');
   const inp = document.getElementById('chat-inp');
-  if (_hqRec && _hqRec.state === 'recording') { _hqRec.stop(); return; }
-  try { _hqStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (e) { alert('需要麦克风权限。'); return; }
+  if (_hqRec && _hqRec.state === 'recording') {
+    _micToast('录音结束,识别中…');
+    _hqRec.stop();
+    return;
+  }
+  if (!_hasMediaCapture()) {
+    _micToast('当前环境不支持录音,请更新 Captain App 或使用 Chrome');
+    return;
+  }
+  btn && btn.classList.add('mic-on');
+  _micToast('请允许麦克风…');
+  try {
+    _hqStream = await _getUserMediaAudio();
+  } catch (e) {
+    btn && btn.classList.remove('mic-on');
+    _micPermissionHint(e);
+    return;
+  }
   _hqChunks = [];
-  _hqRec = new MediaRecorder(_hqStream);
+  try {
+    _hqRec = _newMediaRecorder(_hqStream);
+  } catch (e) {
+    btn && btn.classList.remove('mic-on');
+    try { _hqStream.getTracks().forEach(t => t.stop()); } catch (e2) {}
+    _micToast('无法启动录音:' + (e.message || e));
+    return;
+  }
   _hqRec.ondataavailable = (e) => { if (e.data && e.data.size) _hqChunks.push(e.data); };
-  _hqRec.onstart = () => { btn && btn.classList.add('mic-on'); };
+  _hqRec.onerror = () => {
+    btn && btn.classList.remove('mic-on');
+    _micToast('录音出错,请重试');
+  };
+  _hqRec.onstart = () => { _micToast('录音中…再点一次结束'); };
   _hqRec.onstop = async () => {
     btn && btn.classList.remove('mic-on');
     try { _hqStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    if (!_hqChunks.length) { _micToast('未录到声音'); return; }
+    _micToast('识别中…');
     try {
-      const wav = await _blobToWav(new Blob(_hqChunks, { type: (_hqRec && _hqRec.mimeType) || 'audio/webm' }));
-      const fd = new FormData(); fd.append('audio', wav, 'rec.wav');
-      const d = await (await fetch('/api/voice/asr', { method: 'POST', body: fd })).json();
-      if (d.ok && d.text && inp) { inp.value = (inp.value ? inp.value + ' ' : '') + d.text; inp.dispatchEvent(new Event('input')); }
-      else if (!d.ok) alert('识别失败:' + (d.error || ''));
-    } catch (e) { alert('识别失败:' + e); }
+      const text = await _asrBlobToInput(
+        new Blob(_hqChunks, { type: (_hqRec && _hqRec.mimeType) || 'audio/webm' }), inp);
+      if (text) _micToast('识别完成');
+    } catch (e) { _micToast('识别失败:' + (e.message || e)); }
   };
-  _hqRec.start();
+  try {
+    _hqRec.start(250);
+  } catch (e) {
+    btn && btn.classList.remove('mic-on');
+    try { _hqStream.getTracks().forEach(t => t.stop()); } catch (e2) {}
+    _micToast('无法开始录音:' + (e.message || e));
+  }
 }
 async function _blobToWav(blob) {
   const buf = await blob.arrayBuffer();
@@ -1177,23 +1155,79 @@ async function _blobToWav(blob) {
   return new Blob([out.buffer], { type: 'audio/wav' });
 }
 
+/** 录音直到停顿(连续对话 App 内 fallback) */
+function _recordUntilSilence(stream, opts = {}) {
+  const silenceMs = opts.silenceMs || 1500;
+  const maxMs = opts.maxMs || 30000;
+  const threshold = opts.threshold || 0.012;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const chunks = [];
+  const rec = _newMediaRecorder(stream);
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  return new Promise((resolve, reject) => {
+    let speechSeen = false;
+    let silenceStart = 0;
+    const started = Date.now();
+    let timer = null;
+    const finish = () => {
+      if (timer) clearInterval(timer);
+      if (rec.state === 'recording') rec.stop();
+    };
+    timer = setInterval(() => {
+      const buf = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      const now = Date.now();
+      if (rms > threshold) { speechSeen = true; silenceStart = 0; }
+      else if (speechSeen) {
+        if (!silenceStart) silenceStart = now;
+        else if (now - silenceStart >= silenceMs) finish();
+      }
+      if (now - started >= maxMs) finish();
+    }, 120);
+    rec.onstop = async () => {
+      if (timer) clearInterval(timer);
+      try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      try { await ctx.close(); } catch (e) {}
+      resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+    };
+    rec.onerror = (e) => {
+      if (timer) clearInterval(timer);
+      reject(e.error || e);
+    };
+    rec.start();
+  });
+}
+
 /* ── 语音输入:点麦克风,浏览器原生听写进输入框(zh-CN,实时上屏)── */
 let _rec = null, _recOn = false, _micBase = '', _micFinal = '';
 function toggleMic(e) {
-  if (e) e.stopPropagation();
-  if (_hqVoice) { _micHQToggle(); return; }   // 高音质模式 → 走小米 ASR
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (_useMediaAsr()) { void _micHQToggle(); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const btn = document.getElementById('btn-mic');
   const inp = document.getElementById('chat-inp');
-  if (!SR) { alert('当前浏览器不支持语音输入,建议用 Chrome。'); return; }
+  if (!SR) { void _micHQToggle(); return; }
   if (_recOn) { try { _rec && _rec.stop(); } catch (e2) {} return; }
   _rec = new SR();
   _rec.lang = (typeof uiLang !== 'undefined' && uiLang === 'en') ? 'en-US' : 'zh-CN';
   _rec.interimResults = true; _rec.continuous = true;
   _micBase = inp ? (inp.value ? inp.value + ' ' : '') : ''; _micFinal = '';
-  _rec.onstart = () => { _recOn = true; btn && btn.classList.add('mic-on'); };
+  _rec.onstart = () => { _recOn = true; btn && btn.classList.add('mic-on'); _micToast('听写中…'); };
   _rec.onend = () => { _recOn = false; btn && btn.classList.remove('mic-on'); };
-  _rec.onerror = () => { _recOn = false; btn && btn.classList.remove('mic-on'); };
+  _rec.onerror = (ev) => {
+    _recOn = false; btn && btn.classList.remove('mic-on');
+    _micToast('听写失败,改用录音模式…');
+    void _micHQToggle();
+  };
   _rec.onresult = (ev) => {
     let interim = '';
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -1202,23 +1236,55 @@ function toggleMic(e) {
     }
     if (inp) { inp.value = _micBase + _micFinal + interim; inp.dispatchEvent(new Event('input')); }
   };
-  try { _rec.start(); } catch (e2) {}
+  try { _rec.start(); }
+  catch (e2) { _micToast('听写不可用,改用录音模式…'); void _micHQToggle(); }
 }
 
 /* ── 连续对话模式:免手循环 听→停顿即发→回复→朗读→念完再开麦 ── */
-let _convoOn = false, _convoRec = null;
+let _convoOn = false, _convoRec = null, _convoMediaGen = 0;
 function _syncConvoBtn() {
   const b = document.getElementById('btn-convo');
   if (b) b.classList.toggle('convo-on', _convoOn);
 }
+function _convoListenStart() {
+  if (!_convoOn) return;
+  if (_preferMediaAsr()) _convoMediaListenOnce();
+  else _convoListenOnce();
+}
 function toggleConvo(e) {
   if (e) e.stopPropagation();
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert('当前浏览器不支持语音,建议用 Chrome。'); return; }
+  if (!_hasSpeechRecognition() && !_hasMediaCapture()) {
+    _micToast('当前环境不支持语音,请更新 Captain App 或使用 Chrome');
+    return;
+  }
   _convoOn = !_convoOn;
+  _convoMediaGen++;
   _syncConvoBtn();
-  if (_convoOn) { _convoListenOnce(); }
-  else { try { _convoRec && _convoRec.abort(); } catch (e2) {} _ttsReset(); }
+  if (_convoOn) { _convoListenStart(); }
+  else { try { _convoRec && _convoRec.abort(); } catch (e2) {} _convoMediaGen++; _ttsReset(); }
+}
+async function _convoMediaListenOnce() {
+  if (!_convoOn) return;
+  const gen = _convoMediaGen;
+  const micBtn = document.getElementById('btn-mic');
+  const inp = document.getElementById('chat-inp');
+  try {
+    micBtn && micBtn.classList.add('mic-on');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!_convoOn || gen !== _convoMediaGen) { stream.getTracks().forEach(t => t.stop()); return; }
+    const blob = await _recordUntilSilence(stream);
+    micBtn && micBtn.classList.remove('mic-on');
+    if (!_convoOn || gen !== _convoMediaGen) return;
+    if (!blob.size) { setTimeout(() => { if (_convoOn) _convoListenStart(); }, 600); return; }
+    const text = await _asrBlobToInput(blob, inp, { append: false });
+    if (!_convoOn || gen !== _convoMediaGen) return;
+    if (text && !taskRunning) sendMsg();
+    else setTimeout(() => { if (_convoOn) _convoListenStart(); }, 600);
+  } catch (e) {
+    micBtn && micBtn.classList.remove('mic-on');
+    if (e && e.name === 'NotAllowedError') { _micPermissionHint(e); _convoOn = false; _syncConvoBtn(); return; }
+    if (_convoOn && gen === _convoMediaGen) setTimeout(() => _convoListenStart(), 1000);
+  }
 }
 function _convoListenOnce() {
   if (!_convoOn) return;
@@ -1247,12 +1313,19 @@ function _convoListenOnce() {
     if (text && !taskRunning) {
       sendMsg();                       // 这一轮说完了 → 自动发送;回复完成会触发朗读+重新开麦
     } else {
-      setTimeout(() => { if (_convoOn) _convoListenOnce(); }, 600);  // 没说话/正忙 → 稍后再听
+      setTimeout(() => { if (_convoOn) _convoListenStart(); }, 600);  // 没说话/正忙 → 稍后再听
     }
   };
   try { _convoRec.start(); } catch (e) {}
 }
-document.addEventListener('DOMContentLoaded', _syncConvoBtn);
+document.addEventListener('DOMContentLoaded', () => {
+  _syncConvoBtn();
+  const mic = document.getElementById('btn-mic');
+  if (mic && !mic.dataset.micBound) {
+    mic.dataset.micBound = '1';
+    mic.addEventListener('click', (ev) => toggleMic(ev));
+  }
+});
 
 /* ── 流式分句朗读:边出文字边按句合成播放,首句 ~2s 就开口,不再憋完整段 ── */
 let _ttsActive = false, _ttsConsumed = 0, _ttsQueue = [], _ttsPlaying = false;
@@ -1290,7 +1363,12 @@ async function _ttsPump() {
   if (_ttsQueue.length) _ttsPump();
   else if (!_ttsActive) _ttsDrain();
 }
-function _ttsDrain() { if (_convoOn) _convoListenOnce(); }  // 念完最后一句 → 对话模式重新开麦
+function _ttsDrain() { if (_convoOn) _convoListenStart(); }  // 念完最后一句 → 对话模式重新开麦
+
+window.toggleMic = toggleMic;
+window.toggleConvo = toggleConvo;
+window.toggleHQVoice = toggleHQVoice;
+window.toggleAutoRead = toggleAutoRead;
 
 function attachMsgActions(el, text, meta) {
   if (!el || el.querySelector('.msg-footer')) return;
@@ -1524,12 +1602,11 @@ function removeThinking() {
 }
 
 function resetStreamingBubble() {
+  clearStreamRenderTimer();
+  const orphan = document.getElementById('streaming-msg');
+  if (orphan) orphan.remove();
   streamingMsgEl = null;
   streamingText = '';
-  if (streamRenderTimer) {
-    clearTimeout(streamRenderTimer);
-    streamRenderTimer = null;
-  }
 }
 
 function clearChat() {
@@ -1609,95 +1686,6 @@ function switchView(view) {
   });
 }
 
-function toggleExpertForm(show) {
-  const f = document.getElementById('expert-new-form');
-  if (f) f.style.display = (show === undefined ? (f.style.display === 'none' ? 'block' : 'none') : (show ? 'block' : 'none'));
-}
-
-async function saveNewExpert() {
-  const name = (document.getElementById('exp-name')?.value || '').trim();
-  if (!name) { alert(t('expertNameReq')); return; }
-  const payload = {
-    name,
-    description: (document.getElementById('exp-desc')?.value || '').trim(),
-    tier: document.getElementById('exp-tier')?.value || 'readonly',
-    system_prompt: (document.getElementById('exp-prompt')?.value || '').trim(),
-  };
-  let r, d;
-  try {
-    r = await fetch('/api/agents/roster', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    d = await r.json();
-  } catch (e) { alert(t('expertSaveFail') + e); return; }
-  if (!r.ok || !d.ok) { alert(t('expertSaveFail') + (d && d.error || r.status)); return; }
-  toggleExpertForm(false);
-  await renderExpertsPage();
-  alert(t('expertSaved'));
-}
-
-async function deleteExpert(id) {
-  if (!confirm(t('expertDelConfirm'))) return;
-  try {
-    const r = await fetch('/api/agents/roster/' + encodeURIComponent(id), { method: 'DELETE' });
-    const d = await r.json();
-    if (!r.ok || !d.ok) { alert(t('expertSaveFail') + (d && d.error || r.status)); return; }
-  } catch (e) { alert(t('expertSaveFail') + e); return; }
-  renderExpertsPage();
-}
-
-async function renderExpertsPage() {
-  const grid = document.getElementById('experts-page-grid');
-  if (!grid) return;
-  grid.innerHTML = `<div style="color:var(--dim);font-size:13px">${escHtml(t('loading'))}</div>`;
-  try {
-    const res = await fetch('/api/agents/roster');
-    const data = await res.json();
-    const agents = data.agents || [];
-    const header = `
-      <div class="expert-add-bar" style="grid-column:1/-1;display:flex;justify-content:flex-end;margin-bottom:4px">
-        <button class="btn-sm" type="button" onclick="toggleExpertForm()">${escHtml(t('expertAdd'))}</button>
-      </div>
-      <div id="expert-new-form" style="display:none;grid-column:1/-1;border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:8px;display:none">
-        <div class="field"><input id="exp-name" type="text" placeholder="${escHtml(t('expertNamePh'))}" autocomplete="off" style="width:100%"/></div>
-        <div class="field" style="margin-top:8px"><input id="exp-desc" type="text" placeholder="${escHtml(t('expertDescPh'))}" autocomplete="off" style="width:100%"/></div>
-        <div class="field" style="margin-top:8px">
-          <label style="font-size:12px;color:var(--muted)">${escHtml(t('expertTier'))}</label>
-          <select id="exp-tier" style="width:100%;margin-top:4px">
-            <option value="readonly">${escHtml(t('expertTierRO'))}</option>
-            <option value="write">${escHtml(t('expertTierRW'))}</option>
-          </select>
-        </div>
-        <div class="field" style="margin-top:8px"><textarea id="exp-prompt" rows="3" placeholder="${escHtml(t('expertPromptPh'))}" style="width:100%"></textarea></div>
-        <div style="margin-top:10px;text-align:right">
-          <button class="btn-sm" type="button" onclick="saveNewExpert()">${escHtml(t('expertSaveBtn'))}</button>
-        </div>
-      </div>`;
-    if (!agents.length) {
-      grid.innerHTML = header + `<div style="color:var(--dim);grid-column:1/-1">${escHtml(t('expertNoCfg'))}</div>`;
-      return;
-    }
-    grid.innerHTML = header;
-    agents.forEach(a => {
-      const card = document.createElement('div');
-      card.className = 'expert-card';
-      const delBtn = a.custom
-        ? `<button class="expert-del" type="button" title="delete" onclick="deleteExpert('${escHtml(a.id)}')" style="position:absolute;top:8px;right:8px;border:none;background:none;color:var(--dim);cursor:pointer;font-size:15px">×</button>`
-        : '';
-      card.style.position = 'relative';
-      card.innerHTML = `
-        ${delBtn}
-        <h3>${escHtml(a.role || a.name || a.id)}</h3>
-        <div class="role">${escHtml(a.description || '')}</div>
-        <code>/${escHtml(a.name || a.id)} ${escHtml(t('expertCallTaskHint') || '')}</code>`;
-      grid.appendChild(card);
-    });
-  } catch {
-    grid.innerHTML = `<div style="color:var(--red)">${escHtml(t('loadFailed') || 'load failed')}</div>`;
-  }
-}
-
 async function renderSkillsPage() {
   const list = document.getElementById('skills-page-list');
   if (!list) return;
@@ -1733,6 +1721,26 @@ async function renderSkillsPage() {
 }
 
 /* ══ 设置 / 自定义(Claude 式双栏面板)════════════════════════════ */
+function showToast(msg, ms = 2200) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card);color:var(--txt);border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:13px;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,.15);opacity:0;transition:opacity .2s;pointer-events:none';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; }, ms);
+}
+window.toast = showToast;
+
+async function refreshSettingsUI() {
+  await loadSettingsUI();
+  showToast('已刷新');
+}
+window.refreshSettingsUI = refreshSettingsUI;
 function openSettings(tab) {
   tab = tab || 'profile';
   document.getElementById('settings-overlay').classList.add('open');
@@ -1753,7 +1761,8 @@ function switchSettingsTab(tab, el) {
   if (tab === 'tasks') refreshTasks();
   if (tab === 'setup') loadSetupStatus();
   if (tab === 'security') loadSetupStatus();
-  if (tab === 'governance') { loadGovStats(); loadAuditLog(); }
+  if (tab === 'governance') { loadGovStats(); loadAuditLog(); loadGovPolicy(); }
+  if (tab === 'memory') loadMemoryAll();
   if (tab === 'usage') loadUsageStats();
   if (tab === 'channels' || tab === 'general' || tab === 'keys' || tab === 'security') loadSettingsUI();
   if (tab === 'goals') renderGoals();
@@ -1772,6 +1781,7 @@ function updateSettingsFooter(tab) {
   saveBtn.style.display = READONLY_SETTINGS_TABS.has(tab) ? 'none' : '';
 }
 
+function openCustomize(tab) {
   tab = tab || 'skills';
   document.getElementById('customize-overlay').classList.add('open');
   switchCustomizeTab(tab);
@@ -1786,12 +1796,12 @@ function switchCustomizeTab(tab, el) {
   document.querySelectorAll('#customize-overlay .settings-section').forEach(s => {
     s.classList.toggle('active', s.id === 'customize-' + tab);
   });
-  if (tab === 'experts') renderExpertsPage();
   if (tab === 'skills') renderSkillsPage();
   if (tab === 'templates') renderTemplates();
   if (tab === 'schedules') renderSchedules();
   if (tab === 'connectors') renderConnectors();
   if (tab === 'prefs') renderPrefs();
+  if (tab === 'skill-drafts') loadSkillDrafts();
   if (tab === 'writing') renderWritingAssist();
 }
 
@@ -2131,7 +2141,7 @@ async function renderMonitors() {
     box.innerHTML = rows.length ? rows.map(m => `
       <div class="expert-card" style="margin-bottom:8px">
         <h3>${escHtml(m.name || m.id)}</h3>
-        <div class="role">${escHtml(m.source||'')} · ${escHtml(m.monitor_type||m.type||'')} · 每 ${escHtml(String(m.interval_sec||60))} 秒</div>
+        <div class="role">${escHtml(m.source||'')} · ${escHtml(m.source_type||m.monitor_type||'url')} · ${escHtml(m.attention||'normal')} · 每 ${escHtml(String(m.interval_sec||60))} 秒</div>
         <div style="font-size:11px;color:var(--dim);margin-top:2px">触发时: ${escHtml(m.action||'通知')}</div>
         <button class="btn-sm" style="margin-top:6px" onclick="deleteMonitor('${m.id}')">删除</button>
       </div>`).join('') : `<div class="wb-empty">还没有监控任务</div>`;
@@ -2140,19 +2150,32 @@ async function renderMonitors() {
 async function saveMonitor() {
   const name = (document.getElementById('mon-name')?.value || '').trim();
   const source = (document.getElementById('mon-source')?.value || '').trim();
-  if (!name || !source) return;
+  const action = (document.getElementById('mon-action')?.value || '').trim();
+  if (!name || !source) { alert('请填写监控名称和来源'); return; }
+  const sourceType = document.getElementById('mon-type')?.value || 'url';
+  if (sourceType === 'url' && !/^https?:\/\//i.test(source)) {
+    alert('URL 监控须填写完整地址（以 http:// 或 https:// 开头）'); return;
+  }
   const body = {
     name,
     source,
-    action: document.getElementById('mon-action')?.value || '',
-    monitor_type: document.getElementById('mon-type')?.value || 'keyword',
+    action: action || '内容变化时分析影响并通知主人',
+    source_type: sourceType,
+    attention: document.getElementById('mon-attention')?.value || 'normal',
     interval_sec: parseInt(document.getElementById('mon-interval')?.value || '60', 10),
   };
   try {
-    await fetch('/api/monitors', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const r = await fetch('/api/monitors', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) {
+      alert('添加失败: ' + (d.error || r.statusText || '未知错误'));
+      return;
+    }
     ['mon-name','mon-source','mon-action'].forEach(id => { const el = document.getElementById(id); if (el) el.value=''; });
     renderMonitors();
-  } catch {}
+  } catch (e) {
+    alert('添加失败: ' + (e.message || e));
+  }
 }
 async function deleteMonitor(id) {
   try { await fetch('/api/monitors/' + encodeURIComponent(id), {method:'DELETE'}); } catch {}
@@ -2206,8 +2229,10 @@ async function saveWritingResult() {
   const title = (document.getElementById('writing-save-title')?.value || '').trim() || '写作结果.md';
   if (!output) return;
   try {
-    await fetch('/api/artifacts', {method:'POST', headers:{'Content-Type':'application/json'},
+    const r = await fetch('/api/artifacts', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({filename: title, content: output})});
+    const d = await r.json();
+    if (!r.ok || !d.ok) { if (typeof toast === 'function') toast('保存失败: ' + (d && d.error || r.status)); return; }
     if (typeof toast === 'function') toast('已保存到产物: ' + title);
   } catch { if (typeof toast === 'function') toast('保存失败'); }
 }
@@ -2320,7 +2345,14 @@ async function loadAuditLog() {
   const box = document.getElementById('audit-log-table'); if (!box) return;
   box.innerHTML = '加载中…';
   try {
-    const d = await (await fetch('/api/audit?limit=50')).json();
+    const cap = (document.getElementById('audit-filter-cap')?.value || '').trim();
+    const decision = (document.getElementById('audit-filter-decision')?.value || '').trim();
+    const okRaw = (document.getElementById('audit-filter-ok')?.value || '').trim();
+    const qs = new URLSearchParams({limit: '50'});
+    if (cap) qs.set('capability', cap);
+    if (decision) qs.set('decision', decision);
+    if (okRaw) qs.set('ok', okRaw);
+    const d = await (await fetch('/api/audit?' + qs)).json();
     const rows = d.records || d.logs || d.entries || (Array.isArray(d) ? d : []);
     if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无审计日志</div>'; return; }
     box.innerHTML = `<table class="audit-table">
@@ -2346,6 +2378,91 @@ async function loadAuditLog() {
       }).join('')}</tbody></table>`;
   } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
 }
+
+async function loadMemoryAll() {
+  const box = document.getElementById('memory-all-list'); if (!box) return;
+  box.innerHTML = '加载中…';
+  try {
+    const kind = (document.getElementById('memory-kind-filter')?.value || '').trim();
+    const qs = kind ? ('?kind=' + encodeURIComponent(kind)) : '';
+    const d = await (await fetch('/api/memory' + qs)).json();
+    const rows = d.items || [];
+    if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无记忆</div>'; return; }
+    box.innerHTML = rows.map(r => `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--muted)">[${escHtml(r.kind||'')}]</span> ${escHtml((r.content||'').slice(0,200))}
+      <button class="btn-sm" style="margin-left:8px" onclick="deleteMemoryRow(${r.id})">删除</button>
+    </div>`).join('');
+  } catch { box.innerHTML = '<div class="wb-empty">加载失败</div>'; }
+}
+
+async function deleteMemoryRow(id) {
+  try { await fetch('/api/memory/' + id, {method:'DELETE'}); } catch(e){}
+  loadMemoryAll();
+}
+
+async function exportMemoryJson() {
+  const kind = (document.getElementById('memory-kind-filter')?.value || '').trim();
+  const qs = kind ? ('?kind=' + encodeURIComponent(kind)) : '';
+  const d = await (await fetch('/api/memory/export' + qs)).json();
+  const blob = new Blob([JSON.stringify(d, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'captain-memory.json';
+  a.click();
+}
+window.exportMemoryJson = exportMemoryJson;
+
+async function loadGovPolicy() {
+  const box = document.getElementById('gov-policy-table'); if (!box) return;
+  box.innerHTML = '加载中…';
+  try {
+    const d = await (await fetch('/api/governance/policy')).json();
+    const sec = (title, rows, key) => {
+      if (!rows?.length) return '';
+      return `<div style="margin-bottom:12px"><strong>${title}</strong><ul style="margin:4px 0;padding-left:18px">` +
+        rows.slice(0, 12).map(r => `<li>${escHtml(String(r[key] || r.rule || r.capability || '').slice(0,120))}</li>`).join('') +
+        '</ul></div>';
+    };
+    box.innerHTML = sec('会拦截', d.block, 'reason') + sec('需确认', d.confirm, 'capability') + sec('默认放行(示例)', d.auto, 'capability');
+  } catch { box.innerHTML = '加载失败'; }
+}
+window.loadGovPolicy = loadGovPolicy;
+
+async function loadSkillDrafts() {
+  const box = document.getElementById('skill-draft-list'); if (!box) return;
+  box.innerHTML = '加载中…';
+  try {
+    const d = await (await fetch('/api/memory/skill-drafts')).json();
+    const rows = d.drafts || [];
+    if (!rows.length) { box.innerHTML = '<div class="wb-empty">暂无草稿</div>'; return; }
+    box.innerHTML = rows.map(r => {
+      const id = escHtml(r.id || '');
+      const actions = r.status === 'pending'
+        ? `<button class="btn-sm primary" onclick="confirmSkillDraft('${id}')">确认固化</button>
+           <button class="btn-sm" onclick="dismissSkillDraft('${id}')">忽略</button>`
+        : '';
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <strong>${escHtml(r.name||'')}</strong> <span style="color:var(--muted)">${escHtml(r.status||'')}</span>
+      <pre style="white-space:pre-wrap;margin:6px 0;font-size:11px">${escHtml((r.body||'').slice(0,400))}</pre>
+      ${actions}
+    </div>`;
+    }).join('');
+  } catch { box.innerHTML = '加载失败'; }
+}
+async function confirmSkillDraft(id) {
+  try {
+    const r = await (await fetch('/api/memory/skill-drafts/' + encodeURIComponent(id) + '/confirm', {method:'POST'})).json();
+    if (r.ok) showToast('Skill 已写入 skills/'); else alert(r.error || '失败');
+  } catch(e) { alert(String(e)); }
+  loadSkillDrafts();
+}
+async function dismissSkillDraft(id) {
+  try { await fetch('/api/memory/skill-drafts/' + encodeURIComponent(id), {method:'DELETE'}); } catch(e){}
+  loadSkillDrafts();
+}
+window.loadSkillDrafts = loadSkillDrafts;
+window.confirmSkillDraft = confirmSkillDraft;
+window.dismissSkillDraft = dismissSkillDraft;
 
 function govDecisionLabel(decision, labels) {
   const map = labels?.decisions || {};
@@ -2641,7 +2758,7 @@ function syncAccessTokenUI() {
 
 let _customProviders = [];   // 本地新加、尚未保存的自定义端点 id
 
-const RECOMMENDED_MODEL_PROVIDERS = ['openrouter', 'deepseek', 'openai', 'claude'];
+const PRIMARY_MODEL_PROVIDERS = ['deepseek', 'openai', 'claude'];
 const MODEL_PROVIDER_COPY = {
   openrouter: {
     summary: '推荐优先配置。一个 Key 可接入 Claude、OpenAI、Gemini 等模型，适合客户版统一入口。',
@@ -2741,14 +2858,16 @@ async function loadModelKeys() {
   try { keys = (await (await fetch('/api/keys')).json()).keys || {}; } catch { return; }
   // 把本地新加的自定义端点也并进来(还没保存,后端列表里没有)
   for (const id of _customProviders) if (!keys[id]) keys[id] = { label: id, kind:'chat', builtin:false, configured:false, verified:false, key:'', base_url:'', model:'' };
+  for (const id of PRIMARY_MODEL_PROVIDERS) {
+    if (!keys[id]) keys[id] = { label: id, kind: 'chat', builtin: true, configured: false, verified: false, key: '', base_url: '', model: '' };
+  }
   const all = Object.keys(keys);
-  const recommended = RECOMMENDED_MODEL_PROVIDERS.filter(p => keys[p]);
-  const rest = all.filter(p => !recommended.includes(p)).sort((a, b) => modelProviderSort(a, b, keys));
-  const recommendedHtml = recommended.map(prov => modelProviderCard(prov, keys[prov], true)).join('');
+  const primary = PRIMARY_MODEL_PROVIDERS;
+  const rest = all.filter(p => !primary.includes(p)).sort((a, b) => modelProviderSort(a, b, keys));
+  const primaryHtml = primary.map(prov => modelProviderCard(prov, keys[prov], true)).join('');
   const restHtml = rest.map(prov => modelProviderCard(prov, keys[prov], false)).join('');
-  box.innerHTML = `<div class="mk-section-label">推荐接入</div>
-    <div class="mk-grid recommended">${recommendedHtml}</div>
-    ${rest.length ? `<details class="mk-more">
+  box.innerHTML = `<div class="mk-grid primary">${primaryHtml}</div>
+    ${rest.length ? `<details class="mk-more" open>
       <summary>更多模型平台 <span>${rest.length} 个</span></summary>
       <div class="mk-grid more">${restHtml}</div>
     </details>` : ''}`;
@@ -2981,7 +3100,7 @@ function buildOnboardingSteps(data) {
     {
       title: '配置模型 Key',
       state: modelOk ? 'ok' : (configuredCount ? 'warn' : 'bad'),
-      body: modelOk ? '默认模型已经可用。' : (configuredCount ? '已有 Key，请确认默认模型指向可用平台。' : '建议先配置 OpenRouter 或 DeepSeek，否则无法稳定对话。'),
+      body: modelOk ? '默认模型已经可用。' : (configuredCount ? '已有 Key，请确认默认模型指向可用平台。' : '建议先配置 DeepSeek，国内网络最省心。'),
       action: '配置模型',
       tab: 'keys',
     },
@@ -3041,11 +3160,26 @@ async function runOnboardingConnectionTest() {
   const keys = _setupStatusCache?.keys || {};
   const configured = Object.entries(keys).filter(([, v]) => v && v.configured);
   if (!configured.length) {
+    showToast('请先配置模型 Key');
     openSettings('keys');
     return;
   }
-  const [prov] = configured[0];
-  await testProvider(prov);
+  const [prov, meta] = configured[0];
+  showToast('测试中…');
+  try {
+    const d = await (await fetch('/api/models/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: prov }),
+    })).json();
+    if (d.ok) {
+      showToast(`✓ ${meta.label || prov} 连接成功${d.latency_ms ? ` ${d.latency_ms}ms` : ''}`);
+    } else {
+      showToast('测试失败：' + friendlyModelError(d.error || '未知错误'));
+    }
+  } catch {
+    showToast('测试失败：网络连接异常');
+  }
   await loadSetupStatus();
   renderOnboarding();
 }
@@ -3204,8 +3338,28 @@ window.runOnboardingConnectionTest = runOnboardingConnectionTest;
 window.closeOnboarding = closeOnboarding;
 window.finishOnboarding = finishOnboarding;
 
+/** 设置页:展示 max_steps 实际生效值(含 Mission 与 Chat 共用) */
+function updateMaxStepsHint(serverMaxSteps) {
+  const hint = document.getElementById('cfg-max-steps-hint');
+  if (!hint) return;
+  const raw = (document.getElementById('cfg-max-steps')?.value ?? '').trim();
+  let effective;
+  if (raw === '') {
+    const s = serverMaxSteps ?? window._cfgMaxStepsServer ?? 0;
+    effective = (s === 0 || s === '0') ? '无限制' : String(s);
+  } else {
+    const n = Number(raw);
+    effective = (!Number.isFinite(n) || n <= 0) ? '无限制' : String(Math.floor(n));
+  }
+  hint.textContent = uiLang === 'en'
+    ? `Effective: ${effective === '无限制' ? 'unlimited' : effective + ' steps'}`
+    : `当前生效：${effective}`;
+}
+window.updateMaxStepsHint = updateMaxStepsHint;
+
 async function loadSettingsUI() {
   const cfg = loadConfig();
+  let srvMaxSteps = null;
   try {
     const res = await fetch('/api/config');
     const srv = await res.json();
@@ -3213,15 +3367,30 @@ async function loadSettingsUI() {
     else if (srv.provider) cfg.model = srv.provider;
     if (srv.max_cost_usd != null) cfg.maxCost = srv.max_cost_usd;
     if (srv.governance_mode) cfg.governanceMode = srv.governance_mode;
+    if (srv.max_steps != null) {
+      cfg.maxSteps = srv.max_steps;
+      srvMaxSteps = srv.max_steps;
+      window._cfgMaxStepsServer = srv.max_steps;
+    }
+    if (srv.proactive != null) cfg.proactive = srv.proactive;
+    if (srv.briefing_enabled != null) cfg.briefingEnabled = srv.briefing_enabled;
+    if (srv.briefing_at) cfg.briefingAt = srv.briefing_at;
   } catch { /* 离线 */ }
   await loadModelOptions(cfg.model || 'deepseek-v4-flash');
   await loadModelKeys();
   loadAccessTokenField();
   document.getElementById('cfg-governance-mode').value = cfg.governanceMode || 'balanced';
   document.getElementById('cfg-max-cost').value = cfg.maxCost ?? '';
-  // 0 / 空 = 无限制(显示为空,placeholder 提示)
+  // 0 / 空 = 无限制(显示为空,placeholder 提示); 非 0 显示具体数字
   document.getElementById('cfg-max-steps').value =
-    (cfg.maxSteps === 0 || cfg.maxSteps === '0' || cfg.maxSteps === '' || cfg.maxSteps == null) ? '' : cfg.maxSteps;
+    (cfg.maxSteps === 0 || cfg.maxSteps === '0') ? '' : (cfg.maxSteps ?? '');
+  updateMaxStepsHint(srvMaxSteps);
+  const proactiveEl = document.getElementById('cfg-proactive');
+  if (proactiveEl) proactiveEl.checked = !!cfg.proactive;
+  const briefingEl = document.getElementById('cfg-briefing');
+  if (briefingEl) briefingEl.checked = cfg.briefingEnabled !== false;
+  const briefingAtEl = document.getElementById('cfg-briefing-at');
+  if (briefingAtEl) briefingAtEl.value = cfg.briefingAt || '08:00';
   // 频道配置从服务端加载
   try {
     const res = await fetch('/api/channels');
@@ -3237,7 +3406,19 @@ async function loadSettingsUI() {
       const al = document.getElementById('email-allowed'); if (al) al.value = c.email.allowed || '';
       if (c.email.password) document.getElementById('email-pass').placeholder = '已配置(留空不改动)';
     }
+    if (c.wecom) {
+      const wc = c.wecom;
+      const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+      set('wecom-corp-id', wc.corp_id);
+      set('wecom-agent-id', wc.agent_id);
+      set('wecom-token', wc.token);
+      set('wecom-allowed', wc.allowed);
+      if (wc.secret) document.getElementById('wecom-secret').placeholder = '已配置(留空不改动)';
+      if (wc.aes_key) document.getElementById('wecom-aes-key').placeholder = '已配置(留空不改动)';
+    }
     setChannelStatus('email', en.email);
+    setChannelStatus('wecom', en.wecom);
+    updateWecomCallbackUrl();
   } catch { /* 离线 */ }
   loadSetupStatus();
 }
@@ -3302,7 +3483,8 @@ async function saveSettings() {
     maxCost: document.getElementById('cfg-max-cost').value,
     maxSteps: document.getElementById('cfg-max-steps').value,
   };
-  localStorage.setItem('agent-config', JSON.stringify(cfg));
+  const maxStepsSaved = (cfg.maxSteps === '' || cfg.maxSteps == null) ? 0 : Number(cfg.maxSteps);
+  localStorage.setItem('agent-config', JSON.stringify({ ...cfg, maxSteps: maxStepsSaved }));
   try {
     await fetch('/api/config', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -3310,23 +3492,114 @@ async function saveSettings() {
         model: cfg.model,
         max_cost_usd: cfg.maxCost === '' ? null : cfg.maxCost,
         governance_mode: document.getElementById('cfg-governance-mode').value,
-        max_steps: (cfg.maxSteps === '' || cfg.maxSteps == null) ? 0 : Number(cfg.maxSteps),
+        max_steps: maxStepsSaved,
+        proactive: !!document.getElementById('cfg-proactive')?.checked,
+        briefing_enabled: document.getElementById('cfg-briefing')?.checked !== false,
+        briefing_at: (document.getElementById('cfg-briefing-at')?.value || '08:00').trim(),
       }),
     });
+    window._cfgMaxStepsServer = maxStepsSaved;
+    updateMaxStepsHint(maxStepsSaved);
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(wsInitPayload()));
   } catch { /* ignore */ }
-  // 保存邮件渠道配置到服务端
   await saveChannel('email', emailChannelValues());
+  await saveChannel('wecom', wecomChannelValues());
+  showToast('已保存');
   closeSettings();
 }
 
+async function saveEmailAllowlist() {
+  const status = document.getElementById('email-allow-status');
+  if (status) { status.style.color = 'var(--muted)'; status.textContent = '同步中…'; }
+  try {
+    await saveChannel('email', emailChannelValues());
+    if (status) { status.style.color = 'var(--green)'; status.textContent = '✓ 白名单已同步到后端'; }
+    showToast('白名单已加入');
+  } catch {
+    if (status) { status.style.color = 'var(--red)'; status.textContent = '同步失败'; }
+    showToast('白名单同步失败');
+  }
+}
+window.saveEmailAllowlist = saveEmailAllowlist;
+
+function wecomChannelValues() {
+  const v = {
+    corp_id: document.getElementById('wecom-corp-id')?.value.trim() || '',
+    agent_id: document.getElementById('wecom-agent-id')?.value.trim() || '',
+    secret: document.getElementById('wecom-secret')?.value || '',
+    token: document.getElementById('wecom-token')?.value.trim() || '',
+    aes_key: document.getElementById('wecom-aes-key')?.value || '',
+    allowed: document.getElementById('wecom-allowed')?.value.trim() || '',
+  };
+  return v;
+}
+
+function updateWecomCallbackUrl() {
+  const el = document.getElementById('wecom-callback-url');
+  if (!el) return;
+  const origin = window.location.origin || '';
+  if (origin.startsWith('http://') || origin.startsWith('https://')) {
+    el.textContent = `${origin.replace(/\/$/, '')}/webhook/wecom`;
+  }
+}
+
+async function testWecom() {
+  const el = document.getElementById('wecom-test-result');
+  if (!el) return;
+  el.textContent = '测试中…';
+  const values = wecomChannelValues();
+  if (!values.corp_id || !values.agent_id) {
+    el.innerHTML = '<span style="color:var(--red)">✗ 请填写 CorpId 与 AgentId</span>';
+    return;
+  }
+  if (!values.secret) {
+    el.innerHTML = '<span style="color:var(--red)">✗ 请填写应用 Secret</span>';
+    return;
+  }
+  await saveChannel('wecom', values);
+  try {
+    const res = await fetch('/api/channels/wecom/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values }),
+    });
+    const r = await res.json();
+    if (r.ok) el.innerHTML = '<span style="color:var(--green)">✓ gettoken 成功,凭证有效</span>';
+    else el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(r.error || '失败')}</span>`;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--red)">✗ ${escHtml(String(e))}</span>`;
+  }
+}
+window.testWecom = testWecom;
+
+function updateTaskDeliverHint() {
+  const deliver = document.getElementById('task-deliver')?.value || 'none';
+  const label = document.getElementById('task-deliver-to-label');
+  const input = document.getElementById('task-deliver-to');
+  if (!label || !input) return;
+  if (deliver === 'wecom') {
+    label.textContent = '投递 UserId(必填)';
+    input.placeholder = '企微成员账号,如 ZhangSan';
+  } else {
+    label.textContent = '投递邮箱(留空=发给自己)';
+    input.placeholder = '收件邮箱,留空发给 EMAIL_USER 自己';
+  }
+}
+window.updateTaskDeliverHint = updateTaskDeliverHint;
+
 async function saveChannel(channel, values) {
   try {
-    await fetch('/api/channels', {
+    const res = await fetch('/api/channels', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ channel, values }),
     });
+    const data = await res.json();
+    if (data?.enabled) {
+      if (channel in data.enabled) setChannelStatus(channel, data.enabled[channel]);
+    }
+    return data;
   } catch { /* ignore */ }
+  return null;
 }
 
 async function testEmail() {
@@ -3367,11 +3640,12 @@ async function testEmail() {
 async function restartChannel(name) {
   // 先落盘当前表单,再热启用
   if (name === 'email') await saveChannel('email', emailChannelValues());
+  if (name === 'wecom') await saveChannel('wecom', wecomChannelValues());
   try {
     const res = await fetch(`/api/channels/${name}/restart`, { method: 'POST' });
     const r = await res.json();
     setChannelStatus(name, r.ok);
-    if (!r.ok) alert(`${name} 启用失败,请检查配置`);
+    if (!r.ok) alert(`${name} 启用失败: ${r.error || '请检查配置'}`);
   } catch (e) { alert('请求失败:' + e); }
 }
 
@@ -3998,13 +4272,6 @@ function setupCardHtml() {
 }
 
 function welcomeHtml() {
-  if (workMode === 'coworker') {
-    const sub = t('welcome_coworker');
-    return `<div class="welcome" id="chat-empty">
-      <div class="welcome-title">Captain</div>
-      <div class="welcome-sub">${sub}</div>
-    </div>`;
-  }
   const sub = t('welcome_chat');
   return `<div class="welcome" id="chat-empty">
     <div class="welcome-greet"><span class="welcome-greet-ic">☀</span>
@@ -4070,9 +4337,15 @@ async function refreshUsageBanner() {
 function updateChatLayoutState() {
   const view = document.getElementById('view-chat');
   const area = document.getElementById('chat-messages');
+  const app = document.getElementById('app');
   if (!view || !area) return;
   const hasMsgs = !!area.querySelector('.msg');
   view.classList.toggle('has-messages', hasMsgs);
+  // Cowork 空态与 Chat 对齐:不展开右侧工作台;有消息后再展开
+  if (app && workMode === 'coworker') {
+    app.classList.toggle('wb-open', hasMsgs);
+  }
+  updateWorkbenchToggle();
 }
 
 function applyModeChrome() {
@@ -4082,7 +4355,7 @@ function applyModeChrome() {
   app.classList.add('work-mode-' + workMode);
   const newBtn = document.getElementById('btn-new-chat');
   const newBtnTxt = document.getElementById('btn-new-chat-txt');
-  if (newBtn) newBtn.classList.toggle('sb-new-primary', workMode === 'chat');
+  if (newBtn) newBtn.classList.add('sb-new-primary');
   if (newBtnTxt) {
     newBtnTxt.textContent = workMode === 'coworker' ? t('navNewTask') : t('navNewChat');
   }
@@ -4100,12 +4373,11 @@ const I18N = {
   zh: {
     taskNew: '+ 新建任务',
     skillCallHint: '/skill 名',
-    expertCallHint: '/专家名',
     taskTypeAgent: 'Agent 执行 prompt',
     emailImapHost: 'IMAP 服务器',
     emailImapPort: 'IMAP 端口',
     modelMock: 'Mock(测试)',
-    emailAuthHint: 'QQ/163 邮箱请使用授权码(非登录密码)。保存后点「测试连接」验证,再点「启用渠道」。',
+    emailAuthHint: 'QQ/163 邮箱请使用授权码(非登录密码)。保存后点「测试连接」验证,再点「启用渠道」。白名单会同步到入站发件人过滤与外发收件人限制。',
     emailSmtpHost: 'SMTP 服务器',
     emailSmtpPort: 'SMTP 端口',
     custTabSkills: 'Skill 插件',
@@ -4135,7 +4407,6 @@ const I18N = {
     btnCancel: '取消',
     emailEnable: '启用渠道',
     modelKeyHint: '主流 API 已预置；填 Key 后点「测试」真连一次验证。macOS App 会把 Key 存进 Keychain，服务端不回显明文。',
-    custTabExperts: '执行专家',
     taskPromptLbl: '执行指令(prompt)',
     taskDeliverTo: '投递邮箱(留空=发给自己)',
     emailPass: '授权码',
@@ -4159,7 +4430,7 @@ const I18N = {
     schedEvery: '每隔 N 秒',
     emailTest: '测试连接',
     wbBindFolderHint: '点「+」绑定目录，浏览工作区文件',
-    emailAllowSenders: '白名单发件人(留空=只听自己)',
+    emailAllowSenders: '白名单邮箱(留空=只听/只发给自己)',
     expertSysPrompt: '系统提示词',
     taskDeliverLbl: '结果投递',
     expertCaps: '能力',
@@ -4289,7 +4560,7 @@ const I18N = {
     govAggressive: '激进：更少打断，适合可信本机环境',
     lblMaxCost: '金额上限(USD,留空不限)',
     lblMaxSteps: '最大步数',
-    settingsChannelsDesc: '手机直连(Tailscale)+ 邮件',
+    settingsChannelsDesc: '手机直连(Tailscale)+ 邮件 + 企业微信',
     settingsTasks: '定时任务',
     settingsTasksDesc: '到点自动执行，无人值守时默认只读',
     settingsGovernance: '审计日志',
@@ -4319,24 +4590,10 @@ const I18N = {
     navNewChat: '+ 新对话',
     navProjects: '工作区',
     navArtifacts: '产物',
-    expertAdd: '+ 新增专家',
-    expertNamePh: '专家名称(如:行情分析)',
-    expertDescPh: '一句话描述这个专家擅长什么',
-    expertTier: '权限',
-    expertTierRO: '只读(查资料/读文件,不改动)',
-    expertTierRW: '可写(可改文件 / 跑命令)',
-    expertPromptPh: '系统提示词(可选,留空用默认)',
-    expertSaveBtn: '新增并保存',
-    expertDelConfirm: '删除这个自定义专家?',
-    expertSaved: '专家已保存',
-    expertNameReq: '请先填专家名称',
-    expertSaveFail: '保存失败:',
-    expertNoCfg: '暂无专家配置',
     artifactsTitle: '历史产物',
     artifactsSearchPh: '按文件名搜索产物…',
     artifactsEmpty: '暂无产物',
     artifactsRefresh: '刷新',
-    expertCallTaskHint: '任务描述',
     loadFailed: '加载失败',
     navScheduled: '定时',
     navDispatch: '派发',
@@ -4477,7 +4734,6 @@ const I18N = {
   en: {
     taskNew: '+ New task',
     skillCallHint: '/skill name',
-    expertCallHint: '/expert-name',
     taskTypeAgent: 'Agent runs prompt',
     emailImapHost: 'IMAP server',
     emailImapPort: 'IMAP port',
@@ -4512,7 +4768,6 @@ const I18N = {
     btnCancel: 'Cancel',
     emailEnable: 'Enable channel',
     modelKeyHint: 'Mainstream APIs are preconfigured. Enter a key and test the connection. On macOS, Captain stores keys in Keychain and never echoes plaintext back.',
-    custTabExperts: 'Execution experts',
     taskPromptLbl: 'Instruction (prompt)',
     taskDeliverTo: 'Delivery email (blank = send to yourself)',
     emailPass: 'Authorization code',
@@ -4666,7 +4921,7 @@ const I18N = {
     govAggressive: 'Aggressive: fewer interruptions for trusted local use',
     lblMaxCost: 'Cost cap (USD, empty = unlimited)',
     lblMaxSteps: 'Max steps',
-    settingsChannelsDesc: 'Phone direct (Tailscale) + Email',
+    settingsChannelsDesc: 'Phone direct (Tailscale) + Email + WeCom',
     settingsTasks: 'Scheduled tasks',
     settingsTasksDesc: 'Run prompts on schedule (unattended, read-only by default)',
     settingsGovernance: 'Audit log',
@@ -4696,24 +4951,10 @@ const I18N = {
     navNewChat: '+ New chat',
     navProjects: 'Workspaces',
     navArtifacts: 'Artifacts',
-    expertAdd: '+ New expert',
-    expertNamePh: 'Expert name (e.g. Market analysis)',
-    expertDescPh: 'One line: what this expert is good at',
-    expertTier: 'Permission',
-    expertTierRO: 'Read-only (research / read, no writes)',
-    expertTierRW: 'Read-write (edit files / run commands)',
-    expertPromptPh: 'System prompt (optional, blank = default)',
-    expertSaveBtn: 'Add & save',
-    expertDelConfirm: 'Delete this custom expert?',
-    expertSaved: 'Expert saved',
-    expertNameReq: 'Please enter an expert name',
-    expertSaveFail: 'Save failed: ',
-    expertNoCfg: 'No experts configured yet',
     artifactsTitle: 'Artifacts',
     artifactsSearchPh: 'Search artifacts by filename…',
     artifactsEmpty: 'No artifacts yet',
     artifactsRefresh: 'Refresh',
-    expertCallTaskHint: 'task description',
     loadFailed: 'Load failed',
     navScheduled: 'Scheduled',
     navDispatch: 'Dispatch',
@@ -4992,7 +5233,7 @@ const WORKFLOW_TEMPLATES = [
   {
     icon: '📧', title: '邮件助手',
     desc: '帮你写邮件、回复邮件、优化表达',
-    prompt: '我需要写一封邮件，请帮我起草。请先问我：收件人是谁？邮件主题是什么？需要传达的核心内容是什么？',
+    prompt: '我需要写一封邮件，请帮我起草。请先问我：收件人是谁？Email subject是什么？需要传达的核心内容是什么？',
   },
   {
     icon: '📂', title: '文件整理',
@@ -5026,10 +5267,38 @@ const WORKFLOW_TEMPLATES = [
   },
 ];
 
-function openTemplates() {
+let WORKFLOW_TEMPLATE_LIST = WORKFLOW_TEMPLATES.slice();
+
+async function openTemplates() {
   const overlay = document.getElementById('templates-overlay');
   const grid = document.getElementById('templates-grid');
-  grid.innerHTML = WORKFLOW_TEMPLATES.map((t, i) => `
+  let merged = WORKFLOW_TEMPLATES.slice();
+  try {
+    const wf = await (await fetch('/api/workflow-templates')).json();
+    for (const t of (wf.templates || [])) {
+      merged.unshift({
+        icon: '⚙️',
+        title: t.name || '工作流',
+        desc: t.slug || '生命周期',
+        prompt: t.prompt || '',
+      });
+    }
+  } catch (_) {}
+  try {
+    const d = await (await fetch('/api/templates')).json();
+    for (const t of (d.templates || [])) {
+      if (!(t.category || '').startsWith('workflow')) continue;
+      if (merged.some(m => (m.prompt || '') === (t.content || ''))) continue;
+      merged.push({
+        icon: '⚙️',
+        title: t.title || '工作流',
+        desc: (t.category || '').replace(/^workflow,?/, '') || '生命周期工作流',
+        prompt: t.content || '',
+      });
+    }
+  } catch (_) { /* 离线时用内置列表 */ }
+  WORKFLOW_TEMPLATE_LIST = merged;
+  grid.innerHTML = WORKFLOW_TEMPLATE_LIST.map((t, i) => `
     <button type="button" data-workflow-template="${i}" style="text-align:left;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:12px;
       padding:16px;cursor:pointer;transition:border-color .15s;width:100%"
       onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
@@ -5047,7 +5316,7 @@ function closeTemplates() {
 }
 
 function useTemplate(idx) {
-  const t = WORKFLOW_TEMPLATES[idx];
+  const t = WORKFLOW_TEMPLATE_LIST[idx];
   if (!t) return;
   if (taskRunning) {
     alert('当前已有任务在执行，请先等待完成或停止后再启动模板。');
@@ -5133,6 +5402,8 @@ async function loadLicenseStatus(refresh) {
   const expires = document.getElementById('license-expires');
   const machine = document.getElementById('license-machine');
   const storage = document.getElementById('license-storage');
+  const activateForm = document.getElementById('license-activate-form');
+  const activatedTag = document.getElementById('license-activated-tag');
   if (text) text.textContent = refresh ? '正在重新校验授权…' : '正在读取授权状态…';
   try {
     const r = await fetch('/api/license/status' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' });
@@ -5142,6 +5413,11 @@ async function loadLicenseStatus(refresh) {
       badge.textContent = isPro ? 'PRO' : 'FREE';
       badge.className = 'license-plan-badge ' + (isPro ? 'pro' : 'free');
     }
+    if (activatedTag) {
+      activatedTag.hidden = !isPro;
+      activatedTag.textContent = '已激活';
+    }
+    if (activateForm) activateForm.hidden = !!isPro;
     if (text) {
       if (isPro) {
         const offline = d.offline ? '，当前使用离线缓存' : '';
@@ -5385,8 +5661,8 @@ function setWorkMode(mode, opts = {}) {
   syncConciseChat();
   try {
     const app = document.getElementById('app');
-    if (app) app.classList.toggle('wb-open', workMode === 'coworker');
-    // 只有真正绑定了文件夹才显示工作目录内容;没选则留空(不自动列工作区根)
+    if (app && workMode !== 'coworker') app.classList.remove('wb-open');
+    // Cowork wb-open 由 updateChatLayoutState 按空态/有消息控制
     if (workMode === 'coworker' && (_filesDir || _coworkWorkspaceDir)) {
       loadFiles(_filesDir || _coworkWorkspaceDir);
     }

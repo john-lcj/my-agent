@@ -28,6 +28,14 @@ async def _run_scheduled_task(task, actor) -> str:
         removed = _sa._longterm.forget()
         return f"记忆清理完成,删除 {removed} 条低价值记忆"
 
+    if task.task_type == "rating_weekly":
+        from memory.task_rating import weekly_summary
+        from config import Config
+        ws = weekly_summary(Config.LOG_DIR, days=7.0)
+        if ws.get("count", 0) == 0:
+            return "近 7 天无任务自评记录"
+        return f"近7天自评 {ws['count']} 次,均分 {ws['avg']}/5"
+
     if task.task_type == "memory_ingest":
         if not Config.PERSONAL_DIRS:
             return "未配置 AGENT_PERSONAL_DIRS,跳过个人数据索引"
@@ -39,38 +47,108 @@ async def _run_scheduled_task(task, actor) -> str:
         return (f"个人数据索引完成:扫描 {stats['scanned']},新索引 {stats['indexed']},"
                 f"未变跳过 {stats['skipped']},清理旧块 {stats['removed_chunks']}")
 
+    from core.briefing import BRIEFING_TASK_NAME, format_daily_briefing_email
+    if task.name == BRIEFING_TASK_NAME or getattr(task, "task_type", "") == "briefing":
+        return format_daily_briefing_email(
+            log_dir=Config.LOG_DIR,
+            mission_store=_sa._mission_store,
+        )
+
+    prompt = task.prompt
+
     agent, ctx = _sa._build_scheduler_agent(actor)
 
     async def deny(call, decision, reason=""):
         return False
 
-    return await agent.run(task.prompt, ctx, deny)
+    return await agent.run(prompt, ctx, deny)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 外部渠道消息处理循环
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _run_ext_channel(channel_name: str) -> None:
+async def _run_ext_channel(
+    channel_name: str,
+    boot_channel=None,
+    boot_coordinator=None,
+    boot_template=None,
+) -> None:
     """外部渠道的消息处理循环:receive → coordinator.run → emit(自动回复)。"""
     import server.app as _sa
     from core.context import Context
     from core.types import Message, Role
 
-    channel = _sa._ext_channels[channel_name]
-    coordinator = _sa._ext_coordinators[channel_name]
-    template = _sa._ext_templates[channel_name]
-    system_hdr = (
-        template.messages[0].content if template.messages else ""
-    )
+    if boot_channel is None:
+        for _ in range(200):
+            if channel_name in _sa._ext_channels:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            print(f"[{channel_name}] 渠道未就绪,消息处理循环未启动")
+            return
 
+    print(f"[{channel_name}] 消息处理循环已就绪")
     while True:
+        channel = boot_channel or _sa._ext_channels.get(channel_name)
+        boot_channel = None
+        coordinator = boot_coordinator or _sa._ext_coordinators.get(channel_name)
+        boot_coordinator = None
+        template = boot_template or _sa._ext_templates.get(channel_name)
+        boot_template = None
+        if channel is None or coordinator is None or template is None:
+            await asyncio.sleep(1)
+            continue
+        system_hdr = (
+            template.messages[0].content if template.messages else ""
+        )
         try:
             text = await channel.receive()
             if text is None:
-                break
+                continue
+            if channel_name == "email":
+                from core.mission_email import (
+                    extract_email_body, extract_email_subject,
+                    parse_mission_id_prefix, try_parse_mission_resume,
+                )
+                parsed = try_parse_mission_resume(text, _sa._mission_store)
+                sender = getattr(channel, "_current_sender", "") or getattr(channel, "user", "")
+                if parsed:
+                    mid, info = parsed
+                    m = _sa._mission_store.get(mid)
+                    if m and m.get("status") in ("blocked", "waiting_user"):
+                        await _sa._resume_mission_and_deliver(mid, info)
+                        if sender:
+                            await channel._send_email(
+                                sender,
+                                f"Re: [Captain Mission #{mid[:8]}]",
+                                f"已收到补充,任务 {mid[:8]} 恢复执行中。",
+                            )
+                        if hasattr(channel, "mark_current_seen"):
+                            await channel.mark_current_seen()
+                        continue
+                    if sender and parse_mission_id_prefix(
+                        extract_email_subject(text), extract_email_body(text),
+                    ):
+                        st = (m or {}).get("status", "未知")
+                        await channel._send_email(
+                            sender,
+                            "Re: Captain Mission",
+                            f"未能恢复任务:当前状态为 {st},仅 blocked/waiting 可邮件补料恢复。",
+                        )
+                        if hasattr(channel, "mark_current_seen"):
+                            await channel.mark_current_seen()
+                        continue
             identity = channel.identity()
             session_id = f"{channel_name}:{identity.subject_id}"
+            who = (
+                getattr(channel, "_current_sender", None)
+                or getattr(channel, "_current_user", None)
+                or identity.subject_id
+            )
+            print(f"[{channel_name}] 开始处理 ← {who}")
+            if channel_name in ("email", "wecom"):
+                channel._reply_sent = False
             async with _sa._session_lock(session_id):
                 msg_ctx = Context(identity=identity)
                 msg_ctx.bind_session(_sa._session_store, session_id)
@@ -81,9 +159,31 @@ async def _run_ext_channel(channel_name: str) -> None:
                     msg_ctx.messages.insert(
                         0, Message(role=Role.SYSTEM, content=system_hdr),
                     )
-                await coordinator.run(text, msg_ctx, channel.confirm)
+                reply = await coordinator.run(text, msg_ctx, channel.confirm)
+            if channel_name == "email":
+                sender = getattr(channel, "_current_sender", "") or ""
+                if sender and reply and not getattr(channel, "_reply_sent", False):
+                    await channel._send_email(sender, "Re: Agent 回复", reply)
+                if hasattr(channel, "flush_outbound"):
+                    await channel.flush_outbound()
+                if hasattr(channel, "mark_current_seen"):
+                    await channel.mark_current_seen()
+            elif channel_name == "wecom":
+                uid = getattr(channel, "_current_user", "") or ""
+                if uid and reply and not getattr(channel, "_reply_sent", False):
+                    await channel.send_text(uid, reply)
+                if hasattr(channel, "flush_outbound"):
+                    await channel.flush_outbound()
+                if hasattr(channel, "mark_idle"):
+                    await channel.mark_idle()
+            print(f"[{channel_name}] 处理完成")
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             print(f"[{channel_name}] 处理异常: {e}")
+            if channel_name == "email" and hasattr(channel, "release_current_queued"):
+                await channel.release_current_queued()
+            await asyncio.sleep(2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +195,8 @@ async def _daemon_worker() -> None:
     import server.app as _sa
     from core.types import Identity
 
-    assert _sa._task_queue is not None
+    while _sa._task_queue is None:
+        await asyncio.sleep(0.05)
     while True:
         item = await _sa._task_queue.get()
         try:
@@ -168,8 +269,48 @@ async def _daemon_inbox_watch() -> None:
         await asyncio.sleep(poll)
 
 
+async def _handle_monitor_change(m: dict, prev: str, new_hash: str) -> None:
+    """监控命中 → 按 attention 分级：urgent 建 mission 并跑；normal 进简报队列；low 只记日志。"""
+    import server.app as _sa
+    from core.briefing import enqueue_monitor_digest
+    from core.mission import AttentionLevel
+
+    name = m.get("name", "")
+    source = m.get("source", "")
+    action = m.get("action", "")
+    attention = str(m.get("attention") or "normal").lower()
+    diff = f"指纹 {prev[:12]}… → {new_hash[:12]}…" if prev else "首次采样"
+    summary = f"监控「{name}」源 {source} 内容变化（{diff}）"
+
+    if attention == "low":
+        print(f"[monitor] low: {summary}")
+        return
+
+    if attention == "normal":
+        enqueue_monitor_digest(
+            Config.LOG_DIR, name, source,
+            f"{summary}。待分析 action: {action[:200]}",
+        )
+        print(f"[monitor] normal → 简报队列: {name}")
+        return
+
+    goal = (
+        f"[监控:{name}] {summary}\n"
+        f"原始指令: {action}\n\n"
+        "请分析：①变化了什么 ②有什么影响 ③建议主人采取什么动作。"
+        "产出简短分析报告保存到 产物/，并在最终回复里给出要点。"
+    )
+    try:
+        mrec = _sa._mission_store.create(goal, attention_level=AttentionLevel.EMAIL.value)
+        mid = mrec["id"]
+        print(f"[monitor] urgent → mission {mid}: {name}")
+        await _sa._run_mission_and_deliver(mid)
+    except Exception as e:
+        print(f"[monitor] mission 创建失败: {e}")
+
+
 async def _daemon_monitor_watch() -> None:
-    """主动监控:轮询每个监控器的源,内容指纹变了就把 action 投进任务队列。"""
+    """主动监控:轮询每个监控器的源,内容指纹变了就按分级处理。"""
     import hashlib
     import server.app as _sa
     from memory.monitor_store import MonitorStore
@@ -207,9 +348,7 @@ async def _daemon_monitor_watch() -> None:
                 prev = m.get("last_hash", "")
                 _monitor_store.update_state(m["id"], h, now)
                 if prev and h != prev:
-                    _sa._daemon_enqueue(
-                        f"监控「{m['name']}」发现源有更新({m['source']})。请执行:{m['action']}",
-                        source="monitor")
+                    await _handle_monitor_change(m, prev, h)
         except Exception as e:
             print(f"[monitor] 轮询异常: {e}")
         await asyncio.sleep(tick)

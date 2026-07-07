@@ -125,7 +125,7 @@ def test_agent_repairs_when_final_answer_has_unfinished_plan():
 
     result = asyncio.run(agent.run("继续完成修复并跑测试", ctx, lambda *a, **k: True))
     assert "部分完成" in result
-    assert ctx.task_frame.repair_count == 1
+    assert ctx.task_frame.repair_count >= 2
     assert any("生命周期自检" in m.content for m in ctx.messages)
     assistant_events = [e for e in events if e.type == EventType.ASSISTANT_MESSAGE]
     assert assistant_events[-1].payload["text"] == result

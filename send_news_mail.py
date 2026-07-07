@@ -3,7 +3,7 @@
 AI 科技新闻邮件发送脚本
 
 用法:
-  python send_news_mail.py --content "新闻正文..."
+  python send_news_mail.py --content "新闻Body text..."
   python send_news_mail.py --file /path/to/news.md
 
 通过 SMTP 将新闻内容发送到 luchangjie@outlook.com，标题包含日期。
@@ -16,7 +16,8 @@ import smtplib
 import ssl
 import sys
 from datetime import datetime, timezone, timedelta
-from email.mime.text import MIMEText
+
+from channels.email_mime import apply_mail_headers, make_text_part
 
 
 def get_today_label() -> str:
@@ -45,10 +46,8 @@ def send_mail(
     if not smtp_password:
         return {"success": False, "error": "EMAIL_PASS 未配置"}
 
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["From"] = smtp_user
-    msg["To"] = to
-    msg["Subject"] = subject
+    msg = make_text_part(body)
+    apply_mail_headers(msg, from_addr=smtp_user, to_addr=to, subject=subject)
 
     try:
         ctx = ssl.create_default_context()
@@ -65,16 +64,16 @@ def send_mail(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="发送 AI 科技新闻邮件")
+    parser = argparse.ArgumentParser(description="Send an AI technology news email")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--content", type=str, help="直接传入新闻正文")
-    group.add_argument("--file", type=str, help="新闻 Markdown 文件路径")
+    group.add_argument("--content", type=str, help="直接传入新闻Body text")
+    group.add_argument("--file", type=str, help="新闻 Markdown File path")
     parser.add_argument("--to", type=str, default="luchangjie@outlook.com", help="收件人，默认 luchangjie@outlook.com")
     parser.add_argument("--date", type=str, default="", help="手动指定日期标签（可选），默认取昨天日期")
     parser.add_argument("--subject-prefix", type=str, default="AI 科技新闻日报", help="邮件标题前缀")
     args = parser.parse_args()
 
-    # 读取正文
+    # 读取Body text
     if args.content:
         body = args.content
         source_desc = "命令行参数"
@@ -102,7 +101,7 @@ def main():
 
     print(f"📧 收件人: {args.to}")
     print(f"📋 标题: {subject}")
-    print(f"📄 正文来源: {source_desc}")
+    print(f"📄 Body text来源: {source_desc}")
     print(f"🔌 SMTP: {smtp_host}:{smtp_port} / {smtp_user}")
     print()
 

@@ -37,8 +37,11 @@ class MonitorStore:
         return self._read()
 
     def create(self, name: str, source_type: str, source: str, action: str,
-               interval_sec: int = 1800) -> dict:
+               interval_sec: int = 1800, attention: str = "normal") -> dict:
         rows = self._read()
+        att = str(attention or "normal").strip().lower()
+        if att not in ("urgent", "normal", "low"):
+            att = "normal"
         rec = {
             "id": uuid.uuid4().hex[:12],
             "name": name or source,
@@ -46,6 +49,7 @@ class MonitorStore:
             "source": source,
             "action": action,
             "interval_sec": max(60, int(interval_sec or 1800)),
+            "attention": att,
             "enabled": True,
             "last_hash": "",
             "last_checked": 0.0,

@@ -39,4 +39,9 @@ def register_voice(app) -> None:
             text = await asr(raw, fmt)
             return JSONResponse({"ok": True, "text": text})
         except Exception as e:
-            return JSONResponse({"ok": False, "error": str(e)[:300]}, status_code=502)
+            msg = str(e)[:300]
+            if "401" in msg or "Unauthorized" in msg:
+                msg = "语音 Key 无效或未配置,请到 设置→模型→小米视觉 填写 API Key"
+            elif "未配置语音 API Key" in msg:
+                msg = "未配置语音 Key,请到 设置→模型→小米视觉 填写 API Key"
+            return JSONResponse({"ok": False, "error": msg}, status_code=502)

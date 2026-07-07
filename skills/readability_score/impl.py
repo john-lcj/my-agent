@@ -8,8 +8,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "text": {"type": "string", "description": "待分析文本"},
-        "lang": {"type": "string", "description": "zh 或 auto", "default": "auto"},
+        "text": {"type": "string", "description": "Text to analyze"},
+        "lang": {"type": "string", "description": "zh or auto", "default": "auto"},
     },
     "required": ["text"],
 }

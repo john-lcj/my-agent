@@ -14,9 +14,9 @@ JSON 结构示例:
   "default_headers": {"Accept": "application/vnd.github+json"},
   "actions": [
     {"name": "list_repos", "method": "GET", "path": "/user/repos",
-     "description": "列出我的仓库", "query": ["per_page", "sort"]},
+     "description": "List my repositories", "query": ["per_page", "sort"]},
     {"name": "create_issue", "method": "POST", "path": "/repos/{owner}/{repo}/issues",
-     "description": "新建 issue", "body": ["title", "body"]}
+     "description": "Create an issue", "body": ["title", "body"]}
   ]
 }
 鉴权 type:bearer(Authorization: Bearer <token>)/ header(自定义头名 header)/

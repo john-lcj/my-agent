@@ -11,11 +11,11 @@ SCHEMA = {
         "op": {
             "type": "string",
             "enum": ["add", "weekday", "diff", "today"],
-            "description": "add加减天数 / weekday星期几 / diff两日期相差 / today今天",
+            "description": "add days / weekday / diff between dates / today",
         },
-        "date": {"type": "string", "description": "基准日期 YYYY-MM-DD,默认今天"},
-        "days": {"type": "integer", "description": "add 用:加(正)减(负)的天数"},
-        "to": {"type": "string", "description": "diff 用:目标日期 YYYY-MM-DD,默认今天"},
+        "date": {"type": "string", "description": "Base date YYYY-MM-DD; defaults to today"},
+        "days": {"type": "integer", "description": "Days to add or subtract for add mode"},
+        "to": {"type": "string", "description": "Target date YYYY-MM-DD for diff mode; defaults to today"},
     },
 }
 

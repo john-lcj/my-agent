@@ -45,6 +45,10 @@ def test_cowork_still_blocks_hard_boundaries():
     assert pol.review(rmrf, Identity(), _ctx(True)) == Decision.BLOCK   # 硬边界:Cowork 也拦
     dotenv = CapabilityCall(name="shell.run", args={"command": "cat .env"})
     assert pol.review(dotenv, Identity(), _ctx(True)) == Decision.BLOCK  # 泄密路径:仍拦
+    keys = CapabilityCall(name="fs.read", args={"path": "logs/model_keys.json"})
+    assert pol.review(keys, Identity(), _ctx(True)) == Decision.BLOCK
+    force_push = CapabilityCall(name="shell.run", args={"command": "git push --force origin main"})
+    assert pol.review(force_push, Identity(), _ctx(True)) == Decision.BLOCK
 
 
 def test_cowork_auto_allows_shell_write_chat_confirms():

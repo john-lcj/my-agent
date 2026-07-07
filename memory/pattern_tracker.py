@@ -72,6 +72,12 @@ class PatternTracker:
         if best is not None and best_sim >= _SIM:
             best["count"] = int(best.get("count", 1)) + 1
             best["last"] = task[:120]
+            try:
+                from config import Config
+                from memory.skill_drafter import maybe_draft_from_pattern
+                maybe_draft_from_pattern(Config.LOG_DIR, best)
+            except Exception:
+                pass
         else:
             self._data.append({
                 "rep": task[:120], "last": task[:120], "count": 1,

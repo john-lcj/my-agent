@@ -45,6 +45,9 @@ def register_models(app, runtime_cfg, model_keys, longterm) -> None:
             "governance_mode": cfg.get("governance_mode", Config.GOVERNANCE_MODE),
             "max_steps":      cfg.get("max_steps", Config.MAX_STEPS),
             "vision_model":   cfg.get("vision_model", os.environ.get("VISION_MODEL", "")),
+            "proactive":      runtime_cfg.get_proactive(),
+            "briefing_enabled": runtime_cfg.get_briefing_enabled(),
+            "briefing_at":      runtime_cfg.get_briefing_at(),
         })
 
     @app.post("/api/config")
@@ -60,6 +63,12 @@ def register_models(app, runtime_cfg, model_keys, longterm) -> None:
                 allowed["max_steps"] = max(0, int(raw)) if str(raw).strip() != "" else 0
             except (TypeError, ValueError):
                 allowed["max_steps"] = 0
+        if "proactive" in body:
+            allowed["proactive"] = bool(body.get("proactive"))
+        if "briefing_enabled" in body:
+            allowed["briefing_enabled"] = bool(body.get("briefing_enabled"))
+        if "briefing_at" in body:
+            allowed["briefing_at"] = str(body.get("briefing_at") or "08:00").strip()
         if "model" in body:
             mid = normalize_model_id(str(body["model"]))
             if mid:

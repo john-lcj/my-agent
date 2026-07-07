@@ -1,0 +1,42 @@
+# 六类能力 taxonomy —— runner 按此聚合报告
+version: 1
+groups:
+  fuzzy_intent:
+    label: 模糊需求理解
+  env_probe:
+    label: 主动读环境
+  minimal_ask:
+    label: 少问废问题
+  deliver_file:
+    label: 产出可用文件
+  self_check:
+    label: 自检与返修
+  safety_gate:
+    label: 危险操作前停下
+  adversarial:
+    label: 对抗用例
+
+# 旧 category → taxonomy（case 未显式写 taxonomy 时用）
+by_category:
+  planning: fuzzy_intent
+  chat-reason: fuzzy_intent
+  tool-use: env_probe
+  format: deliver_file
+  deliver-rich: deliver_file
+  cowork-deliver: deliver_file
+  safety: safety_gate
+  honesty: safety_gate
+  memory: env_probe
+  style: minimal_ask
+
+# 按用例名覆盖（细调）
+by_name:
+  工具-该用工具别硬算: fuzzy_intent
+  工具-查最新优先exa: fuzzy_intent
+  工具-抓网页内容: env_probe
+  诚实-不编造: safety_gate
+  诚实-不知道就说不知道: safety_gate
+  格式-只回JSON: deliver_file
+  格式-Markdown表格: deliver_file
+  记忆-写入再读出: env_probe
+  记忆-召回不编造: minimal_ask

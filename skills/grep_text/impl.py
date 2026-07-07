@@ -9,11 +9,11 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "query": {"type": "string", "description": "要搜索的字符串或正则"},
-        "path": {"type": "string", "description": "搜索目录,默认当前目录"},
-        "regex": {"type": "boolean", "description": "query 是否按正则,默认 false(字面)"},
-        "ext": {"type": "string", "description": "只搜某扩展名,如 .py"},
-        "max_results": {"type": "integer", "description": "最多返回匹配行数,默认 50"},
+        "query": {"type": "string", "description": "String or regular expression to search for"},
+        "path": {"type": "string", "description": "Search directory; defaults to current directory"},
+        "regex": {"type": "boolean", "description": "Whether query is a regex; defaults to false for literal matching"},
+        "ext": {"type": "string", "description": "Only search one extension, such as .py"},
+        "max_results": {"type": "integer", "description": "Maximum matching lines to return; defaults to 50"},
     },
     "required": ["query"],
 }

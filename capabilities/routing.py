@@ -36,6 +36,12 @@ ROUTING_TABLE: list[tuple[str, list[str]]] = [
     ("calendar.", [
         "日历", "日程", "calendar", "ical", "事件", "约会", "会议安排",
     ]),
+    ("channel.", [
+        "白名单", "邮件", "邮箱", "allowlist", "收件人", "发件人", "channel", "外发",
+    ]),
+    ("model_key.", [
+        "api key", "apikey", "密钥", "模型 key", "deepseek key", "openai key", "配置 key",
+    ]),
     ("schedule.", [
         "定时", "schedule", "定期", "每天", "每周", "每月", "cron", "自动执行",
     ]),

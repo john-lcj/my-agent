@@ -236,6 +236,15 @@ def register_ws(app, is_loopback, is_proxied) -> None:
                             PatternTracker().record(text)
                         except Exception:
                             pass
+                        try:
+                            from memory.task_rating import rate_session_with_llm, record_rating
+                            from config import Config
+                            sid = getattr(ctx, "session_id", "") or session_id
+                            llm = getattr(coord_holder[0], "llm", None) if coord_holder else None
+                            score, note = await rate_session_with_llm(list(ctx.messages), llm)
+                            record_rating(Config.LOG_DIR, sid, score, note)
+                        except Exception:
+                            pass
             except asyncio.CancelledError:
                 channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={
                     "text": "已停止", "source": "system", "stopped": True,

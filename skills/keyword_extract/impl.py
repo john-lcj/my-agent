@@ -9,8 +9,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "text": {"type": "string", "description": "源文本"},
-        "top_n": {"type": "integer", "description": "返回条数", "default": 10},
+        "text": {"type": "string", "description": "Source text"},
+        "top_n": {"type": "integer", "description": "Number of results to return", "default": 10},
     },
     "required": ["text"],
 }

@@ -8,9 +8,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "文件路径"},
-        "content": {"type": "string", "description": "要追加的文本"},
-        "newline": {"type": "boolean", "description": "追加前是否先补一个换行,默认 true"},
+        "path": {"type": "string", "description": "File path"},
+        "content": {"type": "string", "description": "Text to append"},
+        "newline": {"type": "boolean", "description": "Whether to insert a newline before appending; defaults to true"},
     },
     "required": ["path", "content"],
 }

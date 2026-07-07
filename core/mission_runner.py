@@ -26,8 +26,18 @@ _BLOCK_PROTOCOL = (
     "\n\n【重要】如果缺少必要的资料/授权/付款/决策,导致你无法真正完成这一步,"
     "不要编造或假装完成——只回一行,以 `NEED_INPUT:` 开头,后面简短说明缺什么、要主人提供什么。"
     "例如:NEED_INPUT: 缺德国营业执照扫描件,请上传后我继续。"
+    "\n禁止替主人做选择,禁止写「你已确认/点头/定了」——主人没说过的话不能假设。"
+    "方向不明时也必须 NEED_INPUT,不要自己续聊或改做别的任务。"
 )
 _NEED = "NEED_INPUT:"
+
+# 像聊天续接/向主人提问,而非可执行子任务或交付
+_CHAT_FRAGMENT_CUES = (
+    "你确认了", "你点头", "你定吧", "如果你点头", "还是先做", "要开始建",
+    "告诉我", "说清楚", "有什么可以帮", "在呢，船长", "在呢,船长",
+    "随时往下推", "你要我", "你是想让我", "给个具体方向",
+)
+_FAKE_CONFIRM_CUES = ("你确认了", "你点头", "好的，你确认", "好的,你确认")
 
 
 def _need_input(result: str) -> str:
@@ -38,6 +48,54 @@ def _need_input(result: str) -> str:
     return ""
 
 
+def _token_set(text: str) -> set[str]:
+    return set(re.findall(r"[\u4e00-\u9fff]{2,}|[a-zA-Z]{3,}", (text or "").lower()))
+
+
+def _goal_overlap(goal: str, text: str) -> bool:
+    g, t = _token_set(goal), _token_set(text)
+    if not g:
+        return True
+    if g & t:
+        return True
+    low = (text or "").lower()
+    return any(k in low for k in ("report/", "产物/", "github.com", "已写入", "已保存", "已发送"))
+
+
+def _looks_like_chat_fragment(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return True
+    if s.endswith("？") or s.endswith("?"):
+        return True
+    return any(c in s for c in _CHAT_FRAGMENT_CUES)
+
+
+def _validate_plan_tasks(goal: str, tasks: list[str]) -> tuple[list[str], str]:
+    """过滤不像子任务的行;全不合格则返回原因。"""
+    good = [t for t in tasks if t.strip() and not _looks_like_chat_fragment(t)]
+    if good:
+        return good, ""
+    sample = (tasks[0] if tasks else "")[:100]
+    return [], (
+        f"规划结果像聊天续接/提问,不是可执行子任务(例:{sample})。"
+        "请回复此邮件说明你要什么,或在 Captain 任务面板补充后恢复。"
+    )
+
+
+def _validate_task_result(goal: str, task_text: str, result: str) -> str:
+    """执行结果跑偏/假确认/只提问 → 当作需主人输入。"""
+    if any(c in (result or "") for c in _FAKE_CONFIRM_CUES):
+        return "系统检测到你未回复,但 agent 误判「你已确认方向」。请明确回复要做什么。"
+    head = (result or "").strip()[:400]
+    if _looks_like_chat_fragment(head) and not _goal_overlap(goal, result or ""):
+        return (
+            f"子任务「{task_text[:50]}」的回复像是在提问/续聊,未产出与目标相关的交付。"
+            "请补充指示或澄清需求。"
+        )
+    return ""
+
+
 def _context_preamble(mission: dict) -> str:
     notes = [c.get("note", "") for c in (mission.get("context") or []) if c.get("note")]
     if not notes:
@@ -45,9 +103,14 @@ def _context_preamble(mission: dict) -> str:
     return "主人已补充的资料/决策(执行时请利用):\n" + "\n".join(f"- {n}" for n in notes) + "\n\n"
 
 
-def _plan_prompt(goal: str) -> str:
+def _plan_prompt(goal: str, active_goals: list[str] | None = None) -> str:
+    goals_block = ""
+    if active_goals:
+        goals_block = "主人当前长期目标:\n" + "\n".join(f"- {g}" for g in active_goals) + "\n\n"
     return (
+        goals_block +
         "你是项目执行助手。把下面这个目标拆成 2~6 个**可顺序执行**的子任务。\n"
+        "只拆解「目标」本身:不要续接上轮聊天、不要向主人提问、不要输出 A/B 选择题。\n"
         "要求:每行一个子任务,动词开头,具体可执行;不要编号、不要解释、不要空行。\n\n"
         f"目标:{goal}"
     )
@@ -68,7 +131,8 @@ def _parse_tasks(text: str) -> list[str]:
     return out
 
 
-async def plan_mission(store, mid: str, execute: ExecuteFn) -> list[dict]:
+async def plan_mission(store, mid: str, execute: ExecuteFn,
+                       active_goals: list[str] | None = None) -> list[dict]:
     """若 mission 还没有子任务,让模型把目标拆解并落库。返回子任务列表。"""
     m = store.get(mid)
     if m is None:
@@ -76,9 +140,40 @@ async def plan_mission(store, mid: str, execute: ExecuteFn) -> list[dict]:
     if m["tasks"]:
         return m["tasks"]
     store.set_status(mid, MissionStatus.PLANNING.value)
-    plan_text = await execute(_plan_prompt(m["goal"]))
-    tasks = _parse_tasks(plan_text) or [m["goal"]]   # 解析不出来就整体当一个子任务
+    plan_text = await execute(_plan_prompt(m["goal"], active_goals))
+    tasks, plan_err = _validate_plan_tasks(m["goal"], _parse_tasks(plan_text) or [m["goal"]])
+    if plan_err:
+        from core.mission import AttentionLevel
+        store.set_status(mid, MissionStatus.BLOCKED.value, reason=plan_err)
+        store.add_notification(mid, AttentionLevel.CONFIRM.value, plan_err)
+        return []
     return store.set_tasks(mid, tasks)["tasks"]
+
+
+def _load_active_goals() -> list[str]:
+    try:
+        import os
+        from config import Config
+        from memory.goals_store import GoalsStore
+        return GoalsStore(path=f"{Config.LOG_DIR}/goals.json").active_texts()
+    except Exception:
+        return []
+
+
+def _journal_mission_complete(mission: dict) -> None:
+    try:
+        import os
+        from config import Config
+        from memory.journal import Journal
+        goal = (mission.get("goal") or "")[:120]
+        goals = _load_active_goals()
+        related = any(g and g[:8] in goal for g in goals) if goals else False
+        summary = f"完成 Mission: {goal}"
+        if related:
+            summary += "（与当前长期目标相关）"
+        Journal(path=os.path.join(Config.LOG_DIR, "journal.md")).append(summary)
+    except Exception:
+        pass
 
 
 async def run_mission(store, mid: str, execute: ExecuteFn,
@@ -102,15 +197,27 @@ async def run_mission(store, mid: str, execute: ExecuteFn,
         return m
 
     _emit("mission.started", {"goal": m["goal"]})
+    active_goals = _load_active_goals()
     # 1) 规划(先进入 planning 态,再拆解;预置了子任务也要先过 planning,保证状态机合法)
     try:
         if m["status"] == MissionStatus.CREATED.value:
             store.set_status(mid, MissionStatus.PLANNING.value)
-        await plan_mission(store, mid, execute)
+        await plan_mission(store, mid, execute, active_goals=active_goals)
     except Exception as e:
         store.set_status(mid, MissionStatus.FAILED.value, reason=f"规划失败:{e}")
         _emit("mission.failed", {"stage": "planning", "error": str(e)})
         return store.get(mid)
+
+    cur = store.get(mid)
+    if cur["status"] == MissionStatus.BLOCKED.value:
+        reason = cur.get("blocked_reason") or "需要主人确认任务方向"
+        if notify:
+            try:
+                notify(cur, reason)
+            except Exception:
+                pass
+        _emit("mission.blocked", {"stage": "planning", "reason": reason})
+        return cur
 
     # 2) 顺序执行
     store.set_status(mid, MissionStatus.EXECUTING.value)
@@ -132,10 +239,11 @@ async def run_mission(store, mid: str, execute: ExecuteFn,
         try:
             prompt = _context_preamble(cur) + t["text"] + _BLOCK_PROTOCOL
             result = await execute(prompt)
-            reason = _need_input(result)
+            reason = _need_input(result) or _validate_task_result(cur["goal"], t["text"], result)
             if reason:   # 卡住:置 BLOCKED + 通知,任务保留 pending,等恢复
+                from core.mission import AttentionLevel
                 store.set_status(mid, MissionStatus.BLOCKED.value, reason=reason)
-                store.add_notification(mid, cur.get("attention_level", 2), reason)
+                store.add_notification(mid, AttentionLevel.CONFIRM.value, reason)
                 if notify:
                     try:
                         notify(store.get(mid), reason)
@@ -154,7 +262,9 @@ async def run_mission(store, mid: str, execute: ExecuteFn,
     # 3) 完成
     store.set_status(mid, MissionStatus.COMPLETED.value)
     _emit("mission.completed", {})
-    return store.get(mid)
+    final = store.get(mid)
+    _journal_mission_complete(final)
+    return final
 
 
 async def resume_mission(store, mid: str, execute: ExecuteFn, info: str = "",

@@ -8,12 +8,12 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "url": {"type": "string", "description": "请求地址(http/https)"},
-        "method": {"type": "string", "description": "GET/POST/PUT/DELETE,默认 GET"},
-        "headers": {"type": "object", "description": "请求头(如 Authorization)"},
-        "params": {"type": "object", "description": "URL 查询参数"},
-        "json": {"type": "object", "description": "POST/PUT 的 JSON body"},
-        "timeout": {"type": "number", "description": "超时秒数,默认 20"},
+        "url": {"type": "string", "description": "Request URL, http or https"},
+        "method": {"type": "string", "description": "GET/POST/PUT/DELETE; defaults to GET"},
+        "headers": {"type": "object", "description": "Request headers, such as Authorization"},
+        "params": {"type": "object", "description": "URL query parameters"},
+        "json": {"type": "object", "description": "JSON body for POST/PUT"},
+        "timeout": {"type": "number", "description": "Timeout in seconds; defaults to 20"},
     },
     "required": ["url"],
 }

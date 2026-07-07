@@ -25,8 +25,9 @@ def register_monitors(app) -> None:
         if not source or not action:
             return JSONResponse({"ok": False, "error": "需要 source 和 action"}, status_code=400)
         rec = _store().create(
-            name=str(b.get("name", "")), source_type=str(b.get("source_type", "url")),
-            source=source, action=action, interval_sec=int(b.get("interval_sec", 1800) or 1800))
+            name=str(b.get("name", "")), source_type=str(b.get("source_type") or b.get("monitor_type") or "url"),
+            source=source, action=action, interval_sec=int(b.get("interval_sec", 1800) or 1800),
+            attention=str(b.get("attention", "normal")).strip() or "normal")
         return JSONResponse({"ok": True, "monitor": rec})
 
     @app.delete("/api/monitors/{mid}")

@@ -18,7 +18,7 @@ SCHEMA = {
             "description": "overview | workflow | variants | verify | anti_slop | full",
             "default": "overview",
         },
-        "brief": {"type": "string", "description": "可选：当前设计任务简述"},
+        "brief": {"type": "string", "description": "Optional brief for the current design task"},
     },
 }
 

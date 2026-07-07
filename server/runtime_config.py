@@ -73,3 +73,21 @@ class RuntimeConfigStore:
             return v if v > 0 else 0   # 0 = 无限制
         except (TypeError, ValueError):
             return Config.MAX_STEPS
+
+    def get_proactive(self) -> bool:
+        raw = self.load().get("proactive")
+        if raw is not None:
+            return bool(raw)
+        return os.environ.get("AGENT_PROACTIVE", "0") != "0"
+
+    def get_briefing_enabled(self) -> bool:
+        raw = self.load().get("briefing_enabled")
+        if raw is not None:
+            return bool(raw)
+        return True
+
+    def get_briefing_at(self) -> str:
+        raw = self.load().get("briefing_at")
+        if raw:
+            return str(raw).strip()
+        return os.environ.get("AGENT_BRIEFING_AT", "08:00")

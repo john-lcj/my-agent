@@ -33,8 +33,9 @@ def _summarize_args(args: dict) -> dict:
     return out
 
 
-def read_recent(limit: int = 100) -> list[dict]:
-    """读最近 N 条审计记录(倒序,最新在前),供 /api/audit 与前端查看。"""
+def read_recent(limit: int = 100, *, capability: str = "", agent: str = "",
+                decision: str = "", ok: bool | None = None) -> list[dict]:
+    """读最近 N 条审计记录(倒序,最新在前),可选按 cap/agent/decision/ok 筛选。"""
     path = _audit_path()
     if not os.path.isfile(path):
         return []
@@ -43,15 +44,27 @@ def read_recent(limit: int = 100) -> list[dict]:
             lines = f.readlines()
     except Exception:
         return []
+    cap_f = (capability or "").strip().lower()
+    agent_f = (agent or "").strip().lower()
+    decision_f = (decision or "").strip().lower()
     out: list[dict] = []
     for ln in reversed(lines):
         ln = ln.strip()
         if not ln:
             continue
         try:
-            out.append(json.loads(ln))
+            rec = json.loads(ln)
         except Exception:
             continue
+        if cap_f and cap_f not in str(rec.get("cap") or "").lower():
+            continue
+        if agent_f and agent_f not in str(rec.get("agent") or "").lower():
+            continue
+        if decision_f and decision_f not in str(rec.get("decision") or "").lower():
+            continue
+        if ok is not None and rec.get("ok") is not ok:
+            continue
+        out.append(rec)
         if len(out) >= limit:
             break
     return out

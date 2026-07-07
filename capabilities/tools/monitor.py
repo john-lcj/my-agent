@@ -20,16 +20,17 @@ def _store(ctx: Any):
 class MonitorCreate(Tool):
     name = "monitor.create"
     risk = Risk.WRITE  # 建立常驻规则,Chat 需确认
-    description = ("新建一个监控:盯住某个 URL 或工作区文件,内容一变就自动执行你指定的任务。"
-                  "适合『盯着某页面/某文件,有更新就提醒我/处理』这类需求。")
+    description = ("Create a monitor for a URL or workspace file and run the configured action when content changes. "
+                  "Use it for watch-and-react workflows such as alerts or follow-up processing.")
     schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "监控名"},
-            "source_type": {"type": "string", "description": "url 或 file,默认 url"},
-            "source": {"type": "string", "description": "要盯的 URL 或工作区文件路径"},
-            "action": {"type": "string", "description": "内容变化时要做的事(给 Captain 的指令)"},
-            "interval_sec": {"type": "integer", "description": "检查间隔秒,默认 1800(30 分钟),最小 60"},
+            "name": {"type": "string", "description": "Monitor name"},
+            "source_type": {"type": "string", "description": "url or file; defaults to url"},
+            "source": {"type": "string", "description": "URL or workspace file path to watch"},
+            "action": {"type": "string", "description": "Instruction for Captain to run when content changes"},
+            "interval_sec": {"type": "integer", "description": "Polling interval in seconds; defaults to 1800, minimum 60"},
+            "attention": {"type": "string", "description": "Attention level: urgent sends email, normal enters briefing, low only logs"},
         },
         "required": ["source", "action"],
     }
@@ -46,7 +47,8 @@ class MonitorCreate(Tool):
             name=str(args.get("name", "")).strip(),
             source_type=str(args.get("source_type", "url")).strip() or "url",
             source=source, action=action,
-            interval_sec=int(args.get("interval_sec", 1800) or 1800))
+            interval_sec=int(args.get("interval_sec", 1800) or 1800),
+            attention=str(args.get("attention", "normal")).strip() or "normal")
         return CapabilityResult(ok=True,
             output=f"已建监控「{rec['name']}」(每 {rec['interval_sec']}s 查一次 {source})。变化时自动执行。")
 
@@ -54,7 +56,7 @@ class MonitorCreate(Tool):
 class MonitorList(Tool):
     name = "monitor.list"
     risk = Risk.READ
-    description = "列出所有监控器(盯什么、多久查一次、变化时做什么)。"
+    description = "List all monitors with source, polling interval, and action."
     schema = {"type": "object", "properties": {}}
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -72,9 +74,9 @@ class MonitorList(Tool):
 class MonitorDelete(Tool):
     name = "monitor.delete"
     risk = Risk.WRITE
-    description = "按 id 删除一个监控器。"
+    description = "Delete one monitor by id."
     schema = {"type": "object",
-              "properties": {"id": {"type": "string", "description": "监控 id"}},
+              "properties": {"id": {"type": "string", "description": "Monitor id"}},
               "required": ["id"]}
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:

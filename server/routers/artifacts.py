@@ -109,6 +109,32 @@ def register_artifacts(app, resolve_in_workspace) -> None:
         return JSONResponse({"ok": True, "root": os.path.basename(base), "dir": base,
                              "items": items[:max(1, min(int(limit or 200), 500))]})
 
+    @app.post("/api/artifacts")
+    async def save_artifact(request: Request) -> JSONResponse:
+        b = await request.json()
+        name = os.path.basename(str(b.get("filename") or b.get("name") or "").strip())
+        name = name.replace("..", "_")
+        if not name:
+            return JSONResponse({"ok": False, "error": "缺少文件名"}, status_code=400)
+        content = b.get("content", "")
+        if not isinstance(content, str):
+            return JSONResponse({"ok": False, "error": "content 必须是字符串"}, status_code=400)
+        ws = os.path.realpath(os.path.expanduser(
+            os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()))
+        art = os.environ.get("AGENT_ARTIFACTS_DIR", "").strip()
+        base = os.path.realpath(os.path.expanduser(art)) if art else os.path.join(ws, "产物")
+        os.makedirs(base, exist_ok=True)
+        dest = os.path.realpath(os.path.join(base, name))
+        if dest != base and not dest.startswith(base + os.sep):
+            return JSONResponse({"ok": False, "error": "越界"}, status_code=400)
+        try:
+            with open(dest, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        return JSONResponse({"ok": True, "name": name, "path": dest,
+                             "rel": os.path.relpath(dest, base)})
+
     @app.post("/api/artifacts/reveal")
     async def reveal_artifacts() -> JSONResponse:
         import platform, subprocess

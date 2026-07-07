@@ -8,11 +8,11 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "json_text": {"type": "string", "description": "JSON 文本"},
+        "json_text": {"type": "string", "description": "JSON text"},
         "action": {
             "type": "string",
             "enum": ["validate", "pretty", "minify", "keys"],
-            "description": "validate校验 / pretty美化 / minify压缩 / keys列顶层键",
+            "description": "validate / pretty / minify / keys for top-level keys",
         },
     },
     "required": ["json_text"],

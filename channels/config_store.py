@@ -12,7 +12,7 @@ import os
 
 from channels.email_channel import infer_email_servers
 
-# 前端字段 -> 环境变量名(仅邮件)
+# 前端字段 -> 环境变量名
 FIELD_MAP = {
     "email": {
         "imap": "EMAIL_IMAP_HOST", "imap_port": "EMAIL_IMAP_PORT",
@@ -20,9 +20,44 @@ FIELD_MAP = {
         "user": "EMAIL_USER", "password": "EMAIL_PASS",
         "allowed": "EMAIL_ALLOWED_SENDERS",
     },
+    "wecom": {
+        "corp_id": "WECOM_CORP_ID",
+        "agent_id": "WECOM_AGENT_ID",
+        "secret": "WECOM_SECRET",
+        "token": "WECOM_TOKEN",
+        "aes_key": "WECOM_AES_KEY",
+        "allowed": "WECOM_ALLOWED_USERS",
+    },
 }
-SECRET_FIELDS = {"password"}
+SECRET_FIELDS = {"password", "secret", "aes_key"}
 _INVALID_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def _normalize_allowlist(raw: str, owner: str = "") -> str:
+    """逗号分隔邮箱去重、小写化;始终包含账号本人(若有)。"""
+    raw = (raw or "").replace("，", ",")
+    addrs = {a.strip().lower() for a in (raw or "").split(",") if a.strip()}
+    owner = (owner or "").strip().lower()
+    if owner:
+        addrs.add(owner)
+    return ", ".join(sorted(addrs))
+
+
+def apply_email_allow_env(cfg: dict) -> None:
+    """同步入站/出站邮件白名单到环境变量。
+
+    - EMAIL_ALLOWED_SENDERS: 只响应这些发件人的来信(UI「白名单发件人」)
+    - EMAIL_ALLOWED_RECIPIENTS: Agent 主动外发/定时投递允许的收件人
+    """
+    allowed_raw = str(cfg.get("allowed", "") or "").strip().replace("，", ",")
+    owner = str(cfg.get("user", "") or "").strip()
+    if allowed_raw:
+        merged = _normalize_allowlist(allowed_raw, owner)
+        os.environ["EMAIL_ALLOWED_SENDERS"] = allowed_raw
+        os.environ["EMAIL_ALLOWED_RECIPIENTS"] = merged
+    else:
+        os.environ.pop("EMAIL_ALLOWED_SENDERS", None)
+        os.environ.pop("EMAIL_ALLOWED_RECIPIENTS", None)
 
 
 def _clean_host(host: str) -> str:
@@ -79,10 +114,23 @@ class ChannelConfigStore:
             if channel == "email":
                 cfg = finalize_email_cfg(cfg)
             for key, env_name in fields.items():
+                if channel == "email" and key == "allowed":
+                    continue
+                if channel == "wecom" and key == "allowed":
+                    continue
                 val = cfg.get(key)
                 if val is None or val == "":
+                    os.environ.pop(env_name, None)
                     continue
                 os.environ[env_name] = str(val)
+            if channel == "email":
+                apply_email_allow_env(cfg)
+            if channel == "wecom":
+                raw = str(cfg.get("allowed") or "").strip()
+                if raw:
+                    os.environ["WECOM_ALLOWED_USERS"] = raw.replace("，", ",")
+                else:
+                    os.environ.pop("WECOM_ALLOWED_USERS", None)
 
     def get_masked(self) -> dict:
         """对外返回:密码类字段只回 '已配置' 标记,不回明文。"""
@@ -119,5 +167,9 @@ class ChannelConfigStore:
 
     def is_configured(self, channel: str) -> bool:
         cfg = self._data.get(channel, {})
+        if channel == "email":
+            return bool(cfg.get("user"))
+        if channel == "wecom":
+            return bool(cfg.get("corp_id") and cfg.get("secret") and cfg.get("agent_id"))
         required = {"email": "user"}.get(channel)
         return bool(cfg.get(required)) if required else False

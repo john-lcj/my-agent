@@ -8,9 +8,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "输出 .docx 路径"},
-        "markdown": {"type": "string", "description": "正文(Markdown 或纯文本)"},
-        "title": {"type": "string", "description": "文档大标题(可选)"},
+        "path": {"type": "string", "description": "Output .docx path"},
+        "markdown": {"type": "string", "description": "Body text, Markdown or plain text"},
+        "title": {"type": "string", "description": "Document title; optional"},
     },
     "required": ["path", "markdown"],
 }

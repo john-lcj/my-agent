@@ -769,8 +769,8 @@ function closeArtifact() { document.getElementById('artifact-overlay')?.classLis
 
 /* ── 历史产物浏览器:检索之前输出的产物 ── */
 function artifactIcon(ext) {
-  const m = { md:'📝', html:'🌐', htm:'🌐', pdf:'📕', docx:'📄', xlsx:'📊', pptx:'📑',
-    csv:'📊', txt:'📄', png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', svg:'🖼️',
+  const m = { md:'📝', doc:'📄', docx:'📄', xls:'📊', xlsx:'📊', ppt:'📑', pptx:'📑', pdf:'📕',
+    html:'🌐', htm:'🌐', csv:'📊', txt:'📄', png:'🖼️', jpg:'🖼️', jpeg:'🖼️', gif:'🖼️', svg:'🖼️',
     py:'🐍', js:'📜', json:'🔧', ipynb:'📓', zip:'🗜️' };
   return m[ext] || '📄';
 }
@@ -780,11 +780,50 @@ function openArtifactsBrowser() {
   ov.classList.add('open');
   const s = document.getElementById('artifacts-search');
   if (s) { s.placeholder = t('artifactsSearchPh'); s.value = ''; }
+  _artifactsDateFilter = 'all';
+  document.querySelectorAll('#artifacts-date-bar [data-artifacts-date]').forEach(el => {
+    el.classList.toggle('active', el.dataset.artifactsDate === 'all');
+  });
   loadArtifactsList('');
 }
 function closeArtifactsBrowser() {
   document.getElementById('artifacts-browser-overlay')?.classList.remove('open');
 }
+
+const _DOC_ARTIFACT_EXTS = new Set(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'md']);
+let _artifactsDateFilter = 'all';
+
+function _artifactExtOk(ext) {
+  const e = String(ext || '').toLowerCase().replace(/^\./, '');
+  return _DOC_ARTIFACT_EXTS.has(e);
+}
+
+function _artifactDateBucket(mtime) {
+  const d = new Date((mtime || 0) * 1000);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const itemDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.floor((today - itemDay) / 86400000);
+  if (diff <= 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  if (diff <= 7) return 'week';
+  return 'older';
+}
+
+function _artifactDateLabel(bucket) {
+  return ({ today: '今天', yesterday: '昨天', week: '近 7 天', older: '更早' })[bucket] || bucket;
+}
+
+function setArtifactsDateFilter(filter, btn) {
+  _artifactsDateFilter = filter || 'all';
+  document.querySelectorAll('#artifacts-date-bar [data-artifacts-date]').forEach(el => {
+    el.classList.toggle('active', el.dataset.artifactsDate === _artifactsDateFilter);
+  });
+  if (btn) btn.classList.add('active');
+  loadArtifactsList(document.getElementById('artifacts-search')?.value || '');
+}
+window.setArtifactsDateFilter = setArtifactsDateFilter;
+
 async function revealArtifactsFolder() {
   // 一键在系统文件管理器里打开产物文件夹
   try {
@@ -793,6 +832,17 @@ async function revealArtifactsFolder() {
     if (!d.ok) alert('打开失败:' + (d.error || '') + (d.dir ? '\n路径:' + d.dir : ''));
   } catch (e) { alert('打开失败:' + e); }
 }
+function _artifactRowHtml(it) {
+  const dt = new Date((it.mtime || 0) * 1000).toLocaleString();
+  const kb = it.size >= 1024 ? Math.round(it.size / 1024) + ' KB' : (it.size || 0) + ' B';
+  const rel = String(it.rel);
+  return `<div class="wb-file" role="button" tabindex="0" data-artifact-path="${escAttr(rel)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent">
+    <span>${artifactIcon(it.ext)}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.rel)}</span>
+    <span style="color:var(--dim);font-size:11px;flex:0 0 auto">${escHtml(dt)} · ${kb}</span>
+  </div>`;
+}
+
 async function loadArtifactsList(q) {
   const box = document.getElementById('artifacts-list');
   if (!box) return;
@@ -800,18 +850,28 @@ async function loadArtifactsList(q) {
   try {
     const r = await fetch('/api/artifacts?q=' + encodeURIComponent(q || ''));
     const d = await r.json();
-    const items = d.items || [];
-    if (!items.length) { box.innerHTML = `<div style="color:var(--dim);font-size:13px">${escHtml(t('artifactsEmpty'))}</div>`; return; }
-    box.innerHTML = items.map(it => {
-      const dt = new Date((it.mtime || 0) * 1000).toLocaleString();
-      const kb = it.size >= 1024 ? Math.round(it.size / 1024) + ' KB' : (it.size || 0) + ' B';
-      const rel = String(it.rel);
-      return `<div class="wb-file" role="button" tabindex="0" data-artifact-path="${escAttr(rel)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent">
-        <span>${artifactIcon(it.ext)}</span>
-        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.rel)}</span>
-        <span style="color:var(--dim);font-size:11px;flex:0 0 auto">${escHtml(dt)} · ${kb}</span>
-      </div>`;
-    }).join('');
+    let items = (d.items || []).filter(it => _artifactExtOk(it.ext));
+    if (_artifactsDateFilter !== 'all') {
+      items = items.filter(it => _artifactDateBucket(it.mtime) === _artifactsDateFilter);
+    }
+    if (!items.length) {
+      box.innerHTML = `<div style="color:var(--dim);font-size:13px">${escHtml(t('artifactsEmpty'))}</div>`;
+      return;
+    }
+    if (_artifactsDateFilter === 'all') {
+      const order = ['today', 'yesterday', 'week', 'older'];
+      const groups = {};
+      items.forEach(it => {
+        const b = _artifactDateBucket(it.mtime);
+        (groups[b] = groups[b] || []).push(it);
+      });
+      box.innerHTML = order.filter(b => groups[b]?.length).map(b => {
+        const rows = groups[b].map(_artifactRowHtml).join('');
+        return `<div class="artifacts-group"><div class="artifacts-group-title">${escHtml(_artifactDateLabel(b))}</div>${rows}</div>`;
+      }).join('');
+    } else {
+      box.innerHTML = items.map(_artifactRowHtml).join('');
+    }
   } catch {
     box.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(t('loadFailed'))}</div>`;
   }
@@ -987,7 +1047,7 @@ async function restoreWorkbench() {
     _coworkWorkspaceDir = rec.workspace_dir;
     if (typeof updateCoworkFolderChip === 'function') updateCoworkFolderChip(rec.workspace_dir);
     if (typeof loadFiles === 'function') loadFiles(rec.workspace_dir);
-    const app = document.getElementById('app'); if (app) app.classList.add('wb-open');
+    if (typeof updateChatLayoutState === 'function') updateChatLayoutState();
   } else {
     _coworkWorkspaceDir = '';
     _filesDir = '';

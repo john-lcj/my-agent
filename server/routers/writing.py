@@ -16,7 +16,7 @@ def register_writing(app) -> None:
             return JSONResponse({"ok": False, "error": "缺少指令"}, status_code=400)
         from llm.factory import build_llm
         from core.types import Message, Role
-        sys_p = ("你是中文写作助手。严格按用户指令处理给定文本,**只返回处理后的正文本身**——"
+        sys_p = ("你是中文写作助手。严格按用户指令处理给定文本,**只返回处理后的Body text本身**——"
                  "不要任何解释、前后缀、引号,也不要『以下是…』之类的话。"
                  "若是续写类指令,只返回新增的后续内容(不重复原文)。")
         user_p = f"指令:{instruction}\n\n文本:\n{text or '(空)'}"

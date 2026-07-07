@@ -56,19 +56,30 @@ class VectorMemory:
             )
             """
         )
-        # 兼容旧库:补 scope 列(隔离键)
+        # 兼容旧库:补 scope 列(隔离键)与 expires_at(fact 时效,与关键词后端一致)
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(vectors)").fetchall()}
         if "scope" not in cols:
             self._conn.execute("ALTER TABLE vectors ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
+        if "expires_at" not in cols:
+            self._conn.execute("ALTER TABLE vectors ADD COLUMN expires_at REAL")
         self._conn.commit()
 
     def store(self, item: MemoryItem) -> None:
         vec = self._to_vec(item.content)
+        exp = getattr(item, "expires_at", None)
+        if exp is None:
+            try:
+                from memory.policy import ttl_for_kind
+                ttl = ttl_for_kind(item.kind)
+                if ttl is not None:
+                    exp = item.created_at + ttl
+            except Exception:
+                exp = None
         self._conn.execute(
-            "INSERT INTO vectors (kind, content, importance, scope, created_at, last_used, vec) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO vectors (kind, content, importance, scope, created_at, last_used, expires_at, vec) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (item.kind, item.content, item.importance, getattr(item, "scope", "") or "",
-             item.created_at, item.last_used, _pack(vec)),
+             item.created_at, item.last_used, exp, _pack(vec)),
         )
         self._conn.commit()
 
@@ -77,13 +88,13 @@ class VectorMemory:
         # 隔离:scope 非 None 时只取 当前 scope 或 全局('');None=不过滤。
         if scope is not None:
             rows = self._conn.execute(
-                "SELECT id, kind, content, importance, scope, created_at, last_used, vec "
+                "SELECT id, kind, content, importance, scope, created_at, last_used, expires_at, vec "
                 "FROM vectors WHERE scope = ? OR scope = ''",
                 (scope,),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT id, kind, content, importance, scope, created_at, last_used, vec FROM vectors"
+                "SELECT id, kind, content, importance, scope, created_at, last_used, expires_at, vec FROM vectors"
             ).fetchall()
         if not rows:
             return []
@@ -104,15 +115,26 @@ class VectorMemory:
         now = time.time()
         items: list[MemoryItem] = []
         for sim, row in top:
-            self._conn.execute(
-                "UPDATE vectors SET last_used = ? WHERE id = ?", (now, row["id"])
-            )
-            items.append(MemoryItem(
+            exp = row["expires_at"] if "expires_at" in row.keys() else None
+            expired = exp is not None and float(exp) < now
+            # 与关键词后端一致:过期的非 fact 直接不返回;过期 fact 带 stale 标记
+            if expired and row["kind"] != "fact":
+                continue
+            if not expired:
+                self._conn.execute(
+                    "UPDATE vectors SET last_used = ? WHERE id = ?", (now, row["id"])
+                )
+            item = MemoryItem(
                 kind=row["kind"], content=row["content"],
                 importance=row["importance"],
                 scope=row["scope"] if "scope" in row.keys() else "",
                 created_at=row["created_at"], last_used=now,
-            ))
+                expires_at=float(exp) if exp is not None else None,
+                stale=bool(expired),
+            )
+            if expired:
+                item.content = f"【需刷新·已过期】{item.content}"
+            items.append(item)
         self._conn.commit()
         return items
 

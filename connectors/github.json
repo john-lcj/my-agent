@@ -12,33 +12,33 @@
       "name": "me",
       "method": "GET",
       "path": "/user",
-      "description": "查看当前登录用户信息"
+      "description": "View the current authenticated user"
     },
     {
       "name": "list_repos",
       "method": "GET",
       "path": "/user/repos",
-      "description": "列出我的仓库",
+      "description": "List my repositories",
       "query": ["per_page", "sort", "visibility", "affiliation"]
     },
     {
       "name": "get_repo",
       "method": "GET",
       "path": "/repos/{owner}/{repo}",
-      "description": "获取某个仓库的信息"
+      "description": "Get repository details"
     },
     {
       "name": "list_issues",
       "method": "GET",
       "path": "/repos/{owner}/{repo}/issues",
-      "description": "列出仓库的 issue",
+      "description": "List repository issues",
       "query": ["state", "labels", "per_page"]
     },
     {
       "name": "create_issue",
       "method": "POST",
       "path": "/repos/{owner}/{repo}/issues",
-      "description": "在仓库新建一个 issue(写操作,需确认)",
+      "description": "Create a repository issue; write action, confirmation required",
       "body": ["title", "body", "labels"]
     }
   ]

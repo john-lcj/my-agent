@@ -47,7 +47,7 @@ def test_session_project_and_search():
         ss.set_project("s1", "p_abc")
         assert ss.get_project_id("s1") == "p_abc"
         assert {x["id"] for x in ss.list_sessions(project_id="p_abc")} == {"s1"}
-        # 搜索命中标题与正文
+        # 搜索命中标题与Body text
         assert any(x["id"] == "s1" for x in ss.search_sessions("梯子"))      # 标题
-        assert any(x["id"] == "s1" for x in ss.search_sessions("Reality"))   # 正文
+        assert any(x["id"] == "s1" for x in ss.search_sessions("Reality"))   # Body text
         assert ss.search_sessions("不存在的词") == []

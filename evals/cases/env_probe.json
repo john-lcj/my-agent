@@ -1,0 +1,35 @@
+[
+  {
+    "name": "环境-先列目录再答",
+    "taxonomy": "env_probe",
+    "category": "env-probe",
+    "prompt": "先列出工作区 产物/ 目录里有哪些文件，再根据实际文件数量回答「有几个文件」。",
+    "mode": "coworker",
+    "expect": {
+      "capabilities_any": ["fs.list", "shell.run", "fs.read"],
+      "regex": ["\\d"]
+    }
+  },
+  {
+    "name": "环境-读README再总结",
+    "taxonomy": "env_probe",
+    "category": "env-probe",
+    "prompt": "读取工作区根目录 README.md（若存在）的前 200 字并一句话总结；不存在就说没有该文件。",
+    "mode": "coworker",
+    "expect": {
+      "capabilities_any": ["fs.read", "fs.list"],
+      "any": ["README", "没有", "不存在", "未找到"]
+    }
+  },
+  {
+    "name": "环境-检查文件是否存在",
+    "taxonomy": "env_probe",
+    "category": "env-probe",
+    "prompt": "检查 产物/清单.txt 是否存在。存在就读内容；不存在就创建并写入「待办：无」。",
+    "mode": "coworker",
+    "expect": {
+      "capabilities_any": ["fs.read", "fs.write", "fs.list"],
+      "files_exist": ["清单.txt"]
+    }
+  }
+]

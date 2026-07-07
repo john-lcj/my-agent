@@ -45,14 +45,22 @@ class SQLiteMemory:
             self._conn.execute("ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT 'agent'")
         if "scope" not in cols:
             self._conn.execute("ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
+        if "expires_at" not in cols:
+            self._conn.execute("ALTER TABLE memories ADD COLUMN expires_at REAL")
         self._conn.commit()
 
     def store(self, item: MemoryItem) -> None:
+        exp = getattr(item, "expires_at", None)
+        if exp is None and item.kind == "fact":
+            from memory.policy import ttl_for_kind
+            ttl = ttl_for_kind("fact")
+            if ttl:
+                exp = item.created_at + ttl
         self._conn.execute(
-            "INSERT INTO memories (kind, content, importance, source, scope, created_at, last_used) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO memories (kind, content, importance, source, scope, created_at, last_used, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (item.kind, item.content, item.importance, item.source or "agent",
-             getattr(item, "scope", "") or "", item.created_at, item.last_used),
+             getattr(item, "scope", "") or "", item.created_at, item.last_used, exp),
         )
         self._conn.commit()
 
@@ -83,12 +91,24 @@ class SQLiteMemory:
         now = time.time()
         items: list[MemoryItem] = []
         for r in rows:
-            self._conn.execute("UPDATE memories SET last_used = ? WHERE id = ?", (now, r["id"]))
-            items.append(MemoryItem(kind=r["kind"], content=r["content"],
-                                    importance=r["importance"],
-                                    source=r["source"] if "source" in r.keys() else "agent",
-                                    scope=r["scope"] if "scope" in r.keys() else "",
-                                    created_at=r["created_at"], last_used=now))
+            exp = r["expires_at"] if "expires_at" in r.keys() else None
+            expired = exp is not None and float(exp) < now
+            if expired and r["kind"] != "fact":
+                continue
+            if not expired:
+                self._conn.execute("UPDATE memories SET last_used = ? WHERE id = ?", (now, r["id"]))
+            item = MemoryItem(
+                kind=r["kind"], content=r["content"],
+                importance=r["importance"],
+                source=r["source"] if "source" in r.keys() else "agent",
+                scope=r["scope"] if "scope" in r.keys() else "",
+                created_at=r["created_at"], last_used=now,
+                expires_at=float(exp) if exp is not None else None,
+                stale=bool(expired),
+            )
+            if expired:
+                item.content = f"【需刷新·已过期】{item.content}"
+            items.append(item)
         self._conn.commit()
         return items
 
@@ -99,13 +119,38 @@ class SQLiteMemory:
             "ORDER BY importance DESC, created_at DESC LIMIT ?",
             (kind, limit),
         ).fetchall()
-        return [
-            {"id": r["id"], "kind": r["kind"], "content": r["content"],
-             "importance": r["importance"],
-             "source": r["source"] if "source" in r.keys() else "agent",
-             "created_at": r["created_at"]}
-            for r in rows
-        ]
+        return [self._row_dict(r) for r in rows]
+
+    def list_all(self, kind: str | None = None, limit: int = 200) -> list[dict]:
+        if kind:
+            return self.list_by_kind(kind, limit=limit)
+        rows = self._conn.execute(
+            "SELECT * FROM memories ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [self._row_dict(r) for r in rows]
+
+    def delete_by_id(self, row_id: int) -> bool:
+        cur = self._conn.execute("DELETE FROM memories WHERE id = ?", (row_id,))
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def update_by_id(self, row_id: int, content: str) -> bool:
+        cur = self._conn.execute(
+            "UPDATE memories SET content = ? WHERE id = ?",
+            ((content or "").strip(), int(row_id)),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def _row_dict(self, r: sqlite3.Row) -> dict:
+        return {
+            "id": r["id"], "kind": r["kind"], "content": r["content"],
+            "importance": r["importance"],
+            "source": r["source"] if "source" in r.keys() else "agent",
+            "scope": r["scope"] if "scope" in r.keys() else "",
+            "created_at": r["created_at"],
+        }
 
     def delete_by_content(self, kind: str, content: str) -> int:
         """按 kind+内容精确删除,返回删除条数。"""

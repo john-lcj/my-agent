@@ -8,10 +8,10 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "文件路径"},
-        "old": {"type": "string", "description": "要替换掉的原文本(默认需唯一)"},
-        "new": {"type": "string", "description": "替换成的新文本"},
-        "replace_all": {"type": "boolean", "description": "替换全部匹配,默认 false"},
+        "path": {"type": "string", "description": "File path"},
+        "old": {"type": "string", "description": "Original text to replace; must be unique by default"},
+        "new": {"type": "string", "description": "Replacement text"},
+        "replace_all": {"type": "boolean", "description": "Replace all matches; defaults to false"},
     },
     "required": ["path", "old", "new"],
 }
@@ -24,7 +24,7 @@ async def run(args: dict, ctx) -> CapabilityResult:
     if not path:
         return CapabilityResult(ok=False, error="缺少 path")
     if not old:
-        return CapabilityResult(ok=False, error="缺少 old(要替换的原文本)")
+        return CapabilityResult(ok=False, error="缺少 old(要替换的Original text)")
     if not os.path.isfile(path):
         return CapabilityResult(ok=False, error=f"文件不存在:{path}")
     try:
@@ -35,12 +35,12 @@ async def run(args: dict, ctx) -> CapabilityResult:
 
     count = content.count(old)
     if count == 0:
-        return CapabilityResult(ok=False, error="未找到要替换的原文本(old 不在文件中)")
+        return CapabilityResult(ok=False, error="未找到要替换的Original text(old 不在文件中)")
     replace_all = bool(args.get("replace_all"))
     if count > 1 and not replace_all:
         return CapabilityResult(
             ok=False,
-            error=f"原文本出现 {count} 次,不唯一。请在 old 里加上下文使其唯一,或设 replace_all=true。")
+            error=f"Original text出现 {count} 次,不唯一。请在 old 里加上下文使其唯一,或设 replace_all=true。")
 
     new_content = content.replace(old, new) if replace_all else content.replace(old, new, 1)
     try:

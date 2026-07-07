@@ -37,13 +37,13 @@ class RememberMemory(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "content": {"type": "string", "description": "要记住的内容(一句话)"},
+            "content": {"type": "string", "description": "Content to remember in one sentence"},
             "kind": {"type": "string",
-                     "description": "类型: fact / preference / episode,默认 fact"},
+                     "description": "Memory kind: fact, preference, or episode; defaults to fact"},
             "importance": {"type": "number",
-                           "description": "重要性 0~1,越高越不易被遗忘。称呼/偏好/长期目标/重要事实等身份信息默认 0.8"},
+                           "description": "Importance from 0 to 1; higher means more durable. Identity, preferences, long-term goals, and important facts default to 0.8"},
             "source": {"type": "string",
-                       "description": "来源: user(用户明说) 或 agent(推断),默认 agent"},
+                       "description": "Source: user for explicit statements or agent for inference; defaults to agent"},
         },
         "required": ["content"],
     }
@@ -77,12 +77,12 @@ class RememberMemory(Tool):
 class RecallMemory(Tool):
     name = "memory.recall"
     risk = Risk.READ
-    description = "按关键词从长期记忆里检索相关的事实/偏好/经历。"
+    description = "Recall relevant facts, preferences, or episodes from long-term memory by keyword."
     schema = {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "检索关键词;留空则取最重要的若干条"},
-            "k": {"type": "integer", "description": "返回条数,默认 5"},
+            "query": {"type": "string", "description": "Recall query; empty returns the most important items"},
+            "k": {"type": "integer", "description": "Number of results to return; defaults to 5"},
         },
     }
 
@@ -102,6 +102,9 @@ class RecallMemory(Tool):
         if not items:
             return CapabilityResult(ok=True, output="(没有找到相关记忆)")
         src_label = {"user": "用户", "agent": "推断"}
-        lines = [f"- [{it.kind}|{src_label.get(it.source, it.source)}] {it.content}"
-                 for it in items]
+        lines = []
+        for it in items:
+            stale = getattr(it, "stale", False)
+            prefix = "【需刷新·stale】 " if stale else ""
+            lines.append(f"- {prefix}[{it.kind}|{src_label.get(it.source, it.source)}] {it.content}")
         return CapabilityResult(ok=True, output="\n".join(lines))

@@ -5,8 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "my-agent"
 version = "0.1.1"
-description = "一个有分寸感的 AI Agent 平台骨架：Cowork DAG 编排 + 硬/软边界治理 + 混合记忆 + MCP + 28 skill + Web 界面（~29,000 行，MIT）"
-readme = "README.md"
+description = "A measured multi-agent platform with governed tool access, hybrid memory, MCP connectors, and Web/CLI/Desktop interfaces."
 requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
 classifiers = [
@@ -69,8 +68,8 @@ packages = [
 [tool.setuptools.package-data]
 # 随包一起发布的数据文件:策略、技能说明与实现等(随各自所在包发布)。
 governance = ["*.yaml"]
-skills = ["**/*.py", "**/*.md"]
-"*" = ["*.yaml", "*.yml", "*.md"]
+skills = ["**/*.py"]
+"*" = ["*.yaml", "*.yml"]
 
 [tool.coverage.run]
 branch = false

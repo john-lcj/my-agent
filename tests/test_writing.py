@@ -51,9 +51,9 @@ def test_save_to_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
     with TestClient(app) as c:
         r = c.post("/api/writing/save",
-                   json={"title": "我的稿子", "content": "正文内容"}, headers=H)
+                   json={"title": "我的稿子", "content": "Body text内容"}, headers=H)
         assert r.status_code == 200
         d = r.json()
         assert d["ok"] is True and d["path"].endswith(".md")
         # 真落盘到 产物/
-        assert (tmp_path / "产物" / "我的稿子.md").read_text(encoding="utf-8") == "正文内容"
+        assert (tmp_path / "产物" / "我的稿子.md").read_text(encoding="utf-8") == "Body text内容"

@@ -175,7 +175,10 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "workspace_root": bool(os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()),
             "api_token": bool(token and token != "change-me-to-random-string"),
             "auth_secret": bool(auth_secret and auth_secret != "captain-dev-secret-change-me-in-prod"),
-            "email_allowlist": bool(os.environ.get("EMAIL_ALLOWED_RECIPIENTS", "").strip()),
+            "email_allowlist": bool(
+                os.environ.get("EMAIL_ALLOWED_SENDERS", "").strip()
+                or os.environ.get("EMAIL_ALLOWED_RECIPIENTS", "").strip()
+            ),
             "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
             "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
         }

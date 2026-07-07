@@ -41,7 +41,7 @@ def test_flags_empty_file(monkeypatch, tmp_path):
 def test_flags_wechat_plain_markdown(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
     (tmp_path / "产物").mkdir()
-    (tmp_path / "产物" / "tui.md").write_text("# 标题\n\n这是正文，没有任何 HTML。" * 5)
+    (tmp_path / "产物" / "tui.md").write_text("# 标题\n\n这是Body text，没有任何 HTML。" * 5)
     g = _agent()._completion_gate("写一篇公众号推文", "公众号文章已完成,见 产物/tui.md")
     assert g and "纯 Markdown" in g
 
@@ -49,7 +49,7 @@ def test_flags_wechat_plain_markdown(monkeypatch, tmp_path):
 def test_wechat_html_passes(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
     (tmp_path / "产物").mkdir()
-    (tmp_path / "产物" / "tui.md").write_text('<section style="x"><p style="y">正文</p></section>')
+    (tmp_path / "产物" / "tui.md").write_text('<section style="x"><p style="y">Body text</p></section>')
     assert _agent()._completion_gate("写公众号推文", "见 产物/tui.md") == ""
 
 

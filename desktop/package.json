@@ -10,7 +10,10 @@
     "macos:install-support": "bash scripts/install-macos-support.sh",
     "macos:prepare-bundle": "bash scripts/prepare-macos-bundle.sh",
     "macos:package": "bash scripts/package-macos.sh",
-    "macos:release-assets": "bash scripts/prepare-github-release.sh"
+    "macos:release-assets": "bash scripts/prepare-github-release.sh",
+    "windows:prepare-bundle": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-bundle.ps1",
+    "windows:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
+    "windows:release-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-release.ps1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.6.3"

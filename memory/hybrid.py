@@ -22,6 +22,12 @@ class HybridMemory:
         self._sem = semantic
 
     def store(self, item: MemoryItem) -> None:
+        if item.kind == "preference":
+            try:
+                from memory.conflict import resolve_preference_conflict
+                resolve_preference_conflict(self, item.content, getattr(item, "scope", "") or "")
+            except Exception:
+                pass
         self._kw.store(item)
         self._sem.store(item)
 
@@ -52,6 +58,22 @@ class HybridMemory:
         """按 kind 列出(以关键词后端为准,双写保证两边一致)。"""
         fn = getattr(self._kw, "list_by_kind", None)
         return fn(kind, limit=limit) if callable(fn) else []
+
+    def list_all(self, kind: str | None = None, limit: int = 200) -> list[dict]:
+        fn = getattr(self._kw, "list_all", None)
+        if callable(fn):
+            return fn(kind, limit)
+        if kind:
+            return self.list_by_kind(kind, limit)
+        return []
+
+    def delete_by_id(self, row_id: int) -> bool:
+        fn = getattr(self._kw, "delete_by_id", None)
+        return bool(fn(row_id)) if callable(fn) else False
+
+    def update_by_id(self, row_id: int, content: str) -> bool:
+        fn = getattr(self._kw, "update_by_id", None)
+        return bool(fn(row_id, content)) if callable(fn) else False
 
     def delete_by_content(self, kind: str, content: str) -> int:
         """双后端按 kind+内容删除,返回总删除条数。"""

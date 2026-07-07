@@ -4,7 +4,7 @@ TTS:POST {base}/chat/completions,model=mimo-v2-tts,body 带 audio{format,voice};
      返回 choices[0].message.audio.data(base64 音频)。
 ASR:同 chat 接口,把音频(WAV/MP3,base64)作为输入,返回识别文本。
 配置(默认复用小米视觉那套):
-  VOICE_API_KEY  / VISION_API_KEY / OPENAI_API_KEY(取第一个非空)
+  VOICE_API_KEY  / VISION_API_KEY / 设置页「小米视觉」model_keys
   VOICE_BASE_URL / VISION_BASE_URL(默认 https://api.xiaomimimo.com/v1)
   VOICE_TTS_MODEL(默认 mimo-v2-tts) / VOICE_TTS_VOICE(默认 mimo_default)
   VOICE_ASR_MODEL(默认 mimo-v2.5-asr)
@@ -15,12 +15,27 @@ import base64
 import os
 
 
+def _xiaomi_store_key() -> tuple[str, str]:
+    """从 model_keys 读取小米视觉(语音与视觉共用)配置。"""
+    try:
+        from config import Config
+        from server.model_keys import ModelKeyStore, is_real_key
+        cfg = ModelKeyStore(path=f"{Config.LOG_DIR}/model_keys.json").get_config("xiaomi_vision")
+        key = (cfg.get("key") or "").strip()
+        base = (cfg.get("base_url") or "").strip().rstrip("/")
+        return (key if is_real_key(key) else ""), base
+    except Exception:
+        return "", ""
+
+
 def _cfg() -> tuple[str, str]:
+    store_key, store_base = _xiaomi_store_key()
     key = (os.environ.get("VOICE_API_KEY", "").strip()
            or os.environ.get("VISION_API_KEY", "").strip()
-           or os.environ.get("OPENAI_API_KEY", "").strip())
+           or store_key)
     base = (os.environ.get("VOICE_BASE_URL", "").strip()
             or os.environ.get("VISION_BASE_URL", "").strip()
+            or store_base
             or "https://api.xiaomimimo.com/v1").rstrip("/")
     return key, base
 

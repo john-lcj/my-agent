@@ -5,22 +5,58 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
+def _enabled_map(ext_channels) -> dict:
+    return {
+        "email": "email" in ext_channels,
+        "wecom": "wecom" in ext_channels,
+    }
+
+
+async def _stop_channel(name: str, ext_channels, ext_channel_tasks) -> None:
+    import server.app as _sa
+
+    old_task = ext_channel_tasks.pop(name, None) or _sa._ext_channel_tasks.pop(name, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    old_ch = ext_channels.pop(name, None)
+    if old_ch is not None and hasattr(old_ch, "stop_polling"):
+        await old_ch.stop_polling()
+
+
 def register_channels(app, channel_cfg, ext_channels, enable_channel_fn, enable_channel_async_fn) -> None:
     """注册 /api/channels 和 /api/tasks 端点。"""
 
     @app.get("/api/channels")
     async def get_channels() -> JSONResponse:
         cfg = channel_cfg.get_masked()
-        enabled = {"email": "email" in ext_channels}
-        return JSONResponse({"config": cfg, "enabled": enabled})
+        return JSONResponse({"config": cfg, "enabled": _enabled_map(ext_channels)})
 
     @app.post("/api/channels")
     async def save_channel(request: Request) -> JSONResponse:
+        import server.app as _sa
+
         body = await request.json()
         channel = body.get("channel", "")
         values = body.get("values", {})
         channel_cfg.update(channel, values)
-        return JSONResponse({"ok": True, "config": channel_cfg.get_masked()})
+        restarted = False
+        enable_error = ""
+        if channel in ("email", "wecom"):
+            await _stop_channel(channel, ext_channels, _sa._ext_channel_tasks)
+            if channel_cfg.is_configured(channel):
+                try:
+                    restarted = await enable_channel_async_fn(channel)
+                except Exception as e:
+                    enable_error = str(e)
+            if not restarted and not enable_error:
+                enable_error = f"未配置{channel}或启用失败"
+        return JSONResponse({
+            "ok": True,
+            "config": channel_cfg.get_masked(),
+            "restarted": restarted,
+            "enabled": _enabled_map(ext_channels),
+            "error": enable_error or None,
+        })
 
     @app.post("/api/channels/email/test")
     async def test_email(request: Request) -> JSONResponse:
@@ -41,12 +77,33 @@ def register_channels(app, channel_cfg, ext_channels, enable_channel_fn, enable_
         result = await asyncio.get_event_loop().run_in_executor(None, ch.test_connection)
         return JSONResponse(result)
 
+    @app.post("/api/channels/wecom/test")
+    async def test_wecom(request: Request) -> JSONResponse:
+        import asyncio
+        from channels.wecom_channel import WeComChannel
+
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        values = body.get("values") if isinstance(body, dict) else None
+        if isinstance(values, dict) and values:
+            channel_cfg.update("wecom", values)
+        else:
+            channel_cfg.apply_to_env()
+        ch = WeComChannel()
+        result = await asyncio.get_event_loop().run_in_executor(None, ch.test_connection)
+        return JSONResponse(result)
+
     @app.post("/api/channels/{name}/restart")
     async def restart_channel(name: str) -> JSONResponse:
+        import server.app as _sa
+
         channel_cfg.apply_to_env()
-        ext_channels.pop(name, None)
+        await _stop_channel(name, ext_channels, _sa._ext_channel_tasks)
         try:
-            ok = await enable_channel_async_fn(name) if name == "email" else enable_channel_fn(name)
+            ok = await enable_channel_async_fn(name) if name in ("email", "wecom") else enable_channel_fn(name)
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)})
         return JSONResponse({"ok": ok})

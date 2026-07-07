@@ -182,8 +182,7 @@ async def main() -> None:
     try:
         from server.commands_api import list_slash_commands
         from skills.paths import resolve_skills_dirs
-        roster = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "roster")
-        channel.slash_commands = list_slash_commands(roster, resolve_skills_dirs())
+        channel.slash_commands = list_slash_commands(resolve_skills_dirs())
     except Exception:
         channel.slash_commands = []
 

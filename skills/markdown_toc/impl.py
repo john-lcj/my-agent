@@ -8,8 +8,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "markdown": {"type": "string", "description": "Markdown 文本"},
-        "max_level": {"type": "integer", "description": "最大标题层级,默认 3"},
+        "markdown": {"type": "string", "description": "Markdown text"},
+        "max_level": {"type": "integer", "description": "Maximum heading level; defaults to 3"},
     },
     "required": ["markdown"],
 }

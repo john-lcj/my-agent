@@ -8,9 +8,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "输出 .pptx 路径"},
-        "outline": {"type": "string", "description": "大纲:# 页标题 + - 要点"},
-        "title": {"type": "string", "description": "封面主标题(可选)"},
+        "path": {"type": "string", "description": "Output .pptx path"},
+        "outline": {"type": "string", "description": "Outline using # slide title and - bullets"},
+        "title": {"type": "string", "description": "Cover title; optional"},
     },
     "required": ["path", "outline"],
 }

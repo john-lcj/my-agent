@@ -47,9 +47,10 @@ button{cursor:pointer;border:none;font:inherit;transition:var(--trans);font-fami
 #app.work-mode-coworker .sb-proj-nav[data-modes~="coworker"]{display:flex}
 .sb-proj-nav{flex-direction:column;display:none}
 .proj-filter{display:none!important}
-#btn-new-chat.sb-new-primary{margin-bottom:8px;padding:9px 12px;background:var(--panel);
+#btn-new-chat{margin-bottom:8px;padding:9px 12px;background:var(--panel);
   border:1px solid var(--border);border-radius:var(--r-sm);font-weight:500}
-#btn-new-chat.sb-new-primary:hover{border-color:rgba(217,119,87,.35);background:#fff}
+#btn-new-chat:hover{border-color:rgba(217,119,87,.35);background:#fff}
+#btn-new-chat.sb-new-primary{background:var(--panel)}
 #sb-backdrop{display:none;position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.25)}
 body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 #wb-backdrop{display:none;position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.25)}
@@ -399,10 +400,10 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .thinking-label{line-height:1.4}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-.composer-wrap{flex-shrink:0;padding:0 20px 24px;max-width:calc(var(--chat-max) + 40px);width:100%;margin:0 auto}
+.composer-wrap{flex-shrink:0;width:100%;max-width:none;margin:0;padding:0}
 .composer{display:flex;flex-direction:column;width:100%;background:var(--panel);
           border:1px solid var(--border);border-radius:var(--r-composer);padding:10px 14px 8px;
-          box-shadow:0 1px 3px rgba(0,0,0,.04);transition:var(--trans);min-height:64px}
+          box-shadow:0 2px 12px rgba(0,0,0,.04);transition:var(--trans);min-height:64px}
 .composer:focus-within{border-color:rgba(0,0,0,.12);
                        box-shadow:0 0 0 3px rgba(217,119,87,.08),0 2px 8px rgba(0,0,0,.04)}
 #chat-inp{flex:1 1 auto;width:100%;min-width:0;box-sizing:border-box;
@@ -530,7 +531,7 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .btn-sm.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .mk-section-label{font-size:12px;font-weight:700;color:var(--muted);margin:8px 0 10px}
 .mk-grid{display:grid;gap:10px}
-.mk-grid.recommended{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.mk-grid.primary,.mk-grid.recommended{grid-template-columns:1fr}
 .mk-grid.more{margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
 .mk-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
   padding:14px 16px;min-width:0}
@@ -629,6 +630,12 @@ option{background:var(--card)}
   font-size:11px;font-weight:800;background:var(--panel);color:var(--dim)}
 .license-plan-badge.pro{background:rgba(21,128,61,.12);color:var(--green)}
 .license-plan-badge.free{background:rgba(184,134,11,.12);color:var(--yellow)}
+.license-activated-tag{display:inline-flex;align-items:center;border-radius:var(--r-pill);padding:4px 10px;
+  font-size:12px;font-weight:700;background:rgba(21,128,61,.12);color:var(--green)}
+.artifacts-date-bar{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;border-bottom:1px solid var(--border)}
+.artifacts-date-bar .btn-sm.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.artifacts-group{margin-bottom:14px}
+.artifacts-group-title{font-size:12px;font-weight:700;color:var(--muted);margin:4px 0 8px;text-transform:none}
 .license-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .license-status-grid div{min-width:0;border:1px solid var(--border);border-radius:var(--r-sm);padding:8px;background:var(--panel)}
 .license-status-grid span{display:block;font-size:10px;color:var(--dim);margin-bottom:3px}
@@ -798,7 +805,39 @@ option{background:var(--card)}
 .doc-card-name{font-size:13px;font-weight:500;color:var(--txt)}
 .doc-card-meta{font-size:11px;color:var(--dim);margin-top:2px}
 
-/* ── Chat 模式:居中问候 + 输入 dock ───────────────────────────── */
+/* ── 底部输入 dock: Chat / Cowork 完全共用 ───────────────────── */
+.composer-dock{width:min(100%, calc(var(--chat-max) + 40px));max-width:calc(var(--chat-max) + 40px);
+  margin:0 auto;padding:12px 20px max(20px, env(safe-area-inset-bottom, 0px));flex-shrink:0}
+#app #view-chat #chat-status-bar{width:min(100%, calc(var(--chat-max) + 40px));max-width:calc(var(--chat-max) + 40px);
+  margin:0 auto;box-sizing:border-box;padding-left:20px;padding-right:20px}
+
+/* ── 新对话空状态: Chat / Cowork 共用居中问候 + 输入 dock ─────── */
+#app #view-chat:not(.has-messages) .chat-column{max-width:42rem;justify-content:center;gap:0;
+  padding-bottom:max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px))}
+#app #view-chat:not(.has-messages) #chat-topbar{display:none}
+#app #view-chat:not(.has-messages) #chat-messages:has(#chat-empty){flex:0 0 auto;justify-content:center;padding-bottom:0}
+#app #view-chat:not(.has-messages) .welcome{padding:min(5vh,48px) 16px 12px;min-height:auto;margin:0}
+#app #view-chat:not(.has-messages) .welcome-greet{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:0}
+#app #view-chat:not(.has-messages) .welcome-greet-ic{font-size:28px;line-height:1;color:var(--accent);filter:drop-shadow(0 0 8px rgba(217,119,87,.25))}
+#app #view-chat:not(.has-messages) .welcome-title{font-family:ui-serif,Georgia,'Iowan Old Style','Palatino Linotype',serif;
+  font-size:clamp(2.15rem,5vw,2.85rem);font-weight:400;letter-spacing:-.03em;line-height:1.12}
+#app #view-chat:not(.has-messages) .welcome-sub{display:none}
+#app #view-chat:not(.has-messages) .welcome-chips,#app #view-chat:not(.has-messages) .welcome-scenarios{display:none}
+#app #view-chat:not(.has-messages) #chat-status-bar{display:none}
+#app #view-chat:not(.has-messages) .composer-dock{padding-top:0;padding-bottom:0;
+  display:flex;flex-direction:column;align-items:stretch}
+#app #view-chat:not(.has-messages) .composer-wrap{padding:0;margin:0;max-width:none}
+#app #view-chat:not(.has-messages) .composer{min-height:60px;padding:10px 14px 8px;border-radius:var(--r-composer);
+  box-shadow:0 2px 12px rgba(0,0,0,.04)}
+#app #view-chat:not(.has-messages) .composer-dock:has(.usage-banner:not([hidden])) .composer{
+  border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent}
+#app #view-chat:not(.has-messages) #chat-inp{min-height:24px;font-size:15px}
+#app #view-chat:not(.has-messages) .composer-toolbar{margin-top:6px}
+#app #view-chat:not(.has-messages) #chat-quick-actions{display:flex;margin-top:12px}
+#app #view-chat:not(.has-messages) .chat-disclaimer{display:block;margin:10px 0 max(12px,env(safe-area-inset-bottom,0px))}
+#app #view-chat:not(.has-messages) .usage-banner{display:flex;border-radius:0 0 var(--r-composer) var(--r-composer)}
+
+/* ── Chat 模式:有消息后 ───────────────────────────────────────── */
 #chat-topbar{display:none}
 #app.work-mode-chat #view-chat.has-messages #chat-topbar{display:flex;border-bottom:1px solid var(--border)}
 #app.work-mode-chat #view-chat.has-messages #btn-workbench,
@@ -806,39 +845,16 @@ option{background:var(--card)}
 #app.work-mode-chat #view-chat.has-messages #chat-topbar .status-dot,
 #app.work-mode-chat #view-chat.has-messages .chat-topbar-right .icon-btn{display:none}
 #app.work-mode-chat #view-chat.has-messages .sb-toggle{display:none}
-#app.work-mode-chat .chat-column{max-width:42rem;justify-content:flex-start;
+#app.work-mode-chat .chat-column{max-width:48rem;justify-content:flex-start;margin:0 auto;
   padding-bottom:max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px))}
-#app.work-mode-chat #view-chat:not(.has-messages) .chat-column{justify-content:center;gap:0}
-#app.work-mode-chat #chat-messages:has(#chat-empty){flex:0 0 auto;justify-content:center;padding-bottom:0}
-#app.work-mode-chat #view-chat.has-messages .chat-column{max-width:48rem}
 #app.work-mode-chat #view-chat.has-messages #chat-messages{flex:1;padding:20px 0 16px}
-#app.work-mode-chat .welcome{padding:min(5vh,48px) 16px 12px;min-height:auto;margin:0}
-#app.work-mode-chat .welcome-greet{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:0}
-#app.work-mode-chat .welcome-greet-ic{font-size:28px;line-height:1;color:var(--accent);filter:drop-shadow(0 0 8px rgba(217,119,87,.25))}
-#app.work-mode-chat .welcome-title{font-family:ui-serif,Georgia,'Iowan Old Style','Palatino Linotype',serif;
-  font-size:clamp(2.15rem,5vw,2.85rem);font-weight:400;letter-spacing:-.03em;line-height:1.12}
-#app.work-mode-chat .welcome-sub{display:none}
-#app.work-mode-chat .welcome-chips,#app.work-mode-chat .welcome-scenarios{display:none}
-#app.work-mode-chat #chat-status-bar{display:none}
-#app.work-mode-chat .composer-dock{width:100%;max-width:calc(var(--chat-max) + 40px);margin:0 auto;padding:0 20px;
-  display:flex;flex-direction:column;align-items:stretch}
-#app.work-mode-chat .composer-wrap{padding:0;margin:0;max-width:none}
-#app.work-mode-chat .composer{min-height:60px;padding:10px 14px 8px;border-radius:var(--r-composer);
-  box-shadow:0 2px 12px rgba(0,0,0,.04)}
-#app.work-mode-chat .composer-dock:has(.usage-banner:not([hidden])) .composer{
-  border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent}
-#app.work-mode-chat #chat-inp{min-height:24px;font-size:15px}
-#app.work-mode-chat .composer-toolbar{margin-top:6px}
-.chat-quick-actions{display:none;flex-wrap:wrap;justify-content:center;gap:8px;width:100%}
-#app.work-mode-chat #chat-quick-actions{display:flex;margin-top:12px}
 #app.work-mode-chat #view-chat.has-messages #chat-quick-actions{display:none}
-.chat-disclaimer{display:none;text-align:center;font-size:11px;color:var(--dim);margin:10px 0 0;padding:0;line-height:1.45}
-#app.work-mode-chat .chat-disclaimer{display:block;margin:10px 0 max(12px,env(safe-area-inset-bottom,0px))}
 #app.work-mode-chat #view-chat.has-messages .chat-disclaimer{display:none}
 #app.work-mode-chat #view-chat.has-messages .usage-banner{display:none!important}
-#app.work-mode-chat #view-chat.has-messages .composer{border-radius:var(--r-composer)}
 #app.work-mode-chat #btn-workbench{display:none}
-.composer-dock{width:100%;padding:12px 20px 20px;max-width:calc(var(--chat-max) + 40px);margin:0 auto}
+.chat-quick-actions{display:none;flex-wrap:wrap;justify-content:center;gap:8px;width:100%}
+.chat-disclaimer{display:none;text-align:center;font-size:11px;color:var(--dim);margin:10px 0 0;padding:0;line-height:1.45}
+#app.work-mode-chat .usage-banner{display:flex}
 .chat-qa-btn{padding:8px 14px;border-radius:var(--r-pill);font-size:13px;color:var(--txt);
   background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .chat-qa-btn:hover{border-color:rgba(217,119,87,.35)}
@@ -853,8 +869,6 @@ option{background:var(--card)}
 .usage-banner-close{flex-shrink:0;width:24px;height:24px;border-radius:6px;background:transparent;
   color:var(--dim);font-size:17px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
 .usage-banner-close:hover{background:rgba(0,0,0,.06);color:var(--txt)}
-#app.work-mode-chat .usage-banner{border-radius:0 0 var(--r-composer) var(--r-composer)}
-#app.work-mode-chat .usage-banner{display:flex}
 .usage-banner[hidden]{display:none!important}
 .wb-activity{margin-top:8px;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r-sm);
   background:rgba(0,0,0,.025);font-size:11.5px;color:var(--muted);line-height:1.35}
@@ -962,14 +976,17 @@ option{background:var(--card)}
 #app.view-project-active{grid-template-columns:var(--sb-w) minmax(0,1fr)!important}
 @media(max-width:900px){.proj-detail-side{display:none}}
 
-/* ── Cowork 模式:顶栏标题 + 三栏 ─────────────────────────────── */
-#app.work-mode-coworker #chat-topbar{display:flex;border-bottom:1px solid var(--border)}
-#app.work-mode-coworker #chat-status-bar{display:flex;margin:0 0 8px;padding:6px 0}
-#app.work-mode-coworker .chat-column{max-width:none;padding:0 24px}
-#app.work-mode-coworker #chat-messages{padding:16px 0 24px}
+#app.work-mode-coworker:not(.wb-open) #workbench{display:none!important}
+#app.work-mode-coworker:not(.wb-open){grid-template-columns:var(--sb-w) minmax(0,1fr)!important}
+
+/* ── Cowork 模式:顶栏标题 + 三栏(有消息后) ─────────────────── */
+#app.work-mode-coworker #view-chat.has-messages #chat-topbar{display:flex;border-bottom:1px solid var(--border)}
+#app.work-mode-coworker #view-chat.has-messages #chat-status-bar{display:flex;margin:0 0 8px;padding:6px 20px}
+#app.work-mode-coworker #view-chat.has-messages .chat-column{max-width:48rem;margin:0 auto;padding:0 16px;width:100%}
+#app.work-mode-coworker #view-chat.has-messages #chat-messages{padding:16px 0 24px}
 #app.work-mode-coworker .welcome-chips,#app.work-mode-coworker .welcome-scenarios{display:none}
-#app.work-mode-coworker #chat-quick-actions{display:none!important}
-#app.work-mode-coworker .usage-banner{display:none}
+#app.work-mode-coworker #view-chat.has-messages #chat-quick-actions{display:none!important}
+#app.work-mode-coworker #view-chat.has-messages .usage-banner{display:none}
 #app.work-mode-coworker #chat-topbar .status-dot{display:inline-block}
 #app.work-mode-coworker .msg-agent:hover .msg-footer{opacity:1}
 
@@ -1008,8 +1025,10 @@ option{background:var(--card)}
   #btn-sb-toggle.sb-toggle{display:inline-flex!important}
   /* 对话区铺满 + 收紧边距 */
   .chat-column,#app.work-mode-coworker .chat-column{padding:0 12px!important;max-width:none}
+  #app #view-chat:not(.has-messages) .chat-column{max-width:42rem!important;margin:0 auto}
   #chat-messages{padding:12px 0 16px!important}
-  .composer-wrap{padding:0 10px calc(12px + env(safe-area-inset-bottom))}
+  .composer-wrap{padding:0}
+  .composer-dock{padding-left:12px;padding-right:12px}
   /* 输入框 font-size≥16px 防止 iOS 自动缩放 */
   #composer-input,#composer-input *{font-size:16px!important}
   /* 输入工具条:允许换行,触控热区放大,发送常驻 */

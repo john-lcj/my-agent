@@ -15,9 +15,9 @@ import os
 import smtplib
 import ssl
 import time
-from email.mime.text import MIMEText
 from typing import Any
 
+from channels.email_mime import apply_mail_headers, make_text_part
 from core.types import CapabilityResult, Risk
 
 
@@ -26,13 +26,13 @@ from core.types import CapabilityResult, Risk
 class SendEmail:
     name = "notify.email"
     risk = Risk.WRITE
-    description = "发送一封电子邮件(主动通知用途)。"
+    description = "Send an email for proactive notification."
     schema = {
         "type": "object",
         "properties": {
-            "to": {"type": "string", "description": "收件人地址"},
-            "subject": {"type": "string", "description": "邮件主题"},
-            "body": {"type": "string", "description": "邮件正文"},
+            "to": {"type": "string", "description": "Recipient email address"},
+            "subject": {"type": "string", "description": "Email subject"},
+            "body": {"type": "string", "description": "Email body"},
         },
         "required": ["to", "subject", "body"],
     }
@@ -80,8 +80,8 @@ def _recipient_allowed(to: str, user: str) -> bool:
 
 
 def _smtp_send(host, port, user, password, to, subject, body):
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["From"], msg["To"], msg["Subject"] = user, to, subject
+    msg = make_text_part(body)
+    apply_mail_headers(msg, from_addr=user, to_addr=to, subject=subject)
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL(host, port, context=ctx) as s:
         s.login(user, password)

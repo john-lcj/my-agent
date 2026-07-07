@@ -8,8 +8,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "a": {"type": "string", "description": "原文本"},
-        "b": {"type": "string", "description": "新文本"},
+        "a": {"type": "string", "description": "Original text"},
+        "b": {"type": "string", "description": "New text"},
     },
     "required": ["a", "b"],
 }

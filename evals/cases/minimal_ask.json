@@ -1,0 +1,92 @@
+[
+  {
+    "name": "少问-信息足够直接做",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "帮我把这句话翻译成英文：今天天气很好。只给译文，不要问我任何问题。",
+    "mode": "chat",
+    "expect": {
+      "contains": ["weather", "nice", "good", "fine"],
+      "not_contains": ["请问", "需要确认", "能否告诉", "你是指", "哪个"]
+    }
+  },
+  {
+    "name": "少问-路径已给不追问",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "读取 产物/notes.txt 的内容并原样复述。如果文件不存在就创建并写入 hello，再读出。不要问我文件在哪。",
+    "mode": "coworker",
+    "expect": {
+      "capabilities_any": ["fs.read", "fs.write"],
+      "any": ["hello", "notes"],
+      "not_contains": ["请问路径", "哪个目录", "能否提供"]
+    }
+  },
+  {
+    "name": "少问-格式要求明确",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "列出 1 到 5 的平方，用一行 JSON 数组表示，例如 [1,4,9,16,25]。不要解释，不要反问。",
+    "mode": "chat",
+    "expect": {
+      "regex": ["\\[\\s*1\\s*,\\s*4\\s*,\\s*9\\s*,\\s*16\\s*,\\s*25\\s*\\]"],
+      "not_contains": ["请问", "确认一下", "你希望我"]
+    }
+  },
+  {
+    "name": "少问-任务边界清晰",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "写一句产品 Slogan：『Captain，听懂目标自己干』。只输出这一句，不要追问受众或行业。",
+    "mode": "chat",
+    "expect": {
+      "contains": ["Captain"],
+      "not_contains": ["请问", "目标用户", "需要更多信息", "能否说明"]
+    }
+  },
+  {
+    "name": "少问-已有上下文",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "我是独立开发者，偏好中文回复。请用一句话介绍什么是 Agent。不要问我职业或语言偏好。",
+    "mode": "chat",
+    "expect": {
+      "min_length": 10,
+      "not_contains": ["请问你", "你的职业", "用什么语言", "需要确认"]
+    }
+  },
+  {
+    "name": "少问-计算直给",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "365 除以 7 商是多少（取整数）？只回答数字，不要反问精度要求。",
+    "mode": "chat",
+    "expect": {
+      "contains": ["52"],
+      "not_contains": ["请问", "需要保留", "小数还是"]
+    }
+  },
+  {
+    "name": "少问-文件交付不盘问",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "创建 产物/todo.md，写三个待办：买牛奶、写报告、跑步。保存后直接告诉我文件名。",
+    "mode": "coworker",
+    "expect": {
+      "files_exist": ["todo.md"],
+      "any": ["todo.md", "todo"],
+      "not_contains": ["请问", "确认路径", "哪个文件夹"]
+    }
+  },
+  {
+    "name": "少问-拒绝无效澄清",
+    "taxonomy": "minimal_ask",
+    "category": "minimal-ask",
+    "prompt": "把 RGB(255,0,0) 说成中文颜色名。只答颜色名，不要问用途或场景。",
+    "mode": "chat",
+    "expect": {
+      "any": ["红", "红色", "red"],
+      "not_contains": ["请问", "用于什么", "能否说明"]
+    }
+  }
+]

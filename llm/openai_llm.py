@@ -91,9 +91,16 @@ class OpenAILLM:
                     "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "https://irestart-your-life.club"),
                     "X-OpenRouter-Title": os.environ.get("OPENROUTER_APP_TITLE", "Captain"),
                 }
+            elif "xiaomimimo.com" in (self.base_url or "").lower():
+                kwargs["default_headers"] = {"api-key": key}
             client = AsyncOpenAI(**kwargs)
             self._clients[key] = client
         return client
+
+    def _mimo_extra(self) -> dict:
+        if "xiaomimimo.com" in (self.base_url or "").lower():
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        return {}
 
     # 兼容旧调用名
     def _ensure_client(self):
@@ -130,6 +137,7 @@ class OpenAILLM:
                 echo_deepseek_reasoning=self.needs_deepseek_reasoning_echo(),
             ),
             tools=_to_openai_tools(capabilities) or None,
+            **self._mimo_extra(),
         )
         return self._parse_choice(resp.choices[0].message, name_map)
 
@@ -150,6 +158,7 @@ class OpenAILLM:
             ),
             tools=_to_openai_tools(capabilities) or None,
             stream=True,
+            **self._mimo_extra(),
         )
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -232,6 +241,7 @@ class OpenAILLM:
                  "把下面的对话压缩成要点摘要,保留关键事实、决定、未完成事项,去掉寒暄。用简体中文,150字以内。"},
                 {"role": "user", "content": text},
             ],
+            **self._mimo_extra(),
         )
         return resp.choices[0].message.content or ""
 

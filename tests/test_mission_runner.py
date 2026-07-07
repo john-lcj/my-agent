@@ -7,7 +7,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.mission_runner import run_mission, resume_mission, _parse_tasks, _need_input
+from core.mission_runner import (
+    run_mission, resume_mission, _parse_tasks, _need_input,
+    _validate_plan_tasks, _validate_task_result, _looks_like_chat_fragment,
+)
 from memory.mission_store import MissionStore
 
 
@@ -107,3 +110,52 @@ def test_emit_events(tmp_path):
     asyncio.run(run_mission(s, m["id"], fake_execute,
                             emit=lambda k, p: seen.append(k)))
     assert "mission.started" in seen and "mission.completed" in seen and "task.done" in seen
+
+
+def test_plan_rejects_chat_fragment(tmp_path):
+    goal = "研究今年 ai agent 市场变化并总结 GitHub 项目"
+    tasks, err = _validate_plan_tasks(goal, ["好，要开始建管道模块还是先做MCP兼容？"])
+    assert not tasks and "聊天" in err
+
+
+def test_fake_confirmation_blocks(tmp_path):
+    goal = "研究 ai agent 市场"
+    reason = _validate_task_result(goal, "写报告", "好的，你确认了方向——先做管道模块。")
+    assert "误判" in reason
+
+
+def test_chat_question_result_blocks(tmp_path):
+    goal = "研究 ai agent 市场变化"
+    reason = _validate_task_result(goal, "调研", "你定吧，发哪个邮箱？")
+    assert reason and "提问" in reason
+
+
+def test_mission_blocked_on_bad_plan(tmp_path):
+    s = MissionStore(db_path=str(tmp_path / "m.db"))
+    m = s.create("研究 ai agent 市场")
+    notified = []
+
+    async def execute(prompt: str) -> str:
+        if "拆成" in prompt:
+            return "要开始建管道模块还是先做MCP？"
+        return "不应执行"
+
+    final = asyncio.run(
+        run_mission(s, m["id"], execute, notify=lambda mm, r: notified.append(r)))
+    assert final["status"] == "blocked"
+    assert notified
+
+
+def test_mission_blocked_on_fake_confirm(tmp_path):
+    s = MissionStore(db_path=str(tmp_path / "m.db"))
+    m = s.create("研究 ai agent 市场")
+    s.set_tasks(m["id"], ["检索并整理 agent 开源项目"])
+    notified = []
+
+    async def execute(prompt: str) -> str:
+        return "好的，你确认了方向——先做管道模块。需要我搭框架吗？"
+
+    final = asyncio.run(
+        run_mission(s, m["id"], execute, notify=lambda mm, r: notified.append(r)))
+    assert final["status"] == "blocked"
+    assert notified and "误判" in notified[0]

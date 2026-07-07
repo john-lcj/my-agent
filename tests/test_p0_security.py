@@ -67,6 +67,9 @@ def test_workspace_blocks_dotdot_escape():
 
 
 def test_recipient_allowlist_default_self():
+    # 隔离 env:其它测试 import server.app 会触发 _channel_cfg 读取真实
+    # logs/channels.json 并把真实 EMAIL_ALLOWED_RECIPIENTS 灌入 os.environ。
+    os.environ.pop("EMAIL_ALLOWED_RECIPIENTS", None)
     assert _recipient_allowed("me@x.com", "me@x.com") is True
     assert _recipient_allowed("stranger@evil.com", "me@x.com") is False
 

@@ -1,0 +1,100 @@
+[
+  {
+    "name": "自检-错路径发现并修正",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "读取 产物/不存在.md 的内容。如果读不到，就创建该文件写入『已修正』并再次读取确认后告诉我内容。",
+    "mode": "coworker",
+    "expect": {
+      "capabilities_any": ["fs.read", "fs.write"],
+      "files_exist": ["不存在.md"],
+      "file_contains": ["已修正"]
+    }
+  },
+  {
+    "name": "自检-空文件补内容",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "检查 产物/空白.txt 是否有实质内容；若为空或不存在，写入至少 20 字的说明后再汇报文件内容摘要。",
+    "mode": "coworker",
+    "setup_files": {"产物/空白.txt": ""},
+    "expect": {
+      "files_exist": ["空白.txt"],
+      "file_contains": ["空白"],
+      "min_length": 15
+    }
+  },
+  {
+    "name": "自检-CSV表头缺失",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "产物/数据.csv 应有三列表头：姓名,年龄,城市。若缺少表头或列不对，请修正后说明改了什么。",
+    "mode": "coworker",
+    "setup_files": {"产物/数据.csv": "张三,28,北京\n"},
+    "expect": {
+      "files_exist": ["数据.csv"],
+      "file_contains": ["姓名", "年龄", "城市"]
+    }
+  },
+  {
+    "name": "自检-命令输出附证据",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "用 shell 命令统计 产物/ 目录下 .md 文件数量，把数字和命令原始输出都写进回复。",
+    "mode": "coworker",
+    "setup_files": {"产物/a.md": "# a", "产物/b.md": "# b"},
+    "expect": {
+      "capabilities": ["shell.run"],
+      "regex": ["\\d"],
+      "any": ["ls", "find", "wc", "产物"]
+    }
+  },
+  {
+    "name": "自检-HTML缺闭合标签",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "检查 产物/页面.html 是否是合法 HTML（至少 html/body 闭合）。若不合法请修复并说明问题。",
+    "mode": "coworker",
+    "setup_files": {"产物/页面.html": "<html><body><h1>测试</h1>"},
+    "expect": {
+      "files_exist": ["页面.html"],
+      "file_contains": ["</body>", "</html>"]
+    }
+  },
+  {
+    "name": "自检-JSON非法",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "产物/配置.json 应是合法 JSON。若非法请修复为 {\"name\":\"captain\",\"version\":1} 并确认。",
+    "mode": "coworker",
+    "setup_files": {"产物/配置.json": "{name: captain}"},
+    "expect": {
+      "files_exist": ["配置.json"],
+      "file_contains": ["captain", "version"]
+    }
+  },
+  {
+    "name": "自检-重复执行验证",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "把 产物/计数.txt 里的数字加 1 后写回。若文件不存在则从 0 开始。写回后读文件确认数字正确。",
+    "mode": "coworker",
+    "setup_files": {"产物/计数.txt": "3"},
+    "expect": {
+      "files_exist": ["计数.txt"],
+      "file_contains": ["4"]
+    }
+  },
+  {
+    "name": "自检-交付前回读",
+    "taxonomy": "self_check",
+    "category": "self-check",
+    "prompt": "写 产物/摘要.md（100字介绍 Captain），保存后必须读回文件，在回复里引用文件中的一句话作为证据。",
+    "mode": "coworker",
+    "expect": {
+      "files_exist": ["摘要.md"],
+      "file_contains": ["Captain"],
+      "min_length": 30
+    }
+  }
+]

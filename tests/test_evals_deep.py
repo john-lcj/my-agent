@@ -61,7 +61,7 @@ def test_files_exist(tmp_path, monkeypatch):
 def test_file_contains():
     # 交付物在文件里 → 对照 files_text 而非对话回复
     ok, f = score_case("已保存,详见文件", [], {"file_contains": ["<section"]},
-                       files_text='<section style="x">正文</section>')
+                       files_text='<section style="x">Body text</section>')
     assert ok
     bad, fb = score_case("已保存", [], {"file_contains": ["<section"]}, files_text="纯文本无标签")
     assert not bad and "产出文件里缺少" in fb[0]

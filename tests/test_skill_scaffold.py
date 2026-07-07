@@ -18,7 +18,7 @@ def test_scaffold_writes_loadable_skill(tmp_path, monkeypatch):
         pass
     r = asyncio.run(SkillScaffold().invoke({
         "name": "Weekly Report!!",            # 含非法字符 → 应被规整
-        "description": "按固定结构出周报",
+        "description": "Generate weekly reports with a fixed structure",
         "trigger": "周报 汇报",
         "steps": "1. 拉本周完成项\n2. 列下周计划\n3. 风险与求助",
     }, Ctx()))

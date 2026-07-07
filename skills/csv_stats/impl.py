@@ -11,9 +11,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "CSV 文件路径(与 csv_text 二选一)"},
-        "csv_text": {"type": "string", "description": "直接传入的 CSV 文本"},
-        "delimiter": {"type": "string", "description": "分隔符,默认 ,"},
+        "path": {"type": "string", "description": "CSV file path; use either path or csv_text"},
+        "csv_text": {"type": "string", "description": "Inline CSV text"},
+        "delimiter": {"type": "string", "description": "Delimiter; defaults to comma"},
     },
 }
 

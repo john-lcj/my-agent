@@ -91,10 +91,18 @@ def _build_ext_llm(model_id: str):
     from config import Config
     prov = model_id[len("ext:"):]
     if prov == "xiaomi":
-        key = (_os.environ.get("VISION_API_KEY", "").strip()
-               or _os.environ.get("OPENAI_API_KEY", "").strip())
+        key = _os.environ.get("VISION_API_KEY", "").strip()
         base = _os.environ.get("VISION_BASE_URL", "").strip() or None
         mname = _os.environ.get("VISION_MODEL", "").strip()
+        if not key or not mname:
+            try:
+                from server.model_keys import ModelKeyStore
+                v = ModelKeyStore(path=_os.path.join(Config.LOG_DIR, "model_keys.json")).get_config("xiaomi_vision")
+                key = key or str(v.get("key", "")).strip()
+                base = base or (str(v.get("base_url", "")).strip() or None)
+                mname = mname or str(v.get("model", "")).strip()
+            except Exception:
+                pass
     else:
         try:
             from server.model_keys import ModelKeyStore

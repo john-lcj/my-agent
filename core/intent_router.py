@@ -267,10 +267,11 @@ def classify_intent(user_text: str, ctx=None) -> IntentFrame:
 
 
 def intent_prompt_block(frame: IntentFrame) -> str:
+    from core.uncertainty import uncertainty_prompt
     behavior = ROLE_BEHAVIORS.get(frame.role, ROLE_BEHAVIORS["advisor"])
     first_moves = "\n".join(f"  · {item}" for item in behavior.first_moves)
     avoid = "\n".join(f"  · {item}" for item in behavior.avoid)
-    return (
+    block = (
         "【本轮语境判断 · 内部使用,不要向用户复述】\n"
         f"- 角色:{frame.role}\n"
         f"- 角色名称:{behavior.label}\n"
@@ -295,3 +296,6 @@ def intent_prompt_block(frame: IntentFrame) -> str:
         f"{avoid}\n"
         "这只是内部姿态,不要在回复里说“我判断你需要我扮演...”。"
     )
+    if frame.needs_sources or frame.role in ("researcher", "advisor"):
+        block += "\n" + uncertainty_prompt()
+    return block

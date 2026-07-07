@@ -13,6 +13,9 @@ use std::{
     time::Duration,
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tauri::{
     CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
     WindowEvent, WindowUrl,
@@ -21,6 +24,7 @@ use tauri::{
 #[derive(Default)]
 struct BackendState {
     child: Mutex<Option<Child>>,
+    owns_backend: Mutex<bool>,
 }
 
 struct LaunchInfo {
@@ -32,6 +36,11 @@ struct LaunchInfo {
 
 impl Drop for BackendState {
     fn drop(&mut self) {
+        if let Ok(owns) = self.owns_backend.lock() {
+            if !*owns {
+                return;
+            }
+        }
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
                 let _ = child.kill();
@@ -71,6 +80,35 @@ fn macos_resource_app_roots() -> Vec<PathBuf> {
             let resources = contents_dir.join("Resources");
             roots.push(resources.join("app"));
             roots.push(resources.join("resources").join("app"));
+        }
+    }
+    roots
+}
+
+fn windows_support_app_root() -> Option<PathBuf> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    if let Ok(raw) = env::var("CAPTAIN_WINDOWS_SUPPORT_DIR") {
+        return Some(PathBuf::from(raw).join("app"));
+    }
+    env::var_os("LOCALAPPDATA").map(|local| {
+        PathBuf::from(local)
+            .join("Captain")
+            .join("app")
+    })
+}
+
+fn windows_resource_app_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if !cfg!(target_os = "windows") {
+        return roots;
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            roots.push(exe_dir.join("resources").join("app"));
+            roots.push(exe_dir.join("_up_").join("resources").join("app"));
+            roots.push(exe_dir.join("app"));
         }
     }
     roots
@@ -235,6 +273,48 @@ fn macos_keychain_set(account: &str, value: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn default_workspace_fallback(root: &Path) -> String {
+    if cfg!(windows) {
+        env::var("USERPROFILE").unwrap_or_else(|_| root.display().to_string())
+    } else {
+        env::var("HOME").unwrap_or_else(|_| root.display().to_string())
+    }
+}
+
+fn platform_secret_lines() -> io::Result<String> {
+    if cfg!(target_os = "macos") {
+        let auth_secret = ensure_macos_keychain_secret("env:AUTH_SECRET", 32);
+        let api_token = ensure_macos_keychain_secret("env:AGENT_API_TOKEN", 32);
+        if auth_secret.is_some() && api_token.is_some() {
+            return Ok(
+                "CAPTAIN_USE_KEYCHAIN=1\n# AUTH_SECRET and AGENT_API_TOKEN are stored in macOS Keychain.\n"
+                    .to_string(),
+            );
+        }
+        return Ok(format!(
+            "AUTH_SECRET={auth_secret}\nAGENT_API_TOKEN={api_token}\n",
+            auth_secret = auth_secret.unwrap_or(random_hex(32)?),
+            api_token = api_token.unwrap_or(random_hex(32)?),
+        ));
+    }
+
+    Ok(format!(
+        "AUTH_SECRET={auth_secret}\nAGENT_API_TOKEN={api_token}\n",
+        auth_secret = random_hex(32)?,
+        api_token = random_hex(32)?,
+    ))
+}
+
+fn platform_env_header() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "# Captain macOS local config\n"
+    } else if cfg!(target_os = "windows") {
+        "# Captain Windows local config\n"
+    } else {
+        "# Captain local config\n"
+    }
+}
+
 fn ensure_macos_keychain_secret(account: &str, bytes: usize) -> Option<String> {
     if let Some(value) = macos_keychain_get(account) {
         return Some(value);
@@ -249,23 +329,13 @@ fn ensure_macos_keychain_secret(account: &str, bytes: usize) -> Option<String> {
 
 fn ensure_default_env(root: &Path) -> io::Result<()> {
     let env_path = root.join(".env");
-    let auth_secret = ensure_macos_keychain_secret("env:AUTH_SECRET", 32);
-    let api_token = ensure_macos_keychain_secret("env:AGENT_API_TOKEN", 32);
     if env_path.exists() {
         return Ok(());
     }
-    let workspace = env::var("HOME").unwrap_or_else(|_| root.display().to_string());
-    let secret_lines = if auth_secret.is_some() && api_token.is_some() {
-        "CAPTAIN_USE_KEYCHAIN=1\n# AUTH_SECRET and AGENT_API_TOKEN are stored in macOS Keychain.\n".to_string()
-    } else {
-        format!(
-            "AUTH_SECRET={auth_secret}\nAGENT_API_TOKEN={api_token}\n",
-            auth_secret = auth_secret.unwrap_or(random_hex(32)?),
-            api_token = api_token.unwrap_or(random_hex(32)?),
-        )
-    };
+    let workspace = default_workspace_fallback(root);
+    let secret_lines = platform_secret_lines()?;
     let content = format!(
-        "# Captain macOS local config\n\
+        "{header}\
 AGENT_PROVIDER=deepseek\n\
 AGENT_MODEL=deepseek-v4-flash\n\
 AGENT_WEB_PORT=8000\n\
@@ -275,6 +345,7 @@ CAPTAIN_LICENSE_KEY=\n\
 \n\
 # Fill your model key before using real models.\n\
 DEEPSEEK_API_KEY=\n",
+        header = platform_env_header(),
         workspace = workspace,
         secret_lines = secret_lines,
     );
@@ -288,15 +359,15 @@ DEEPSEEK_API_KEY=\n",
     Ok(())
 }
 
-fn ensure_macos_support_from_bundle() -> io::Result<Option<PathBuf>> {
-    if !cfg!(target_os = "macos") {
-        return Ok(None);
-    }
-    let Some(support_root) = macos_support_app_root() else {
+fn ensure_support_from_bundle(
+    support_root: Option<PathBuf>,
+    resource_roots: Vec<PathBuf>,
+) -> io::Result<Option<PathBuf>> {
+    let Some(support_root) = support_root else {
         return Ok(None);
     };
 
-    for resource_root in macos_resource_app_roots() {
+    for resource_root in resource_roots {
         if has_server(&resource_root) {
             if support_needs_bundle_refresh(&support_root, &resource_root) {
                 if let Some(parent) = support_root.parent() {
@@ -322,6 +393,20 @@ fn ensure_macos_support_from_bundle() -> io::Result<Option<PathBuf>> {
     }
 
     Ok(None)
+}
+
+fn ensure_macos_support_from_bundle() -> io::Result<Option<PathBuf>> {
+    if !cfg!(target_os = "macos") {
+        return Ok(None);
+    }
+    ensure_support_from_bundle(macos_support_app_root(), macos_resource_app_roots())
+}
+
+fn ensure_windows_support_from_bundle() -> io::Result<Option<PathBuf>> {
+    if !cfg!(target_os = "windows") {
+        return Ok(None);
+    }
+    ensure_support_from_bundle(windows_support_app_root(), windows_resource_app_roots())
 }
 
 fn dev_project_roots() -> Vec<PathBuf> {
@@ -356,6 +441,12 @@ fn packaged_project_roots() -> Vec<PathBuf> {
         }
         candidates.extend(macos_resource_app_roots());
     }
+    if cfg!(target_os = "windows") {
+        if let Some(root) = windows_support_app_root() {
+            candidates.push(root);
+        }
+        candidates.extend(windows_resource_app_roots());
+    }
     candidates
 }
 
@@ -375,6 +466,12 @@ fn project_root() -> Result<PathBuf, io::Error> {
         }
     }
 
+    if let Some(root) = ensure_windows_support_from_bundle()? {
+        if has_server(&root) {
+            return Ok(root);
+        }
+    }
+
     for candidate in dev_project_roots().into_iter().chain(packaged_project_roots()) {
         if has_server(&candidate) {
             ensure_default_env(&candidate)?;
@@ -384,7 +481,7 @@ fn project_root() -> Result<PathBuf, io::Error> {
 
     Err(io::Error::new(
         io::ErrorKind::NotFound,
-        "找不到 Captain 后端目录。请重新安装 Captain.app, 或设置 CAPTAIN_PROJECT_ROOT。",
+        "找不到 Captain 后端目录。请重新安装 Captain, 或设置 CAPTAIN_PROJECT_ROOT。",
     ))
 }
 
@@ -416,6 +513,83 @@ fn resolve_python(root: &Path) -> PathBuf {
 
 fn port_available(port: u16) -> bool {
     TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn gui_lock_path(root: &Path) -> PathBuf {
+    support_log_dir(root).join(".captain.gui.lock")
+}
+
+/// 已有 Captain 窗口在跑则激活它并返回 false(当前进程应退出)。
+fn ensure_single_gui_instance(root: &Path) -> bool {
+    let lock = gui_lock_path(root);
+    if lock.exists() {
+        if let Ok(content) = fs::read_to_string(&lock) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                if pid != std::process::id() && process_alive(pid) {
+                    let _ = Command::new("open").arg("-a").arg("Captain").spawn();
+                    return false;
+                }
+            }
+        }
+    }
+    let _ = fs::write(&lock, std::process::id().to_string());
+    true
+}
+
+fn release_gui_lock(root: &Path) {
+    let lock = gui_lock_path(root);
+    if lock.exists() {
+        if let Ok(content) = fs::read_to_string(&lock) {
+            if content.trim() == std::process::id().to_string() {
+                let _ = fs::remove_file(&lock);
+            }
+        }
+    }
+}
+
+fn diagnostics_project_root(port: u16) -> Option<String> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .ok()?;
+    let req = "GET /api/system/diagnostics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    stream.write_all(req.as_bytes()).ok()?;
+    let mut body = String::new();
+    stream.read_to_string(&mut body).ok()?;
+    let json = body.split("\r\n\r\n").nth(1).unwrap_or(&body);
+    let needle = "\"project_root\":\"";
+    let start = json.find(needle)? + needle.len();
+    let rest = &json[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn find_existing_backend(root: &Path) -> Option<u16> {
+    let root_str = root.to_string_lossy();
+    for port in 8000u16..=8099 {
+        if let Some(pr) = diagnostics_project_root(port) {
+            if pr == root_str {
+                return Some(port);
+            }
+        }
+    }
+    None
+}
+
+fn kill_stale_backends(root: &Path) {
+    let python = resolve_python(root);
+    let marker = format!("{} -m server.app", python.to_string_lossy());
+    let _ = Command::new("pkill").arg("-f").arg(&marker).status();
+    thread::sleep(Duration::from_millis(300));
 }
 
 fn pick_port() -> (u16, u16, bool) {
@@ -557,12 +731,21 @@ fn spawn_backend(root: &Path, port: u16) -> Result<Child, io::Error> {
         .env("AGENT_PROJECT_ROOT", root.as_os_str())
         .env("CAPTAIN_PROJECT_ROOT", root.as_os_str())
         .env("CAPTAIN_DESKTOP", "1")
-        .env("CAPTAIN_USE_KEYCHAIN", "1")
         .env("AGENT_WEB_HOST", "127.0.0.1")
         .env("AGENT_WEB_PORT", port.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+
+    if cfg!(target_os = "macos") {
+        command.env("CAPTAIN_USE_KEYCHAIN", "1");
+    }
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 
     command.spawn().map_err(|err| {
         io::Error::new(
@@ -572,13 +755,40 @@ fn spawn_backend(root: &Path, port: u16) -> Result<Child, io::Error> {
     })
 }
 
-fn stop_backend(state: tauri::State<'_, BackendState>) {
+fn stop_backend(state: tauri::State<'_, BackendState>, root: &Path) {
+    if let Ok(owns) = state.owns_backend.lock() {
+        if !*owns {
+            release_gui_lock(root);
+            return;
+        }
+    }
     if let Ok(mut guard) = state.child.lock() {
         if let Some(mut child) = guard.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
     }
+    release_gui_lock(root);
+}
+
+fn set_backend_state(app: &tauri::App, child: Option<Child>, owns: bool) -> Result<(), io::Error> {
+    {
+        let state = app.state::<BackendState>();
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "后端状态锁异常"))?;
+        *guard = child;
+    }
+    {
+        let state = app.state::<BackendState>();
+        let mut owns_guard = state
+            .owns_backend
+            .lock()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "后端状态锁异常"))?;
+        *owns_guard = owns;
+    }
+    Ok(())
 }
 
 async fn run_updater_check(app: tauri::AppHandle) {
@@ -611,16 +821,27 @@ fn main() {
         .manage(BackendState::default())
         .setup(|app| {
             let root = project_root()?;
-            let (port, preferred_port, port_switched) = pick_port();
-            let child = spawn_backend(&root, port)?;
-            {
-                let state = app.state::<BackendState>();
-                let mut guard = state
-                    .child
-                    .lock()
-                    .map_err(|_| io::Error::new(io::ErrorKind::Other, "后端状态锁异常"))?;
-                *guard = Some(child);
+            if !ensure_single_gui_instance(&root) {
+                std::process::exit(0);
             }
+
+            let preferred = env::var("AGENT_WEB_PORT")
+                .ok()
+                .and_then(|raw| raw.parse::<u16>().ok())
+                .unwrap_or(8000);
+
+            let (port, preferred_port, port_switched, spawned_child) =
+                if let Some(existing) = find_existing_backend(&root) {
+                    (existing, preferred, existing != preferred, None)
+                } else {
+                    kill_stale_backends(&root);
+                    let (port, preferred_port, port_switched) = pick_port();
+                    let child = spawn_backend(&root, port)?;
+                    (port, preferred_port, port_switched, Some(child))
+                };
+
+            let owns_backend = spawned_child.is_some();
+            set_backend_state(app, spawned_child, owns_backend)?;
 
             let launch = LaunchInfo {
                 port,
@@ -679,8 +900,10 @@ fn main() {
                         });
                     }
                     "quit" => {
-                        if let Some(state) = app.try_state::<BackendState>() {
-                            stop_backend(state);
+                        if let Some(info) = app.try_state::<LaunchInfo>() {
+                            if let Some(state) = app.try_state::<BackendState>() {
+                                stop_backend(state, &info.root);
+                            }
                         }
                         app.exit(0);
                     }

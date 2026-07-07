@@ -8,9 +8,9 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "PDF 文件路径"},
-        "pages": {"type": "string", "description": "页码范围,如 1-5 或 3;留空读全部"},
-        "max_chars": {"type": "number", "description": "最多返回字符数,默认 8000"},
+        "path": {"type": "string", "description": "PDF File path"},
+        "pages": {"type": "string", "description": "Page range such as 1-5 or 3; empty means all pages"},
+        "max_chars": {"type": "number", "description": "Maximum characters to return; defaults to 8000"},
     },
     "required": ["path"],
 }

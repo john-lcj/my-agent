@@ -10,10 +10,10 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "path": {"type": "string", "description": "输出 .xlsx 路径"},
-        "rows": {"type": "array", "description": "二维数组,每行一个数组(与 csv_text 二选一)"},
-        "csv_text": {"type": "string", "description": "CSV 文本(与 rows 二选一)"},
-        "sheet": {"type": "string", "description": "工作表名,默认 Sheet1"},
+        "path": {"type": "string", "description": "Output .xlsx path"},
+        "rows": {"type": "array", "description": "Two-dimensional rows array; use either rows or csv_text"},
+        "csv_text": {"type": "string", "description": "CSV text; use either csv_text or rows"},
+        "sheet": {"type": "string", "description": "Worksheet name; defaults to Sheet1"},
     },
     "required": ["path"],
 }

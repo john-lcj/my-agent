@@ -7,7 +7,7 @@ from typing import Any
 from llm.model_registry import MODELS
 
 
-def list_slash_commands(roster_dir: str, skills_dirs: str | list[str] = "skills") -> list[dict[str, Any]]:
+def list_slash_commands(skills_dirs: str | list[str] = "skills") -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
     items.extend([

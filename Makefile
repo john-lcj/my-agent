@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 PY := .venv/bin/python
 
-.PHONY: help setup config update web cli test cov eval compare browser docker-build docker-up docker-down docker-logs clean
+.PHONY: help setup config update web cli test cov eval compare browser docker-build docker-up docker-down docker-logs clean sync sync-restart
 
 help:  ## 显示本帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -57,6 +57,18 @@ docker-down:  ## 停止并移除容器
 
 docker-logs:  ## 查看容器日志
 	docker compose logs -f
+
+sync:  ## 同步代码到 App Support + 桌面 bundle(不重启)
+	bash scripts/sync-all.sh
+
+sync-restart:  ## 同步并重启 App Support 后端(网页/Captain.app)
+	bash scripts/sync-all.sh --restart
+
+acceptance:  ## 自验收:pytest + eval 冒烟 + 更新 acceptance 报告
+	$(PY) scripts/self_acceptance.py
+
+destructive:  ## 破坏性自测(基线篡改 exit1 / 断点续跑)
+	$(PY) -m pytest -q tests/test_destructive_acceptance.py
 
 clean:  ## 清理缓存与构建产物
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} + 2>/dev/null || true

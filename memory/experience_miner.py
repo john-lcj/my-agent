@@ -103,10 +103,13 @@ def _format_dialogue(messages: list, turns: int = _DIALOGUE_TURNS) -> str:
 def format_experience_block(memory: Any, query: str, k: int = 3) -> str:
     """检索与当前任务相关的经验,拼成开场注入块;无则空串。"""
     try:
-        items = memory.retrieve(query, k=8)
+        items = memory.retrieve(query, k=12)
     except Exception:
         return ""
-    exps = [it.content for it in items if getattr(it, "kind", "") == "experience"][:k]
-    if not exps:
+    exps = [it.content for it in items if getattr(it, "kind", "") == "experience"]
+    eval_first = [e for e in exps if e.startswith("[eval_failure]") or "[eval失败]" in e]
+    other = [e for e in exps if e not in eval_first]
+    ordered = (eval_first + other)[:k]
+    if not ordered:
         return ""
-    return "[过往经验 · 供你借鉴,复用有效做法、避开踩过的坑]\n" + "\n".join(f"- {e}" for e in exps)
+    return "[过往经验 · 供你借鉴,复用有效做法、避开踩过的坑]\n" + "\n".join(f"- {e}" for e in ordered)

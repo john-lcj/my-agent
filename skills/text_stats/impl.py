@@ -7,7 +7,7 @@ from core.types import CapabilityResult
 
 SCHEMA = {
     "type": "object",
-    "properties": {"text": {"type": "string", "description": "要统计的文本"}},
+    "properties": {"text": {"type": "string", "description": "Text to count"}},
     "required": ["text"],
 }
 

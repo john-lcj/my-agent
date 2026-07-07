@@ -48,3 +48,36 @@ def test_artifacts_list_and_search():
     finally:
         os.environ.pop("AGENT_WORKSPACE_ROOT", None)
         os.environ.pop("AGENT_API_TOKEN", None)
+
+
+def test_save_artifact_writes_file_and_appears_in_list():
+    """写作助手「保存到产物」按钮对应的后端接口:POST /api/artifacts。"""
+    try:
+        from fastapi.testclient import TestClient
+    except Exception:
+        return
+    d = tempfile.mkdtemp()
+    os.environ["AGENT_WORKSPACE_ROOT"] = d
+    os.environ["AGENT_API_TOKEN"] = "t"
+    try:
+        import server.app as app
+        c = TestClient(app.app)
+        h = {"X-Agent-Token": "t"}
+        r = c.post("/api/artifacts", json={"filename": "写作结果.md", "content": "# hello"}, headers=h)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True
+        saved = os.path.join(d, "产物", "写作结果.md")
+        assert os.path.isfile(saved)
+        assert open(saved, encoding="utf-8").read() == "# hello"
+        # 路径穿越前缀应被 basename() 剥离,只落在产物目录内
+        r2 = c.post("/api/artifacts", json={"filename": "../../evil.md", "content": "x"}, headers=h)
+        assert r2.json()["ok"] is True
+        assert not os.path.isfile(os.path.join(os.path.dirname(d), "evil.md"))
+        assert os.path.isfile(os.path.join(d, "产物", "evil.md"))
+        # 缺文件名应报错
+        r3 = c.post("/api/artifacts", json={"content": "x"}, headers=h)
+        assert r3.status_code == 400
+    finally:
+        os.environ.pop("AGENT_WORKSPACE_ROOT", None)
+        os.environ.pop("AGENT_API_TOKEN", None)

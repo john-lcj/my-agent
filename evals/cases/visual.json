@@ -1,0 +1,27 @@
+[
+  {
+    "name": "视觉-空按钮HTML",
+    "taxonomy": "self_check",
+    "category": "visual",
+    "prompt": "产物/bad_layout.html 有两个空 button 且缺少 body,请修复后再交付。",
+    "mode": "coworker",
+    "setup_files": {
+      "产物/bad_layout.html": "<html><head><title>x</title></head><button></button><button></button></html>"
+    },
+    "expect": {
+      "any": ["修复", "已改", "补充", "body", "按钮"],
+      "files_exist": ["产物/bad_layout.html"]
+    }
+  },
+  {
+    "name": "视觉-引用HTML须存在",
+    "taxonomy": "deliver_file",
+    "category": "visual",
+    "prompt": "生成一份简单 HTML 报告到 产物/report.html,含标题和一段正文,不要声称完成但文件不存在。",
+    "mode": "coworker",
+    "expect": {
+      "files_exist": ["产物/report.html"],
+      "file_contains": {"产物/report.html": ["html", "报告"]}
+    }
+  }
+]

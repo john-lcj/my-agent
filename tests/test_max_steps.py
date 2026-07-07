@@ -54,3 +54,29 @@ def test_budget_unlimited_conversion():
     for _ in range(500):
         b.charge_step()
     assert not b.exceeded()
+
+
+def test_mission_scheduler_agent_uses_runtime_max_steps():
+    """Mission/定时任务 agent 与 Chat 共用 runtime max_steps。"""
+    try:
+        from fastapi.testclient import TestClient
+    except Exception:
+        return
+    d = tempfile.mkdtemp()
+    os.environ["AGENT_LOG_DIR"] = d
+    try:
+        import importlib
+        import server.app as app_mod
+        importlib.reload(app_mod)
+        from core.types import Identity
+
+        app_mod._runtime_cfg.save({"max_steps": 50})
+        actor = Identity(subject_id="mission", agent_name="main", channel="mission")
+        agent, _ctx = app_mod._build_scheduler_agent(actor)
+        assert agent.budget.max_steps == 50
+
+        app_mod._runtime_cfg.save({"max_steps": 0})
+        agent2, _ = app_mod._build_scheduler_agent(actor)
+        assert agent2.budget.max_steps == 1_000_000
+    finally:
+        os.environ.pop("AGENT_LOG_DIR", None)

@@ -37,8 +37,9 @@ def test_test_connection_rejects_missing_imap_host():
 def test_allowlist_defaults_to_self():
     # 隔离 env:其它测试 import server.app 触发 load_dotenv 会灌入真实 EMAIL_ALLOWED_SENDERS
     os.environ.pop("EMAIL_ALLOWED_SENDERS", None)
+    os.environ.pop("EMAIL_ALLOWED_RECIPIENTS", None)
     ch = EmailChannel(user="me@qq.com", password="x")
-    assert ch.allowed == {"me@qq.com"}
+    assert ch.allowed_senders() == {"me@qq.com"}
 
 
 def test_allowlist_from_env_includes_self():
@@ -46,7 +47,7 @@ def test_allowlist_from_env_includes_self():
     os.environ["EMAIL_ALLOWED_SENDERS"] = "A@x.com, b@Y.com"
     try:
         ch = EmailChannel(user="me@qq.com", password="x")
-        assert ch.allowed == {"a@x.com", "b@y.com", "me@qq.com"}
+        assert ch.allowed_senders() == {"a@x.com", "b@y.com", "me@qq.com"}
     finally:
         del os.environ["EMAIL_ALLOWED_SENDERS"]
 
@@ -55,4 +56,4 @@ def test_allowlist_empty_when_no_user():
     os.environ.pop("EMAIL_ALLOWED_SENDERS", None)
     os.environ.pop("EMAIL_USER", None)
     ch = EmailChannel(user="", password="")
-    assert ch.allowed == set()
+    assert ch.allowed_senders() == set()

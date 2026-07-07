@@ -24,3 +24,14 @@ def register_templates(app, template_store) -> None:
     @app.delete("/api/templates/{tid}")
     async def delete_template(tid: str) -> JSONResponse:
         return JSONResponse({"ok": template_store.delete(tid)})
+
+    @app.get("/api/workflow-templates")
+    async def list_workflow_templates() -> JSONResponse:
+        from core.workflow_templates import WORKFLOW_TEMPLATES, prompt_with_verifications
+        rows = [{
+            "slug": t["slug"],
+            "name": t["name"],
+            "prompt": prompt_with_verifications(t),
+            "verifications": t.get("verifications") or [],
+        } for t in WORKFLOW_TEMPLATES]
+        return JSONResponse({"templates": rows})

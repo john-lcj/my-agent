@@ -107,27 +107,67 @@ def _mission_notify(mission: dict, reason: str) -> None:
     import asyncio
     goal = mission.get("goal", "")
     mid = mission.get("id", "")
-    subject = f"[Mission 卡住] {goal[:40]}"
+    subject = f"[Captain Mission #{mid[:8]}] 任务卡住"
     body = (f"任务「{goal}」卡住了,需要你:\n\n{reason}\n\n"
-            f"补充后在 Captain 的「任务」面板点该任务的「补充并恢复」继续(mission id: {mid})。")
+            f"回复此邮件或在 Captain「任务」面板补充并恢复 (mission id: {mid})。")
     try:
         asyncio.create_task(_deliver_result("email", "", subject, body))
     except Exception:
         pass
 
 
+async def _run_mission_and_deliver(mid: str) -> dict:
+    """跑 mission 并在完成时邮件汇报（监控 urgent 等主动任务）。"""
+    from core.mission_runner import run_mission, _goal_overlap
+    m = await run_mission(_mission_store, mid, _mission_execute, notify=_mission_notify)
+    if m.get("status") == "completed":
+        goal = (m.get("goal") or "")[:60]
+        parts = []
+        for t in m.get("tasks") or []:
+            if t.get("result"):
+                parts.append(f"· {t.get('text', '')[:40]}: {(t.get('result') or '')[:300]}")
+        body = f"Mission 已完成：{goal}\n\n" + ("\n".join(parts) if parts else "(见产物目录)")
+        any_relevant = any(_goal_overlap(m.get("goal", ""), t.get("result") or "")
+                           for t in (m.get("tasks") or []))
+        if not any_relevant and parts:
+            body = (
+                f"Mission 标记完成,但结果可能未对齐目标「{goal}」。\n\n"
+                + body
+                + "\n\n请在 Captain 任务面板查看,或回复邮件说明要如何修正。"
+            )
+        try:
+            await _deliver_result("email", "", f"Captain · 任务完成 #{mid[:8]}", body)
+        except Exception as e:
+            print(f"[mission] 完成投递失败: {e}")
+    return m
+
+
 def _start_mission(mid: str) -> None:
     import asyncio
-    from core.mission_runner import run_mission
-    asyncio.create_task(run_mission(_mission_store, mid, _mission_execute,
-                                    notify=_mission_notify))
+    asyncio.create_task(_run_mission_and_deliver(mid))
+
+
+async def _resume_mission_and_deliver(mid: str, info: str = "") -> dict:
+    """邮件/面板恢复 BLOCKED mission 并继续跑到完成投递。"""
+    from core.mission_runner import resume_mission
+    m = await resume_mission(_mission_store, mid, _mission_execute, info=info, notify=_mission_notify)
+    if m.get("status") == "completed":
+        goal = (m.get("goal") or "")[:60]
+        parts = []
+        for t in m.get("tasks") or []:
+            if t.get("result"):
+                parts.append(f"· {t.get('text', '')[:40]}: {(t.get('result') or '')[:300]}")
+        body = f"Mission 已完成：{goal}\n\n" + ("\n".join(parts) if parts else "(见产物目录)")
+        try:
+            await _deliver_result("email", "", f"Captain · 任务完成 #{mid[:8]}", body)
+        except Exception as e:
+            print(f"[mission] 完成投递失败: {e}")
+    return m
 
 
 def _resume_mission(mid: str, info: str = "") -> None:
     import asyncio
-    from core.mission_runner import resume_mission
-    asyncio.create_task(resume_mission(_mission_store, mid, _mission_execute,
-                                       info=info, notify=_mission_notify))
+    asyncio.create_task(_resume_mission_and_deliver(mid, info))
 
 
 try:
@@ -141,7 +181,6 @@ if not os.environ.get("VISION_MODEL", "").strip():
     _vm = (_runtime_cfg.load().get("vision_model") or "").strip()
     if _vm:
         os.environ["VISION_MODEL"] = _vm
-_ROSTER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents", "roster")
 _channel_cfg = ChannelConfigStore(path=f"{Config.LOG_DIR}/channels.json")
 _model_keys = ModelKeyStore(path=f"{Config.LOG_DIR}/model_keys.json")
 _task_store = TaskStore(db_path=f"{Config.LOG_DIR}/tasks.db")
@@ -153,6 +192,7 @@ _scheduler_holder: list = [None]   # [Scheduler|None]，lifespan 启动后填充
 _ext_channels: dict[str, object] = {}
 _ext_coordinators: dict[str, object] = {}
 _ext_templates: dict[str, object] = {}
+_ext_channel_tasks: dict[str, asyncio.Task] = {}
 
 
 def _resolve_in_workspace(path: str) -> tuple:
@@ -252,6 +292,9 @@ def _build_scheduler_agent(actor: Identity, model: str | None = None):
         persona=_persona,
         with_rollback=False,
         model=model or None,
+        max_steps=_runtime_cfg.get_max_steps(),
+        max_cost_usd=_runtime_cfg.get_max_cost_usd(),
+        governance_mode=_runtime_cfg.get_governance_mode(),
     )
     return bundle.agent, bundle.ctx
 
@@ -264,6 +307,13 @@ async def _deliver_result(channel: str, to: str, subject: str, body: str) -> Non
     if channel == "email":
         target = to or ch.user
         await ch._send_email(target, subject, body, attachments=_extract_artifacts(body))
+    elif channel == "wecom":
+        target = (to or "").strip()
+        if not target:
+            print("[scheduler] 企微投递缺少 UserId")
+            return
+        text = f"{subject}\n\n{body}".strip() if subject else body
+        await ch.send_text(target, text)
 
 
 def _extract_artifacts(text: str) -> list:
@@ -290,16 +340,82 @@ def _enable_channel(name: str) -> bool:
     return False
 
 
+async def _drain_channel_inbox(old_ch) -> list:
+    """渠道替换时把未处理邮件迁到新实例,避免 restart 丢信。"""
+    pending: list = []
+    if old_ch is None:
+        return pending
+    inbox = getattr(old_ch, "_inbox", None)
+    if inbox is None:
+        return pending
+    while True:
+        try:
+            item = inbox.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if item is not None:
+            pending.append(item)
+    return pending
+
+
 async def _enable_channel_async(name: str) -> bool:
     if name == "email" and os.environ.get("EMAIL_USER"):
         from channels.email_channel import EmailChannel
+        old_task = _ext_channel_tasks.pop(name, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+            try:
+                await old_task
+            except asyncio.CancelledError:
+                pass
+        old_ch = _ext_channels.pop(name, None)
+        pending = await _drain_channel_inbox(old_ch)
+        if old_ch is not None and hasattr(old_ch, "stop_polling"):
+            await old_ch.stop_polling()
         ch = EmailChannel()
+        for item in pending:
+            try:
+                ch._inbox.put_nowait(item)
+            except Exception:
+                pass
+        if pending:
+            print(f"[email] 迁移未处理邮件 {len(pending)} 封到新渠道")
         coordinator, bundle = _build_ext_stack(ch)
         _ext_channels["email"] = ch
         _ext_coordinators["email"] = coordinator
         _ext_templates["email"] = bundle.ctx
+        _ext_channel_tasks[name] = asyncio.create_task(
+            _run_ext_channel(name, ch, coordinator, bundle.ctx),
+        )
+        await asyncio.sleep(0)
         await ch.start_polling()
-        asyncio.create_task(_run_ext_channel("email"))
+        return True
+    if name == "wecom" and os.environ.get("WECOM_CORP_ID") and _channel_cfg.is_configured("wecom"):
+        from channels.wecom_channel import WeComChannel
+        old_task = _ext_channel_tasks.pop(name, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+            try:
+                await old_task
+            except asyncio.CancelledError:
+                pass
+        old_ch = _ext_channels.pop(name, None)
+        pending = await _drain_channel_inbox(old_ch)
+        ch = WeComChannel()
+        for item in pending:
+            try:
+                ch._inbox.put_nowait(item)
+            except Exception:
+                pass
+        coordinator, bundle = _build_ext_stack(ch)
+        _ext_channels["wecom"] = ch
+        _ext_coordinators["wecom"] = coordinator
+        _ext_templates["wecom"] = bundle.ctx
+        _ext_channel_tasks[name] = asyncio.create_task(
+            _run_ext_channel(name, ch, coordinator, bundle.ctx),
+        )
+        await asyncio.sleep(0)
+        print("[wecom] 消息处理循环已注册(等待回调推送)")
         return True
     return _enable_channel(name)
 
@@ -340,16 +456,7 @@ _PATROL_PROMPT = """你是主人的主动助手,现在在后台自省一次(无�
 - 没有值得打扰主人的事:**只回复一个字「无」**,不要硬编。
 现在开始。"""
 
-_DIGEST_PROMPT = """你是主人的主动助手,现在做每日主动规划。结合其长期目标与近况:
-
-{context}
-
-请主动思考并用 suggest.add 发出建议(每条:text=给主人看的一句话,action=接受后要执行的指令,kind 见下):
-1) plan:基于长期目标,提出"今天最值得做的 1~2 件事",并问主人要不要做;
-2) resume:对【未尽事项】里每个还没做完的,**自己想一个新思路/新切入点**,发成"这个我有个新思路 X,要不要试试"(action 写按新思路续做的指令);
-3) skill:如果发现某类任务反复出现,建议"固化成一个 skill 复用"(action 写用 skill.scaffold 固化的指令);
-4) retro:如最近完成过任务,给一条简短复盘(做得怎样、下次怎么更好),并用 memory.remember 把经验记进深度记忆。
-发完建议后,再写一段 200 字内的简报正文(今天的重点 + 你发了哪些建议),作为最终回复(会邮件给主人)。"""
+_DIGEST_PROMPT = """(已废弃 —— 简报统一走 scheduler daily_briefing,见 core/briefing.py)"""
 
 
 def _proactive_context() -> str:
@@ -413,20 +520,7 @@ async def _proactive_patrol() -> None:
             print(f"[proactive] 巡检异常: {e}")
 
 
-async def _proactive_digest() -> None:
-    at = (os.environ.get("AGENT_DIGEST_AT", "").strip()
-          or os.environ.get("AGENT_BRIEFING_AT", "08:00"))
-    last_day = ""
-    while True:
-        await asyncio.sleep(40)
-        now = time.localtime()
-        if time.strftime("%H:%M", now) == at and time.strftime("%Y-%m-%d", now) != last_day:
-            last_day = time.strftime("%Y-%m-%d", now)
-            try:
-                _daemon_enqueue(_DIGEST_PROMPT.format(context=_proactive_context()),
-                                source="digest", mode="coworker")
-            except Exception as e:
-                print(f"[proactive] 简报异常: {e}")
+# _proactive_digest 已移除 —— 简报仅经 scheduler ensure_briefing_task 触发
 
 
 # ── 鉴权辅助(模块级,供 create_app 中间件 + register_ws 使用)──────────────────
@@ -471,9 +565,9 @@ def create_app():
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        for name in ("email",):
+        for name in ("email", "wecom"):
             try:
-                ok = await _enable_channel_async(name) if name == "email" else _enable_channel(name)
+                ok = await _enable_channel_async(name)
                 if ok:
                     print(f"[server] {name} 渠道已启动")
             except Exception as e:
@@ -484,13 +578,27 @@ def create_app():
         print(f"[server] 定时任务调度器已启动({len(_task_store.list())} 个任务)")
 
         from core.briefing import ensure_briefing_task
-        if ensure_briefing_task(
+        if _runtime_cfg.get_briefing_enabled() and ensure_briefing_task(
             _task_store,
-            at_hhmm=Config.BRIEFING_AT,
+            at_hhmm=_runtime_cfg.get_briefing_at(),
             channel=Config.BRIEFING_CHANNEL,
             to=Config.BRIEFING_TO,
         ):
             print(f"[server] 已注册每日简报任务({Config.BRIEFING_AT} → {Config.BRIEFING_CHANNEL})")
+
+        try:
+            from core.workflow_templates import seed_workflow_templates
+            wf_n = seed_workflow_templates(_template_store)
+            if wf_n:
+                print(f"[server] 已注册 {wf_n} 个工作流模板")
+        except Exception as e:
+            print(f"[server] 工作流模板注册跳过: {e}")
+
+        for m in _mission_store.list(status="executing"):
+            mid = str(m.get("id") or "")
+            if mid:
+                print(f"[server] 恢复 executing mission #{mid[:8]}")
+                asyncio.create_task(_run_mission_and_deliver(mid))
 
         if Config.PERSONAL_DIRS and not any(
             t.task_type == "memory_ingest" for t in _task_store.list()
@@ -515,10 +623,20 @@ def create_app():
         if os.environ.get("AGENT_MONITOR_WATCH", "1") != "0":
             asyncio.create_task(_daemon_monitor_watch())
         print("[server] 后台任务守护已启动(收件箱监听 + 主动监控 + HTTP /api/task)")
-        if os.environ.get("AGENT_PROACTIVE", "0") != "0":
+        if os.environ.get("AGENT_PROACTIVE", "0") != "0" or _runtime_cfg.get_proactive():
             asyncio.create_task(_proactive_patrol())
-            asyncio.create_task(_proactive_digest())
-            print("[server] 主动反思引擎已启动(按小时巡检 + 每日主动简报 → 邮箱)")
+            print("[server] 主动巡逻已启动(设置或 AGENT_PROACTIVE=1 → 按小时巡检)")
+
+        if not any(getattr(t, "task_type", "") == "rating_weekly" for t in _task_store.list()):
+            _task_store.create(
+                name="任务自评周汇总",
+                prompt="(内置)汇总近7天任务自评",
+                schedule_type="every",
+                interval_sec=7 * 86400,
+                deliver="none",
+                task_type="rating_weekly",
+            )
+        print("[server] 每日简报经 scheduler 注册(默认开启,见 每日简报 定时任务)")
 
         yield
         if _scheduler_holder[0] is not None:
@@ -550,6 +668,8 @@ def create_app():
 
     @app.middleware("http")
     async def _host_guard(request: Request, call_next):
+        if request.url.path.startswith("/webhook/"):
+            return await call_next(request)
         host_header = request.headers.get("host", "").split(":")[0].lower()
         if _host_is_external(host_header):
             return JSONResponse(
@@ -608,6 +728,9 @@ def create_app():
     # ── 路由注册 ───────────────────────────────────────────────────────────────
     from server.routers.channels import register_channels, register_tasks
     register_channels(app, _channel_cfg, _ext_channels, _enable_channel, _enable_channel_async)
+
+    from server.routers.wecom_webhook import register_wecom_webhook
+    register_wecom_webhook(app, _ext_channels, _channel_cfg)
     register_tasks(app, _task_store, _scheduler_holder, _daemon_enqueue, _daemon_results)
 
     from server.routers.secrets_api import register_secrets
@@ -645,7 +768,10 @@ def create_app():
     register_artifacts(app, _resolve_in_workspace)
 
     from server.routers.misc import register_misc
-    register_misc(app, _ROSTER_DIR)
+    register_misc(app)
+
+    from server.routers.memory import register_memory
+    register_memory(app, _longterm)
 
     # ── 已有路由(此前已拆出,保持不变)────────────────────────────────────────
     from server.routers.templates import register_templates
@@ -697,7 +823,23 @@ def create_app():
     @app.get("/api/proactive/preview")
     async def proactive_preview() -> JSONResponse:
         return JSONResponse({"context": _proactive_context(),
-                             "enabled": os.environ.get("AGENT_PROACTIVE", "0") != "0"})
+                             "enabled": _runtime_cfg.get_proactive()})
+
+    @app.post("/api/task-rating")
+    async def post_task_rating(request: Request) -> JSONResponse:
+        from memory.task_rating import record_rating
+        body = await request.json()
+        try:
+            score = int(body.get("score") or 0)
+        except (TypeError, ValueError):
+            score = 0
+        record_rating(Config.LOG_DIR, body.get("session_id", ""), score, body.get("note", ""))
+        return JSONResponse({"ok": True})
+
+    @app.get("/api/task-rating/weekly")
+    async def get_task_rating_weekly(days: float = 7.0) -> JSONResponse:
+        from memory.task_rating import weekly_summary
+        return JSONResponse(weekly_summary(Config.LOG_DIR, days=days))
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
@@ -714,7 +856,7 @@ def create_app():
             "name": "Captain", "short_name": "Captain",
             "start_url": "/", "display": "standalone",
             "background_color": "#0d0d0d", "theme_color": "#0d0d0d",
-            "description": "你的私人多智能体助理",
+            "description": "Your private multi-agent assistant.",
         })
 
     # ── WebSocket 聊天 ─────────────────────────────────────────────────────────

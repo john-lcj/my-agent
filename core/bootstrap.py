@@ -64,7 +64,7 @@ def build_registry(
     worker_registry: Any = None,
 ) -> CapabilityRegistry:
     """按 profile 注册能力 + 加载 skill 插件 + 并入全局附加能力(MCP 等)。"""
-    from capabilities.tools.schedule import ScheduleCreate, ScheduleList, ScheduleDelete
+    from capabilities.tools.schedule import ScheduleCreate, ScheduleList, ScheduleDelete, ScheduleUpdate, ScheduleRun
     from capabilities.tools.plan import PlanUpdate
     from capabilities.tools.fs_search import FsSearch
     from capabilities.tools.browser import (
@@ -80,6 +80,8 @@ def build_registry(
     from capabilities.tools.multimodal import ImageOCR, ImageGenerate
     from capabilities.tools.monitor import MonitorCreate, MonitorList, MonitorDelete
     from capabilities.tools.goal import GoalSet, GoalList, GoalRemove
+    from capabilities.tools.channel import ChannelStatus, ChannelConfigure
+    from capabilities.tools.model_key import ModelKeySave, ModelKeyList, ModelKeyClear
     from capabilities.tools.exa_search import ExaSearch
     from capabilities.tools.suggest import SuggestAdd, SuggestList
     from capabilities.tools.git_tool import GitRead, GitCommit
@@ -88,7 +90,7 @@ def build_registry(
             WebSearch(), WebFetch(), FsSearch(),
             RememberMemory(), RecallMemory(),
             ProgramRemember(), ProgramRecall(), ProgramList(),
-            ScheduleCreate(), ScheduleList(), ScheduleDelete(),
+            ScheduleCreate(), ScheduleList(), ScheduleDelete(), ScheduleUpdate(), ScheduleRun(),
             PlanUpdate(),
             BrowserOpen(), BrowserText(), BrowserClick(), BrowserFill(),
             BrowserWait(), BrowserScreenshot(), BrowserUpload(), BrowserDownload(),
@@ -97,7 +99,10 @@ def build_registry(
             SecretSave(), SecretList(), WechatFormat(), SkillScaffold(),
             ImageOCR(), ImageGenerate(),
             MonitorCreate(), MonitorList(), MonitorDelete(),
-            GoalSet(), GoalList(), GoalRemove(), ExaSearch(),
+            GoalSet(), GoalList(), GoalRemove(),
+            ChannelStatus(), ChannelConfigure(),
+            ModelKeySave(), ModelKeyList(), ModelKeyClear(),
+            ExaSearch(),
             SuggestAdd(), SuggestList(),
             GitRead(), GitCommit(),
             CalendarAdd(), CalendarList(), CalendarRemove()]

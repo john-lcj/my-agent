@@ -7,12 +7,23 @@ from fastapi.responses import JSONResponse
 from config import Config
 
 
-def register_misc(app, roster_dir) -> None:
+def register_misc(app) -> None:
 
     @app.get("/api/audit")
-    async def get_audit(limit: int = 100) -> JSONResponse:
+    async def get_audit(limit: int = 100, capability: str = "", agent: str = "",
+                        decision: str = "", ok: str = "") -> JSONResponse:
         from observability.audit import read_recent
-        return JSONResponse({"records": read_recent(limit=min(max(limit, 1), 500))})
+        ok_val = None
+        if ok.lower() in ("true", "1", "yes"):
+            ok_val = True
+        elif ok.lower() in ("false", "0", "no"):
+            ok_val = False
+        return JSONResponse({
+            "records": read_recent(
+                limit=min(max(limit, 1), 500),
+                capability=capability, agent=agent, decision=decision, ok=ok_val,
+            ),
+        })
 
     @app.get("/api/connectors")
     async def list_connectors() -> JSONResponse:
@@ -35,7 +46,7 @@ def register_misc(app, roster_dir) -> None:
     async def get_slash_commands() -> JSONResponse:
         from server.commands_api import list_slash_commands
         from skills.paths import resolve_skills_dirs
-        return JSONResponse({"commands": list_slash_commands(roster_dir, resolve_skills_dirs())})
+        return JSONResponse({"commands": list_slash_commands(resolve_skills_dirs())})
 
     @app.get("/api/skills")
     async def get_skills() -> JSONResponse:
@@ -65,6 +76,21 @@ def register_misc(app, roster_dir) -> None:
         from server.governance_stats import load_stats
         trace_path = os.path.join(Config.LOG_DIR, "trace.jsonl")
         return JSONResponse(load_stats(trace_path, days=days))
+
+    @app.get("/api/briefing/preview")
+    async def briefing_preview() -> JSONResponse:
+        from core.briefing import build_daily_briefing_context, format_daily_briefing_email
+        import server.app as _sa
+        ctx = build_daily_briefing_context(
+            log_dir=Config.LOG_DIR,
+            longterm=_sa._longterm,
+            mission_store=_sa._mission_store,
+        )
+        body = format_daily_briefing_email(
+            log_dir=Config.LOG_DIR,
+            mission_store=_sa._mission_store,
+        )
+        return JSONResponse({"context": ctx, "body": body})
 
     @app.get("/api/usage")
     async def usage_stats(days: float = 30.0) -> JSONResponse:

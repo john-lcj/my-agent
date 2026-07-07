@@ -38,6 +38,7 @@ class TaskFrame:
     plan_steps: list[dict[str, Any]] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
     verifications: list[str] = field(default_factory=list)
+    verification_items: list = field(default_factory=list)  # core.verification.Verification
     repair_count: int = 0
     max_repairs: int = 2
     final_summary: str = ""
@@ -107,6 +108,11 @@ def create_task_frame(user_text: str, intent: IntentFrame) -> TaskFrame:
     else:
         task.phase = PHASE_UNDERSTAND
         task.assumptions.append("任务偏咨询/审阅,先理解并给出判断。")
+    try:
+        from core.workflow_templates import apply_workflow_verifications
+        apply_workflow_verifications(task, text)
+    except Exception:
+        pass
     return task
 
 
@@ -159,11 +165,31 @@ def final_gate(task: TaskFrame, final_text: str) -> str:
             + "、".join(missing[:5])
             + "。请继续完成、标记 failed 并说明缺口,或如实汇报部分完成。"
         )
-    # 执行型任务若完全没有计划,允许简单任务通过;复杂任务打回补计划或说明为何无需计划。
     if task.phase == PHASE_PLAN and not task.plan_steps and task.repair_count <= task.max_repairs:
         task.phase = PHASE_REPAIR
         task.repair_count += 1
         return "[生命周期自检] 这是多步/高风险任务,最终汇报前请先用 plan.update 给出可检查计划并推进。"
+    try:
+        from core.verification import gate_evidence_in_reply, run_verifications
+        ok, items = run_verifications(task)
+        if items and not ok and task.repair_count <= task.max_repairs:
+            task.phase = PHASE_CHECK
+            task.repair_count += 1
+            fails = [f"{v.kind}:{v.target}" for v in items if v.status != "pass"]
+            return "[生命周期自检] 验证未通过:" + "、".join(fails[:5]) + "。请补验证后再汇报。"
+        ev_gate = gate_evidence_in_reply(final_text, items)
+        if ev_gate and task.repair_count <= task.max_repairs:
+            task.phase = PHASE_CHECK
+            task.repair_count += 1
+            return ev_gate
+        from core.uncertainty import gate_unverified_facts
+        u_gate = gate_unverified_facts(final_text, items)
+        if u_gate and task.repair_count <= task.max_repairs:
+            task.phase = PHASE_CHECK
+            task.repair_count += 1
+            return u_gate
+    except Exception:
+        pass
     task.phase = PHASE_REPORT
     task.final_summary = final_text or ""
     return ""

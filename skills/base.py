@@ -1,7 +1,7 @@
 """Skill 插件系统 —— 可热插拔的能力扩展。
 
 约定:每个 skill 是一个目录 skills/<name>/,内含:
-- SKILL.md:带 frontmatter 元信息(name/description/trigger/risk),正文是给模型/人看的说明。
+- SKILL.md:带 frontmatter 元信息(name/description/trigger/risk),Body text是给模型/人看的说明。
 - impl.py:定义 `async def run(args: dict, ctx) -> CapabilityResult`,可选 `SCHEMA` 字典。
 
 渐进式披露:discover() 只解析轻量清单(省 token);load() 在真正要用时才导入 impl。
@@ -94,7 +94,7 @@ class SkillRegistry:
 
     @staticmethod
     def _make_guidance_runner(manifest: SkillManifest):
-        """无 impl.py 的 skill 按指导文档加载(SKILL.md 正文可读/可调用)。"""
+        """无 impl.py 的 skill 按指导文档加载(SKILL.md Body text可读/可调用)。"""
         skill_dir = manifest.path
 
         async def run(args: dict, ctx) -> CapabilityResult:
@@ -113,7 +113,7 @@ class SkillRegistry:
                 "action": {
                     "type": "string",
                     "enum": ["overview", "full"],
-                    "description": "overview=摘要, full=更完整正文",
+                    "description": "overview=summary, full=expanded body",
                 },
             },
         }

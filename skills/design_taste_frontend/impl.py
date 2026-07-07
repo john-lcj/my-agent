@@ -18,7 +18,7 @@ SCHEMA = {
             "description": "overview | design_read | preflight | anti_tells | full",
             "default": "overview",
         },
-        "brief": {"type": "string", "description": "设计 brief，design_read 时必填"},
+        "brief": {"type": "string", "description": "Design brief; required for design_read"},
     },
 }
 
@@ -26,7 +26,7 @@ _DELIVERY_CONTRACT = """【交付契约 — 必须遵守,优先级高于一切�
 本 skill 的产出是「代码」,不是「设计说明」。无论做什么页面:
 1. 必须产出一个**完整、可直接用浏览器打开的单文件 HTML**(CSS/JS 全部内联,不依赖外部文件)。
 2. 必须用 fs.write 把该 HTML 写入一个具体文件(如工作目录下的 index.html),并在最终回复里
-   给出**真实文件路径**与一句预览方式(如"用浏览器打开此文件")。
+   给出**真实File path**与一句预览方式(如"用浏览器打开此文件")。
 3. 严禁只输出设计描述/结构表格/拨盘说明而不写代码;严禁声称"已打开浏览器""页面已生成并打开"
    等你并未实际执行的动作——只陈述你真正做过的事。
 完成标准 = 文件已写入 + 回复含真实路径。三者缺一即视为未完成。"""

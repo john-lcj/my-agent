@@ -10,12 +10,12 @@ SCHEMA = {
     "properties": {
         "channel": {
             "type": "string",
-            "description": "email(目前仅支持邮件)",
+            "description": "email; currently the only supported channel",
             "enum": ["email"],
         },
-        "to": {"type": "string", "description": "收件人邮箱"},
-        "subject": {"type": "string", "description": "邮件主题"},
-        "body": {"type": "string", "description": "正文"},
+        "to": {"type": "string", "description": "Recipient email address"},
+        "subject": {"type": "string", "description": "Email subject"},
+        "body": {"type": "string", "description": "Body text"},
     },
     "required": ["channel", "to", "body"],
 }

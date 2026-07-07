@@ -7,6 +7,8 @@
 工具:
   ScheduleCreate  风险 WRITE        —— 新建定时任务(标准配置变更,需确认)
   ScheduleList    风险 READ         —— 列出现有定时任务
+  ScheduleUpdate  风险 WRITE        —— 修改定时任务(启用/停用/改 prompt 等)
+  ScheduleRun     风险 WRITE        —— 立即触发一次定时任务
   ScheduleDelete  风险 DESTRUCTIVE  —— 删除定时任务
 
 实现:直接读写与 Web/调度器同一个 tasks.db。运行中的调度器每拍都重读该库,
@@ -41,19 +43,19 @@ def _fmt_next(ts: float) -> str:
 class ScheduleCreate:
     name = "schedule.create"
     risk = Risk.WRITE
-    description = "新建一个定时任务:到点自动把 prompt 交给 agent 执行。支持每隔N秒(every)或每天定点(daily)。"
+    description = "Create a scheduled task that sends a prompt to the agent at the configured time. Supports fixed intervals and daily schedules."
     schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "任务名称(简短可读)"},
-            "prompt": {"type": "string", "description": "到点要执行的完整指令"},
+            "name": {"type": "string", "description": "Short readable task name"},
+            "prompt": {"type": "string", "description": "Full instruction to run when the task fires"},
             "schedule_type": {"type": "string", "enum": ["every", "daily"],
-                              "description": "every=每隔固定秒数;daily=每天定点"},
-            "interval_sec": {"type": "integer", "description": "schedule_type=every 时的间隔秒数(最少10)"},
-            "at_hhmm": {"type": "string", "description": "schedule_type=daily 时的时间,如 09:00"},
+                              "description": "every=fixed interval in seconds; daily=run at a daily time"},
+            "interval_sec": {"type": "integer", "description": "Interval in seconds when schedule_type is every; minimum 10"},
+            "at_hhmm": {"type": "string", "description": "Daily run time when schedule_type is daily, for example 09:00"},
             "deliver": {"type": "string", "enum": ["none", "email"],
-                        "description": "结果投递渠道,默认 none(只记录,不外发)"},
-            "deliver_to": {"type": "string", "description": "投递目标(邮箱),留空用渠道默认"},
+                        "description": "Result delivery channel; defaults to none"},
+            "deliver_to": {"type": "string", "description": "Delivery target email; leave empty to use the channel default"},
         },
         "required": ["name", "prompt", "schedule_type"],
     }
@@ -96,7 +98,7 @@ class ScheduleCreate:
 class ScheduleList:
     name = "schedule.list"
     risk = Risk.READ
-    description = "列出当前所有定时任务(含 id、名称、节奏、下次运行时间、是否启用)。"
+    description = "List scheduled tasks with id, name, cadence, next run time, and enabled state."
     schema = {"type": "object", "properties": {}}
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -115,10 +117,10 @@ class ScheduleList:
 class ScheduleDelete:
     name = "schedule.delete"
     risk = Risk.DESTRUCTIVE
-    description = "按 id 删除一个定时任务。"
+    description = "Delete one scheduled task by id."
     schema = {
         "type": "object",
-        "properties": {"id": {"type": "string", "description": "要删除的任务 id"}},
+        "properties": {"id": {"type": "string", "description": "Task id to delete"}},
         "required": ["id"],
     }
 
@@ -130,3 +132,80 @@ class ScheduleDelete:
             return CapabilityResult(ok=False, error=f"任务 {tid} 不存在")
         _store().delete(tid)
         return CapabilityResult(ok=True, output=f"已删除定时任务 {tid}。")
+
+
+class ScheduleUpdate:
+    name = "schedule.update"
+    risk = Risk.WRITE
+    description = (
+        "Update an existing scheduled task. Provide only the fields that should change."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Task id"},
+            "name": {"type": "string"},
+            "prompt": {"type": "string"},
+            "schedule_type": {"type": "string", "enum": ["every", "daily"]},
+            "interval_sec": {"type": "integer"},
+            "at_hhmm": {"type": "string"},
+            "deliver": {"type": "string", "enum": ["none", "email"]},
+            "deliver_to": {"type": "string"},
+            "enabled": {"type": "boolean"},
+        },
+        "required": ["id"],
+    }
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        tid = str(args.get("id", "")).strip()
+        if not tid:
+            return CapabilityResult(ok=False, error="缺少 id")
+        task = _store().get(tid)
+        if task is None:
+            return CapabilityResult(ok=False, error=f"任务 {tid} 不存在")
+        for field in ("name", "prompt", "schedule_type", "at_hhmm", "deliver", "deliver_to"):
+            if field in args and args[field] is not None:
+                setattr(task, field, str(args[field]).strip() if field != "prompt" else str(args[field]))
+        if "interval_sec" in args and args["interval_sec"] is not None:
+            try:
+                task.interval_sec = max(10, int(args["interval_sec"]))
+            except Exception:
+                return CapabilityResult(ok=False, error="interval_sec 必须是整数")
+        if "enabled" in args and args["enabled"] is not None:
+            task.enabled = bool(args["enabled"])
+        if task.schedule_type not in ("every", "daily"):
+            return CapabilityResult(ok=False, error="schedule_type 必须是 every 或 daily")
+        task.next_run = task.compute_next_run()
+        _store().save(task)
+        flag = "" if task.enabled else "(已停用)"
+        when = (f"每 {task.interval_sec} 秒" if task.schedule_type == "every"
+                else f"每天 {task.at_hhmm}")
+        return CapabilityResult(
+            ok=True,
+            output=f"已更新任务「{task.name}」{flag}({when}),下次 {_fmt_next(task.next_run)}。",
+        )
+
+
+class ScheduleRun:
+    name = "schedule.run"
+    risk = Risk.WRITE
+    description = "Trigger a scheduled task immediately; the scheduler will pick it up shortly."
+    schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string", "description": "Task id"}},
+        "required": ["id"],
+    }
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        tid = str(args.get("id", "")).strip()
+        if not tid:
+            return CapabilityResult(ok=False, error="缺少 id")
+        task = _store().get(tid)
+        if task is None:
+            return CapabilityResult(ok=False, error=f"任务 {tid} 不存在")
+        task.next_run = 0.0
+        _store().save(task)
+        return CapabilityResult(
+            ok=True,
+            output=f"已排队立即执行「{task.name}」(id={tid}),调度器将在几秒内运行。",
+        )

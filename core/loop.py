@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from typing import Awaitable, Callable, Optional
 
@@ -29,7 +30,6 @@ from governance.budget import BudgetGovernor
 from core.intent_router import classify_intent, intent_prompt_block
 from core.task_lifecycle import (
     create_task_frame,
-    final_gate as lifecycle_final_gate,
     lifecycle_prompt_block,
     role_report_prompt,
     update_plan as lifecycle_update_plan,
@@ -38,6 +38,18 @@ from core.task_lifecycle import (
 # 软边界确认回调:由 channel 提供(CLI 用 input,Web 用确认卡片)。
 # confirm(call, decision, reason="") -> bool。reason 为治理给出的"为什么需要确认"。
 ConfirmFn = Callable[..., Awaitable[bool]]
+
+_MISSION_MODE_PROMPT = (
+    "[Mission 执行模式] 你在执行主人下达的独立任务,不是闲聊续接。\n"
+    "禁止替主人做选择,禁止写「你已确认/点头/定了」。\n"
+    "缺资料、方向不明、需主人决策时,只回一行 NEED_INPUT: …\n"
+    "完成后给出可验证产物(File path、链接、数据),不要只反问「还要做什么」。"
+)
+
+
+def _is_mission_ctx(ctx: Context) -> bool:
+    ch = getattr(getattr(ctx, "identity", None), "channel", "") or ""
+    return ch == "mission" or bool(getattr(ctx, "mission_mode", False))
 
 
 class Agent:
@@ -102,11 +114,13 @@ class Agent:
         ctx.add_system(role_report_prompt(task_frame))
 
         self._inject_credentials_manifest(ctx)
-        self._inject_memories(user_text, ctx)
-        self._inject_experience(user_text, ctx)
+        if _is_mission_ctx(ctx):
+            ctx.add_system(_MISSION_MODE_PROMPT)
+        else:
+            self._inject_opening_memory(user_text, ctx)
+            self._inject_anti_sycophancy(user_text, ctx)
+            self._inject_journal(ctx)
         self._inject_skill_suggestion(user_text, ctx)
-        self._inject_anti_sycophancy(user_text, ctx)
-        self._inject_journal(ctx)
         await self._prefetch_skills(user_text, ctx)
 
         if record_user:
@@ -200,32 +214,40 @@ class Agent:
             if step.is_final:
                 text = step.text or ""
                 task_frame = getattr(ctx, "task_frame", None)
-                if task_frame is not None and not self._delivery_nudged:
-                    gate = lifecycle_final_gate(task_frame, text)
+                gate = ""
+                needs_gate = (
+                    task_frame is not None
+                    and (
+                        getattr(task_frame, "role", "") in ("executor", "researcher")
+                        or getattr(task_frame, "verification_items", None)
+                    )
+                ) or getattr(ctx, "coworker", False)
+                if needs_gate and task_frame is not None:
+                    from core.delivery_gate import unified_final_gate
+                    gate = unified_final_gate(task_frame, user_text, text)
+                elif needs_gate:
+                    from core.delivery_gate import delivery_reference_gate
+                    gate = delivery_reference_gate(user_text, text)
+                if gate:
+                    if tr is not None:
+                        tr.note("交付/生命周期自检未过:" + gate[:120])
+                    ctx.add_assistant(text)
+                    ctx.add_system(gate)
+                    self.budget.charge(text, getattr(self.llm, "name", ""))
+                    if task_frame is None or task_frame.repair_count <= task_frame.max_repairs:
+                        continue
+                if not gate and getattr(ctx, "coworker", False):
+                    try:
+                        gate = await self._content_judge(user_text, text)
+                    except Exception:
+                        gate = ""
                     if gate:
-                        self._delivery_nudged = True
                         if tr is not None:
-                            tr.note("生命周期自检未过:" + gate[:120])
+                            tr.note("内容质检未过:" + gate[:120])
                         ctx.add_assistant(text)
                         ctx.add_system(gate)
                         self.budget.charge(text, getattr(self.llm, "name", ""))
                         continue
-                # ── 交付校验门(仅 Cowork):声称完成前,先查文件在不在 + 结构,再让模型质检内容 ──
-                if getattr(ctx, "coworker", False) and not self._delivery_nudged:
-                    gate = self._completion_gate(user_text, text)
-                    if not gate:
-                        try:
-                            gate = await self._content_judge(user_text, text)
-                        except Exception:
-                            gate = ""
-                    if gate:
-                        self._delivery_nudged = True
-                        if tr is not None:
-                            tr.note("交付校验未过:" + gate[:120])
-                        ctx.add_assistant(text)  # 记下这次(被打回的)回复,保持对话合法
-                        ctx.add_system(gate)
-                        self.budget.charge(text, getattr(self.llm, "name", ""))
-                        continue  # 不收尾,逼模型落实产物或如实说明
                 self.budget.charge(text, getattr(self.llm, "name", ""))
                 if tr is not None:
                     tr.note(f"本轮模型累计耗时 ~{getattr(self, '_model_ms_total', 0.0):.1f}s"
@@ -373,6 +395,34 @@ class Agent:
                 result = CapabilityResult(ok=False, error=str(exc))
             cap_payload = {"ok": result.ok, "output": result.output, "error": result.error,
                            "name": call.name}
+            if result.ok and call.name == "fs.write":
+                path = str((call.args or {}).get("path") or "")
+                task_frame = getattr(ctx, "task_frame", None)
+                if task_frame is not None and path:
+                    try:
+                        from core.verification import append_verification
+                        append_verification(task_frame, "read_file", path)
+                        append_verification(task_frame, "evidence_in_reply", path)
+                        if path.lower().endswith((".html", ".htm")):
+                            append_verification(task_frame, "check_link", path)
+                            append_verification(task_frame, "visual_check", path)
+                    except Exception:
+                        pass
+            if result.ok and call.name == "shell.run":
+                cmd = str((call.args or {}).get("command") or "")
+                task_frame = getattr(ctx, "task_frame", None)
+                if task_frame is not None and cmd.strip():
+                    try:
+                        from core.verification import append_verification
+                        if "pytest" in cmd or "test" in cmd.lower():
+                            append_verification(task_frame, "run_test", cmd.strip())
+                        elif re.search(r"\.py\b|python3?\s", cmd, re.I):
+                            append_verification(
+                                task_frame, "run_test",
+                                "python3 -m pytest -q tests/test_regression.py",
+                            )
+                    except Exception:
+                        pass
             if result.ok and call.name == "image.generate" and result.output:
                 import re as _re
                 _m = _re.search(r"已生成图片[:：]\s*(.+)", str(result.output).strip())
@@ -532,7 +582,7 @@ class Agent:
         return "[交付校验·内容] 质检发现:" + verdict + " —— 请据此补正产物,或如实说明为何无法满足。"
 
     def _salvage_partial(self, ctx: Context, max_chars: int = 4000) -> str:
-        """步数/预算用尽时,从对话里抢救最近的工具产出与正文,作为阶段性成果交回。"""
+        """步数/预算用尽时,从对话里抢救最近的工具产出与Body text,作为阶段性成果交回。"""
         try:
             msgs = list(ctx.llm_view())
         except Exception:
@@ -644,6 +694,24 @@ class Agent:
         ]
         ctx.add_system(block)
 
+    def _inject_opening_memory(self, user_text: str, ctx: Context) -> None:
+        """统一注入 journal + experience + recall(S23)。"""
+        try:
+            from memory.inject import build_opening_memory_block
+            block = build_opening_memory_block(ctx, user_text)
+        except Exception:
+            return
+        if not block:
+            return
+        prefixes = ("[上次协作进度", "[过往经验", "[关于主人的已知记忆")
+        ctx.messages = [
+            m for m in ctx.messages
+            if not (m.role == Role.SYSTEM and any(
+                (getattr(m, "content", None) or "").startswith(p) for p in prefixes
+            ))
+        ]
+        ctx.add_system(block)
+
     def _inject_memories(self, user_text: str, ctx: Context) -> None:
         """检索相关长期记忆并注入为瞬时 system 消息(去重,避免反复堆叠)。"""
         mem = getattr(ctx, "longterm", None)
@@ -662,6 +730,11 @@ class Agent:
             return
         block = "[关于主人的已知记忆,供参考]\n" + "\n".join(
             f"- [{getattr(it, 'source', 'agent')}] {it.content}" for it in items)
+        try:
+            from memory.policy import inject_with_budget, INJECT_CHAR_BUDGET
+            block = inject_with_budget([block], max_chars=INJECT_CHAR_BUDGET)
+        except Exception:
+            pass
         # 移除上一轮注入的旧记忆块,只保留最新一份。
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[关于主人的已知记忆"))]
@@ -729,6 +802,11 @@ class Agent:
             return
         if not block:
             return
+        try:
+            from memory.policy import inject_with_budget, INJECT_CHAR_BUDGET
+            block = inject_with_budget([block], max_chars=INJECT_CHAR_BUDGET)
+        except Exception:
+            pass
         ctx.messages = [m for m in ctx.messages
                         if not (m.role == Role.SYSTEM and m.content.startswith("[过往经验"))]
         ctx.add_system(block)
@@ -787,4 +865,9 @@ class Agent:
         except Exception:
             return
         if briefing:
+            try:
+                from memory.policy import inject_with_budget, INJECT_CHAR_BUDGET
+                briefing = inject_with_budget([briefing], max_chars=INJECT_CHAR_BUDGET)
+            except Exception:
+                pass
             ctx.add_system(briefing)

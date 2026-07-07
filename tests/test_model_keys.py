@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server.model_keys import ModelKeyStore, PROVIDER_PRESETS
+from server.model_keys import ModelKeyStore, PROVIDER_PRESETS, migrate_mimo_model
 from server.model_test import friendly_error_message
 from server.model_test import test_endpoint as _test_endpoint  # 别名:避免 pytest 误收集
 
@@ -34,10 +34,14 @@ def test_save_key_base_url_model_and_env(tmp_path, monkeypatch):
     s.update("xiaomi_vision", key="sk-xyz", base_url="https://api.xiaomimimo.com/v1", model="mimo-v2-omni")
     m = s.get_masked()["xiaomi_vision"]
     assert m["configured"] is True and m["key"] == "******"   # 不回明文
-    assert m["model"] == "mimo-v2-omni"
-    # 写进了对应环境变量,视觉能力据此启用
+    assert m["model"] == "mimo-v2.5-pro"  # V2 自动映射
     assert os.environ["VISION_API_KEY"] == "sk-xyz"
-    assert os.environ["VISION_MODEL"] == "mimo-v2-omni"
+    assert os.environ["VISION_MODEL"] == "mimo-v2.5-pro"
+
+
+def test_xiaomi_default_model_v25(tmp_path):
+    s = _store(tmp_path)
+    assert s.get_masked()["xiaomi_vision"]["default_model"] == "mimo-v2.5-pro"
 
 
 def test_mainstream_endpoint_preset_stored(tmp_path):
@@ -81,6 +85,12 @@ def test_verified_state(tmp_path):
     # 换 key 后验证状态作废
     s.update("deepseek", key="sk-new")
     assert s.get_masked()["deepseek"]["verified"] is False
+
+
+def test_migrate_mimo_model():
+    assert migrate_mimo_model("mimo-v2-omni") == "mimo-v2.5-pro"
+    assert migrate_mimo_model("mimo-v2.5-pro") == "mimo-v2.5-pro"
+    assert migrate_mimo_model("gpt-4o") == "gpt-4o"
 
 
 def test_test_endpoint_no_key_is_clear_error():

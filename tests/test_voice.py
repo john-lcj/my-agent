@@ -45,8 +45,16 @@ def test_asr_no_key_returns_502(monkeypatch):
     for k in ("VOICE_API_KEY", "VISION_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     with TestClient(app) as c:
-        # 合法入参但无 key → server.voice.asr 抛"未配置",端点转成 502 + 清晰错误
         payload = {"audio": base64.b64encode(b"RIFFxxxx").decode(), "format": "wav"}
         r = c.post("/api/voice/asr", json=payload, headers=H)
         assert r.status_code == 502
         assert "Key" in r.json().get("error", "")
+
+
+def test_cfg_does_not_use_openai_for_voice(monkeypatch):
+    monkeypatch.delenv("VOICE_API_KEY", raising=False)
+    monkeypatch.delenv("VISION_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-be-used")
+    key, _ = voice._cfg()
+    assert key != "sk-openai-should-not-be-used"
+    assert not key

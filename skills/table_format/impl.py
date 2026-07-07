@@ -9,8 +9,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "data": {"type": "string", "description": "带表头的 CSV/TSV 文本"},
-        "delimiter": {"type": "string", "description": "分隔符,留空自动识别"},
+        "data": {"type": "string", "description": "CSV/TSV text with a header row"},
+        "delimiter": {"type": "string", "description": "Delimiter; leave empty to auto-detect"},
     },
     "required": ["data"],
 }

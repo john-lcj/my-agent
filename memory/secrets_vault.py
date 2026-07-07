@@ -93,7 +93,7 @@ class SecretsVault:
              description: str = "", scope: str = "") -> None:
         """保存一条凭据:secret(密码/密钥)加密存,其余明文存。重名覆盖。
 
-        description: 这个 key 的用途说明（如"腾讯云主账号"）
+        description: 这个 key 的用途说明（如"Tencent Cloud main account"）
         scope:       权限范围（如"CVM 管理、COS 读写"）
         """
         name = (name or "").strip()

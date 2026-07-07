@@ -4,8 +4,8 @@ from core.types import CapabilityResult
 SCHEMA = {
     "type": "object",
     "properties": {
-        "query": {"type": "string", "description": "要检索的内容描述"},
-        "k": {"type": "integer", "description": "返回片段数,默认 5"},
+        "query": {"type": "string", "description": "Description of the content to retrieve"},
+        "k": {"type": "integer", "description": "Number of snippets to return; defaults to 5"},
     },
     "required": ["query"],
 }

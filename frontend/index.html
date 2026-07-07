@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Captain"/>
 <meta name="theme-color" content="#0d0d0d"/>
 <title>Captain</title>
-<link rel="stylesheet" href="/styles.css?v=0.1.0">
+<link rel="stylesheet" href="/styles.css?v=20260704e">
 </head>
 <body>
 
@@ -54,11 +54,11 @@
             <button type="button" class="sb-proj-all" onclick="openProjectsView()" data-i18n="projViewAll">全部工作区</button>
           </div>
         </div>
-        <button class="sb-nav-item" data-modes="coworker" onclick="focusArtifacts()">
+        <button class="sb-nav-item" data-modes="chat coworker" onclick="focusArtifacts()">
           <span class="nav-ic"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span>
           <span data-i18n="navArtifacts">Artifacts</span>
         </button>
-        <button class="sb-nav-item" data-modes="coworker" onclick="openCustomize('skills')">
+        <button class="sb-nav-item" data-modes="chat coworker" onclick="openCustomize('skills')">
           <span class="nav-ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
           <span data-i18n="navCustomize">Customize</span>
         </button>
@@ -339,9 +339,6 @@
         <div class="settings-nav-group" id="nav-group-foundation">基础</div>
         <div class="settings-nav-item active" data-tab="profile" id="nav-profile" onclick="switchSettingsTab('profile', this)">账户</div>
         <div class="settings-nav-item" data-tab="keys" onclick="switchSettingsTab('keys', this)" id="nav-keys">模型</div>
-        <div class="settings-nav-item" data-tab="security" id="nav-security" onclick="switchSettingsTab('security', this)">安全</div>
-        <div class="settings-nav-item" data-tab="diagnostics" id="nav-diagnostics" onclick="switchSettingsTab('diagnostics', this)">诊断</div>
-        <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)">关于</div>
         <div class="settings-nav-group" id="nav-group-automation">自动化</div>
         <div class="settings-nav-item" data-tab="channels" id="nav-channels" onclick="switchSettingsTab('channels', this)" data-i18n="navChannels">连接器</div>
         <div class="settings-nav-item" data-tab="tasks" id="nav-tasks" onclick="switchSettingsTab('tasks', this)" data-i18n="settingsTasks">定时任务</div>
@@ -349,9 +346,13 @@
         <div class="settings-nav-item" data-tab="monitors" id="nav-monitors" onclick="switchSettingsTab('monitors', this)">监控</div>
         <div class="settings-nav-group" id="nav-group-system">系统</div>
         <div class="settings-nav-item" data-tab="general" id="nav-general" onclick="switchSettingsTab('general', this)">偏好</div>
+        <div class="settings-nav-item" data-tab="memory" id="nav-memory" onclick="switchSettingsTab('memory', this)">记忆</div>
         <div class="settings-nav-item" data-tab="usage" onclick="switchSettingsTab('usage', this)" id="nav-usage">用量</div>
         <div class="settings-nav-item" data-tab="setup" id="nav-setup" onclick="switchSettingsTab('setup', this)">启动检查</div>
         <div class="settings-nav-item" data-tab="governance" id="nav-governance" onclick="switchSettingsTab('governance', this)">审计日志</div>
+        <div class="settings-nav-item" data-tab="security" id="nav-security" onclick="switchSettingsTab('security', this)">安全</div>
+        <div class="settings-nav-item" data-tab="diagnostics" id="nav-diagnostics" onclick="switchSettingsTab('diagnostics', this)">诊断</div>
+        <div class="settings-nav-item" data-tab="about" id="nav-about" onclick="switchSettingsTab('about', this)">关于</div>
       </nav>
       <div class="settings-content">
         <div class="settings-section" id="settings-setup">
@@ -368,32 +369,7 @@
         <!-- 用户档案 -->
         <div class="settings-section active" id="settings-profile">
           <h2>账户</h2>
-          <p class="settings-desc">管理 Pro 授权和个人档案。授权决定可用能力，档案帮助 Captain 理解你的背景、偏好和长期目标。</p>
-          <div class="account-license-panel">
-            <div class="account-panel-head">
-              <div>
-                <div class="account-panel-title">Pro 授权</div>
-                <div class="account-panel-desc">购买后邮件收到的 <code>CAPT-PRO-XXXX-XXXX-XXXX</code> 格式授权码。</div>
-              </div>
-              <button type="button" class="btn-sm" onclick="loadLicenseStatus(true)">重新校验</button>
-            </div>
-            <div class="license-status-card" id="license-status-card">
-              <div class="license-status-main">
-                <span class="license-plan-badge" id="license-plan-badge">FREE</span>
-                <span id="license-status-text">正在读取授权状态…</span>
-              </div>
-              <div class="license-status-grid">
-                <div><span>到期</span><strong id="license-expires">—</strong></div>
-                <div><span>机器</span><strong id="license-machine">—</strong></div>
-                <div><span>本机保存</span><strong id="license-storage">—</strong></div>
-              </div>
-            </div>
-            <div class="field-row compact">
-              <input id="license-key-input" type="text" class="field-input" placeholder="CAPT-PRO-XXXX-XXXX-XXXX" autocomplete="off"/>
-              <button type="button" class="btn-sm primary account-activate-btn" onclick="doActivate()">激活</button>
-            </div>
-            <div id="activate-status" class="field-hint account-status"></div>
-          </div>
+          <p class="settings-desc">管理个人档案与 Pro 授权。档案帮助 Captain 理解你的背景、偏好和长期目标。</p>
           <div class="settings-subhead">个人档案</div>
           <div class="field-group" style="margin-top:16px">
             <div class="field-label">名字</div>
@@ -418,6 +394,35 @@
             保存档案
           </button>
           <span id="profile-save-status" style="margin-left:10px;font-size:13px;color:var(--muted)"></span>
+
+          <div class="account-license-panel" style="margin-top:28px">
+            <div class="account-panel-head">
+              <div>
+                <div class="account-panel-title">Pro 授权</div>
+                <div class="account-panel-desc">购买后邮件收到的 <code>CAPT-PRO-XXXX-XXXX-XXXX</code> 格式授权码。</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span id="license-activated-tag" class="license-activated-tag" hidden>已激活</span>
+                <button type="button" class="btn-sm" onclick="loadLicenseStatus(true)">重新校验</button>
+              </div>
+            </div>
+            <div class="license-status-card" id="license-status-card">
+              <div class="license-status-main">
+                <span class="license-plan-badge" id="license-plan-badge">FREE</span>
+                <span id="license-status-text">正在读取授权状态…</span>
+              </div>
+              <div class="license-status-grid">
+                <div><span>到期</span><strong id="license-expires">—</strong></div>
+                <div><span>机器</span><strong id="license-machine">—</strong></div>
+                <div><span>本机保存</span><strong id="license-storage">—</strong></div>
+              </div>
+            </div>
+            <div class="field-row compact" id="license-activate-form">
+              <input id="license-key-input" type="text" class="field-input" placeholder="CAPT-PRO-XXXX-XXXX-XXXX" autocomplete="off"/>
+              <button type="button" class="btn-sm primary account-activate-btn" onclick="doActivate()">激活</button>
+            </div>
+            <div id="activate-status" class="field-hint account-status"></div>
+          </div>
         </div>
 
         <div class="settings-section" id="settings-general">
@@ -441,8 +446,35 @@
         </div>
         <div class="field-group">
           <div class="field-label" id="lbl-max-steps" data-i18n="lblMaxSteps">最大步数</div>
-          <input class="field-input" id="cfg-max-steps" placeholder="留空 / 0 = 无限制" type="number" min="0"/>
+          <input class="field-input" id="cfg-max-steps" placeholder="留空 / 0 = 无限制" type="number" min="0"
+                 oninput="updateMaxStepsHint()"/>
+          <div class="field-hint" id="cfg-max-steps-hint"></div>
         </div>
+        <div class="field-group">
+          <label><input type="checkbox" id="cfg-briefing"> 每日简报(邮件)</label>
+        </div>
+        <div class="field-group">
+          <div class="field-label">简报发送时间 (HH:MM)</div>
+          <input class="field-input" id="cfg-briefing-at" placeholder="08:00" style="max-width:120px"/>
+        </div>
+        <div class="field-group">
+          <label><input type="checkbox" id="cfg-proactive"> 主动巡逻(每小时巡检,需重启服务生效)</label>
+        </div>
+        </div>
+        <div class="settings-section" id="settings-memory">
+          <h2>Captain 记住了什么</h2>
+          <p class="settings-desc">查看长期记忆(偏好/事实/经验等),不需要的可删除。</p>
+          <div style="margin-bottom:8px">
+            <select id="memory-kind-filter" onchange="loadMemoryAll()">
+              <option value="">全部</option>
+              <option value="preference">偏好</option>
+              <option value="fact">事实</option>
+              <option value="experience">经验</option>
+            </select>
+            <button class="btn-sm" style="margin-left:8px" onclick="loadMemoryAll()">刷新</button>
+            <button class="btn-sm" style="margin-left:4px" onclick="exportMemoryJson()">导出</button>
+          </div>
+          <div id="memory-all-list" style="font-size:12px;color:var(--muted)">打开本页自动加载…</div>
         </div>
         <div class="settings-section" id="settings-security">
           <h2>安全</h2>
@@ -492,7 +524,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
         </div>
         <div class="settings-section" id="settings-channels">
           <h2 id="settings-channels-title" data-i18n="navChannels">连接器</h2>
-          <p class="settings-desc" id="settings-channels-desc" data-i18n="settingsChannelsDesc">手机直连(Tailscale)+ 邮件</p>
+          <p class="settings-desc" id="settings-channels-desc" data-i18n="settingsChannelsDesc">手机直连(Tailscale)+ 邮件 + 企业微信</p>
           
         <!-- 邮件 -->
         <div class="channel-card">
@@ -531,8 +563,12 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
             </div>
           </div>
           <div class="field-group">
-            <div class="field-label" data-i18n="emailAllowSenders">白名单发件人(留空=只听自己)</div>
-            <input class="field-input" id="email-allowed" placeholder="多个用逗号分隔,留空只响应账号本人"/>
+            <div class="field-label" data-i18n="emailAllowSenders">白名单邮箱(留空=只听/只发给自己)</div>
+            <div class="field-row compact">
+              <input class="field-input" id="email-allowed" placeholder="多个用逗号分隔;入站只听这些发件人,外发/定时投递也只发这些地址"/>
+              <button type="button" class="btn-sm primary" onclick="saveEmailAllowlist()">确认加入</button>
+            </div>
+            <div id="email-allow-status" class="field-hint"></div>
           </div>
           <div class="field-hint" data-i18n="emailAuthHint">QQ/163 邮箱请使用授权码(非登录密码)。保存后点「测试连接」验证,再点「启用渠道」。</div>
           <div class="channel-actions">
@@ -540,6 +576,48 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
             <button class="btn-sm primary" onclick="restartChannel('email')" data-i18n="emailEnable">启用渠道</button>
           </div>
           <div id="email-test-result" class="field-hint" style="margin-top:6px"></div>
+        </div>
+
+        <!-- 企业微信 -->
+        <div class="channel-card">
+          <div class="channel-card-head">
+            <div class="channel-card-title"><span class="channel-icon">💼</span>企业微信</div>
+            <span class="channel-status" id="wecom-status" data-i18n="statusDisconnected">未连接</span>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <div class="field-label">企业 ID (CorpId)</div>
+              <input class="field-input" id="wecom-corp-id" placeholder="wwxxxxxxxx"/>
+            </div>
+            <div class="field-group">
+              <div class="field-label">应用 ID (AgentId)</div>
+              <input class="field-input" id="wecom-agent-id" placeholder="1000002"/>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <div class="field-label">应用 Secret</div>
+              <input class="field-input" id="wecom-secret" type="password" placeholder="应用密钥"/>
+            </div>
+            <div class="field-group">
+              <div class="field-label">回调 Token</div>
+              <input class="field-input" id="wecom-token" placeholder="后台自设随机串"/>
+            </div>
+          </div>
+          <div class="field-group">
+            <div class="field-label">EncodingAESKey (43 位)</div>
+            <input class="field-input" id="wecom-aes-key" type="password" placeholder="后台生成"/>
+          </div>
+          <div class="field-group">
+            <div class="field-label">白名单 UserId(留空=允许全部成员)</div>
+            <input class="field-input" id="wecom-allowed" placeholder="多个用逗号分隔,如 ZhangSan,LiSi"/>
+          </div>
+          <div class="field-hint">企微后台「接收消息」回调 URL 填 <code id="wecom-callback-url">https://你的公网域名/webhook/wecom</code>（须 HTTPS,本机需 frp/Tailscale Funnel 等）。保存后点「测试连接」再「启用渠道」。</div>
+          <div class="channel-actions">
+            <button class="btn-sm" type="button" onclick="testWecom()">测试连接</button>
+            <button class="btn-sm primary" type="button" onclick="restartChannel('wecom')">启用渠道</button>
+          </div>
+          <div id="wecom-test-result" class="field-hint" style="margin-top:6px"></div>
         </div>
 
         <!-- 手机直连说明 -->
@@ -596,13 +674,14 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
           <div class="field-row">
             <div class="field-group">
               <div class="field-label" data-i18n="taskDeliverLbl">结果投递</div>
-              <select id="task-deliver">
+              <select id="task-deliver" onchange="updateTaskDeliverHint()">
                 <option value="none" data-i18n="deliverNone">不投递</option>
                 <option value="email" data-i18n="channelEmail">邮件</option>
+                <option value="wecom">企业微信</option>
               </select>
             </div>
             <div class="field-group">
-              <div class="field-label" data-i18n="taskDeliverTo">投递邮箱(留空=发给自己)</div>
+              <div class="field-label" id="task-deliver-to-label" data-i18n="taskDeliverTo">投递邮箱(留空=发给自己)</div>
               <input class="field-input" id="task-deliver-to" placeholder="收件邮箱,留空发给 EMAIL_USER 自己"/>
             </div>
           </div>
@@ -653,17 +732,23 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
           <p class="settings-desc">持续监测 URL 或文件变化，变化时自动执行指定动作。</p>
           <div class="field-group">
             <input class="field-input" id="mon-name" placeholder="监控名称（如「官网价格监控」）"/>
-            <input class="field-input" id="mon-source" style="margin-top:6px" placeholder="监控来源（URL 或文件路径）"/>
+            <input class="field-input" id="mon-source" style="margin-top:6px" placeholder="监控来源（URL 或File path）"/>
             <textarea class="field-input" id="mon-action" rows="2" style="margin-top:6px;resize:vertical" placeholder="变化时执行的指令（如「发邮件告诉我价格变了」）"></textarea>
             <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
               <select class="field-input" id="mon-type" style="width:auto">
                 <option value="url">URL</option>
                 <option value="file">文件</option>
               </select>
+              <select class="field-input" id="mon-attention" style="width:auto" title="urgent=即时建任务并发邮件；normal=进下次简报；low=仅日志">
+                <option value="urgent">urgent（即时）</option>
+                <option value="normal" selected>normal（简报）</option>
+                <option value="low">low（仅日志）</option>
+              </select>
               <input class="field-input" id="mon-interval" type="number" value="1800" min="60" style="width:100px"/>
               <span style="font-size:12px;color:var(--muted)">秒/次</span>
               <button class="btn-sm primary" onclick="saveMonitor()">添加监控</button>
             </div>
+            <p class="settings-desc" style="margin-top:8px">URL 须含 https://；文件用工作区内相对路径或绝对路径。首次采样只建基线，<strong>第二次检测到变化</strong>才触发。</p>
           </div>
           <div id="monitor-list" style="margin-top:12px"></div>
         </div>
@@ -673,7 +758,14 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
           <h2 id="settings-governance-title" data-i18n="settingsGovernance">审计日志</h2>
           <p class="settings-desc" id="settings-governance-desc" data-i18n="settingsGovernanceDesc">查看 Captain 最近做过哪些动作、为什么允许或拒绝。</p>
         <div style="margin-bottom:16px">
-          <div style="font-size:13px;font-weight:500;margin-bottom:8px">最近审计记录
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px">筛选
+            <input id="audit-filter-cap" placeholder="能力" style="margin-left:8px;width:100px">
+            <input id="audit-filter-decision" placeholder="裁决" style="margin-left:4px;width:80px">
+            <select id="audit-filter-ok" style="margin-left:4px">
+              <option value="">全部结果</option>
+              <option value="false">仅失败</option>
+              <option value="true">仅成功</option>
+            </select>
             <button class="btn-sm" style="margin-left:8px" onclick="loadAuditLog()">刷新</button>
           </div>
           <div id="audit-log-table" style="font-size:12px;color:var(--muted)">点击刷新加载…</div>
@@ -681,6 +773,12 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
         <div style="font-size:13px;color:var(--muted);margin-bottom:10px" id="gov-stats-hint" data-i18n="govStatsHint">近 7 天安全裁决概览</div>
         <div id="gov-stats-summary" style="display:none;margin-bottom:12px"></div>
         <div id="gov-stats-table" style="font-size:12px;color:var(--muted)" data-i18n="loading">加载中…</div>
+        <div style="margin-top:20px">
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px">治理策略摘要
+            <button class="btn-sm" style="margin-left:8px" onclick="loadGovPolicy()">刷新</button>
+          </div>
+          <div id="gov-policy-table" style="font-size:12px;color:var(--muted)">点击刷新加载…</div>
+        </div>
         </div>
         <div class="settings-section" id="settings-diagnostics">
           <h2>诊断</h2>
@@ -729,7 +827,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
       </div>
     </div>
     <div class="settings-footer">
-      <button class="btn-sm" type="button" id="btn-settings-refresh" onclick="loadSettingsUI()" data-i18n="btnSettingsRefresh">刷新状态</button>
+      <button class="btn-sm" type="button" id="btn-settings-refresh" onclick="refreshSettingsUI()" data-i18n="btnSettingsRefresh">刷新状态</button>
       <button class="btn-primary" type="button" id="btn-settings-save" onclick="saveSettings()" data-i18n="btnSettingsSave">保存</button>
     </div>
   </div>
@@ -778,6 +876,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
         <div class="settings-nav-item" data-tab="schedules" onclick="switchCustomizeTab('schedules', this)" data-i18n="custTabSchedules">定时任务</div>
         <div class="settings-nav-item" data-tab="writing" onclick="switchCustomizeTab('writing', this)">写作助手</div>
         <div class="settings-nav-item" data-tab="connectors" onclick="switchCustomizeTab('connectors', this)" data-i18n="custTabConnectors">连接器</div>
+        <div class="settings-nav-item" data-tab="skill-drafts" onclick="switchCustomizeTab('skill-drafts', this)">待确认 Skill</div>
         <div class="settings-nav-item" data-tab="prefs" onclick="switchCustomizeTab('prefs', this)" data-i18n="custTabPrefs">偏好与人设</div>
       </nav>
       <div class="settings-content">
@@ -868,6 +967,13 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
           </div>
         </div>
 
+        <!-- 待确认 Skill -->
+        <div class="settings-section" id="customize-skill-drafts">
+          <h2>待确认 Skill</h2>
+          <p class="settings-desc">重复任务模式触发的 skill 草稿,确认后可交给 skill_author 固化。</p>
+          <button class="btn-sm" onclick="loadSkillDrafts()">刷新</button>
+          <div id="skill-draft-list" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+        </div>
         <!-- 偏好与人设 -->
         <div class="settings-section" id="customize-prefs">
           <h2 data-i18n="custTabPrefs">偏好与人设</h2>
@@ -879,7 +985,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<script src="/app.js?v=0.1.0"></script>
+<script src="/app.js?v=20260705b"></script>
 
 <!-- ══ 任务 Mission ════════════════════════════════════════════ -->
 <div class="overlay" id="mission-overlay">
@@ -928,6 +1034,13 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
       <button class="btn-sm" type="button" onclick="loadArtifactsList(document.getElementById('artifacts-search').value)" data-i18n="artifactsRefresh">刷新</button>
       <button class="modal-close" onclick="closeArtifactsBrowser()">✕</button>
     </div>
+    <div class="artifacts-date-bar" id="artifacts-date-bar">
+      <button type="button" class="btn-sm active" data-artifacts-date="all" onclick="setArtifactsDateFilter('all', this)">全部</button>
+      <button type="button" class="btn-sm" data-artifacts-date="today" onclick="setArtifactsDateFilter('today', this)">今天</button>
+      <button type="button" class="btn-sm" data-artifacts-date="yesterday" onclick="setArtifactsDateFilter('yesterday', this)">昨天</button>
+      <button type="button" class="btn-sm" data-artifacts-date="week" onclick="setArtifactsDateFilter('week', this)">近 7 天</button>
+      <button type="button" class="btn-sm" data-artifacts-date="older" onclick="setArtifactsDateFilter('older', this)">更早</button>
+    </div>
     <div class="modal-body" id="artifacts-list" style="flex:1;overflow:auto;padding:10px 14px"></div>
   </div>
 </div>
@@ -944,85 +1057,6 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<!-- ══ 登录 / 注册浮层 ════════════════════════════════════════════ -->
-<div class="overlay" id="auth-overlay" style="z-index:9999;display:none;align-items:center;justify-content:center">
-  <div class="modal" style="width:min(420px,96vw);padding:0;overflow:hidden">
-    <!-- 标签切换 -->
-    <div style="display:flex;border-bottom:1px solid var(--border)">
-      <button id="auth-tab-login"  class="auth-tab active" onclick="switchAuthTab('login')">登录</button>
-      <button id="auth-tab-reg"    class="auth-tab"        onclick="switchAuthTab('register')">注册</button>
-    </div>
-    <!-- 登录表单 -->
-    <div id="auth-form-login" style="padding:28px 24px">
-      <div class="field-group">
-        <div class="field-label">邮箱</div>
-        <input class="field-input" id="auth-login-email" type="email" placeholder="your@email.com" autocomplete="email"/>
-      </div>
-      <div class="field-group" style="margin-top:10px">
-        <div class="field-label">密码</div>
-        <input class="field-input" id="auth-login-pwd" type="password" placeholder="••••••" autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')doLogin()"/>
-      </div>
-      <div id="auth-login-err" style="color:#e05;font-size:12px;margin-top:6px;display:none"></div>
-      <button class="btn-sm primary" style="width:100%;margin-top:16px;padding:10px" onclick="doLogin()">登录</button>
-    </div>
-    <!-- 注册表单 -->
-    <div id="auth-form-register" style="padding:28px 24px;display:none">
-      <div class="field-group">
-        <div class="field-label">邮箱</div>
-        <input class="field-input" id="auth-reg-email" type="email" placeholder="your@email.com" autocomplete="email"/>
-      </div>
-      <div class="field-group" style="margin-top:10px">
-        <div class="field-label">密码 <span style="color:var(--dim);font-size:11px">（至少 6 位）</span></div>
-        <input class="field-input" id="auth-reg-pwd" type="password" placeholder="••••••" autocomplete="new-password"
-               onkeydown="if(event.key==='Enter')doRegister()"/>
-      </div>
-      <div id="auth-reg-err" style="color:#e05;font-size:12px;margin-top:6px;display:none"></div>
-      <button class="btn-sm primary" style="width:100%;margin-top:16px;padding:10px" onclick="doRegister()">注册并开始使用</button>
-      <p style="font-size:11px;color:var(--dim);margin-top:10px;text-align:center">
-        注册即表示同意服务条款 · 免费账号每日 50,000 tokens
-      </p>
-    </div>
-  </div>
-</div>
-
-<!-- ══ 用量 / 账户角标 ════════════════════════════════════════════ -->
-<div id="user-badge" style="position:fixed;bottom:12px;right:14px;z-index:800;
-     background:var(--surface);border:1px solid var(--border);border-radius:20px;
-     padding:4px 10px 4px 8px;font-size:11px;color:var(--dim);cursor:pointer;
-     display:none;align-items:center;gap:6px" onclick="openUserMenu()">
-  <span id="user-plan-badge" style="background:var(--accent);color:#000;border-radius:10px;
-        padding:1px 6px;font-size:10px;font-weight:600">FREE</span>
-  <span id="user-email-short">—</span>
-  <span id="user-quota-bar" style="width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-    <span id="user-quota-fill" style="display:block;height:100%;width:0%;background:var(--accent);border-radius:2px"></span>
-  </span>
-</div>
-
-<!-- ══ 用户菜单 ════════════════════════════════════════════════════ -->
-<div id="user-menu" style="position:fixed;bottom:44px;right:14px;z-index:900;display:none;
-     background:var(--surface);border:1px solid var(--border);border-radius:10px;
-     padding:8px;min-width:200px;box-shadow:0 4px 20px rgba(0,0,0,.4)">
-  <div id="user-menu-info" style="padding:6px 8px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--border);margin-bottom:6px"></div>
-  <div style="padding:4px 0">
-    <div class="field-group" style="padding:0 8px;margin-bottom:6px">
-      <input class="field-input" id="redeem-code-input" placeholder="兑换码" style="font-size:12px"/>
-    </div>
-    <button class="btn-sm" style="width:calc(100%-16px);margin:0 8px" onclick="doRedeem()">兑换升级 Pro</button>
-  </div>
-  <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
-    <button class="btn-sm" style="width:100%;color:var(--dim)" onclick="doLogout()">退出登录</button>
-  </div>
-</div>
-
-<style>
-.auth-tab {
-  flex:1; padding:12px; background:none; border:none; cursor:pointer;
-  color:var(--dim); font-size:14px; transition:color .15s;
-}
-.auth-tab.active { color:var(--txt); border-bottom:2px solid var(--accent); margin-bottom:-1px; }
-</style>
-
-<script src="/app.boot.js?v=0.1.0"></script>
+<script src="/app.boot.js?v=20260704e"></script>
 </body>
 </html>
