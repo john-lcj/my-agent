@@ -9,8 +9,7 @@ VERSION="$(node -e "console.log(require('$DESKTOP_ROOT/package.json').version)")
 TAG="${CAPTAIN_RELEASE_TAG:-v$VERSION}"
 DMG_DIR="${CAPTAIN_DMG_DIR:-$DESKTOP_ROOT/src-tauri/target/release/bundle/dmg}"
 OUT_DIR="${CAPTAIN_RELEASE_OUT_DIR:-$REPO_ROOT/release-assets/$TAG}"
-NOTES_TEMPLATE="$REPO_ROOT/docs/RELEASE_NOTES_TEMPLATE.md"
-NOTES_OUT="$OUT_DIR/RELEASE_NOTES.md"
+NOTES_OUT="$OUT_DIR/RELEASE_NOTES.txt"
 UPDATER_KEY="${TAURI_PRIVATE_KEY:-$HOME/.captain-updater.key}"
 UPDATER_PASS="${TAURI_KEY_PASSWORD:-captain-updater-dev}"
 GITHUB_REPO="${CAPTAIN_GITHUB_REPO:-john-lcj/my-agent}"
@@ -90,22 +89,18 @@ fs.writeFileSync(out, JSON.stringify(payload, null, 2) + '\n');
 " "$OUT_DIR/latest.json" "$VERSION" "$NOTES" "$PUB_DATE" "$arm_sig" "$BASE_URL" "$intel_sig"
 
 info "生成发布说明草稿"
-if [[ -f "$NOTES_TEMPLATE" ]]; then
-  sed "s/{{VERSION}}/$VERSION/g; s/{{TAG}}/$TAG/g" "$NOTES_TEMPLATE" > "$NOTES_OUT"
-else
-  cat > "$NOTES_OUT" <<EOF
-# Captain $VERSION
+cat > "$NOTES_OUT" <<EOF
+Captain $VERSION
 
-## 下载
+Downloads
 
 - Apple Silicon: Captain_${VERSION}_arm64.dmg
 - Intel Mac: Captain_${VERSION}_x86_64.dmg
 
-## 校验
+Checksums
 
-见 SHA256SUMS.txt
+See SHA256SUMS.txt.
 EOF
-fi
 
 ok "Release 资料已准备好: $OUT_DIR"
 printf '\n下一步上传 GitHub Release:\n'

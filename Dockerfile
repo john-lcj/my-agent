@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 先拷依赖声明,利用 Docker 层缓存(源码变动不必重装依赖)。
-COPY pyproject.toml README.md ./
+COPY pyproject.toml ./
 # 再拷源码并安装(含真实模型/Web/记忆/渠道全部 extras)。
 COPY . .
 RUN pip install --no-cache-dir -e ".[all]"

@@ -1,8 +1,9 @@
-"""自我改进固化 skill 回归 —— 写出合法的 SKILL.md + impl.py,且 impl 可被加载执行。"""
+"""Skill scaffolding regressions."""
 from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import os
 import sys
 
@@ -25,7 +26,9 @@ def test_scaffold_writes_loadable_skill(tmp_path, monkeypatch):
     assert r.ok, r.error
 
     skill_dir = tmp_path / "weekly_report"
-    assert (skill_dir / "SKILL.md").is_file()
+    manifest = skill_dir / "skill.json"
+    assert manifest.is_file()
+    assert json.loads(manifest.read_text(encoding="utf-8"))["name"] == "weekly_report"
     impl = skill_dir / "impl.py"
     assert impl.is_file()
 

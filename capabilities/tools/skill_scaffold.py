@@ -1,15 +1,7 @@
-"""自我改进 —— 把反复做的工作流"固化"成一个可复用 skill。
-
-当某类任务反复出现(pattern_tracker 会提示),agent 可用 skill.scaffold 把这套做法
-沉淀成 skills 目录下的一个新 skill:下次同类任务,调 skill.<name> 即可拿到这套
-固定步骤/要点,不必每次从头摸索。
-
-安全考量:生成的 impl.py 是**固定模板**,只回放你写入的"步骤说明文本",
-不执行 agent 自由编写的任意代码——固化的是"做法 playbook",不是可执行逻辑。
-新 skill 写到用户技能目录(默认 ~/.agents/skills/),不污染内置 skills/。
-"""
+"""Self-improvement tool for saving repeated workflows as reusable skills."""
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -44,18 +36,18 @@ def _safe_name(name: str) -> str:
 
 class SkillScaffold(Tool):
     name = "skill.scaffold"
-    risk = Risk.WRITE  # 写入持久 skill 文件,Chat 需确认;Cowork 自动
+    risk = Risk.WRITE
     description = (
-        "把一套反复使用的做法固化成一个新 skill(写到用户技能目录),"
-        "下次同类任务调 skill.<name> 即可复用这套步骤。适合任务多次重复后沉淀经验。"
+        "Save a repeated workflow as a reusable user skill. The generated skill "
+        "uses skill.json plus impl.py so it can sync without Markdown metadata."
     )
     schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "skill 名(英文/下划线,如 weekly_report)"},
-            "description": {"type": "string", "description": "一句话说明这个 skill 干什么"},
-            "trigger": {"type": "string", "description": "触发关键词(空格分隔),帮助以后命中"},
-            "steps": {"type": "string", "description": "固化的做法/步骤说明(会被原样回放)"},
+            "name": {"type": "string", "description": "Skill name in English or snake_case, such as weekly_report"},
+            "description": {"type": "string", "description": "One-sentence explanation of what this skill does"},
+            "trigger": {"type": "string", "description": "Space-separated trigger keywords for later matching"},
+            "steps": {"type": "string", "description": "Captured workflow or steps, replayed verbatim"},
         },
         "required": ["name", "description", "steps"],
     }
@@ -63,30 +55,27 @@ class SkillScaffold(Tool):
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
         name = _safe_name(str(args.get("name", "")))
         if not name:
-            return CapabilityResult(ok=False, error="name 需含英文/数字")
+            return CapabilityResult(ok=False, error="name must contain letters or digits")
         desc = str(args.get("description", "")).strip() or name
         trigger = str(args.get("trigger", "")).strip()
         steps = str(args.get("steps", "")).strip()
         if not steps:
-            return CapabilityResult(ok=False, error="缺少 steps(要固化的做法)")
-        # 防止把 \"\"\" 写进模板破坏语法
+            return CapabilityResult(ok=False, error="steps is required")
         steps_safe = steps.replace('"""', '\\"\\"\\"')
 
         base = _user_skills_dir()
         target = os.path.join(base, name)
         try:
             os.makedirs(target, exist_ok=True)
-            md = (
-                "---\n"
-                f"name: {name}\n"
-                f"description: {desc}\n"
-                f"trigger: {trigger or name}\n"
-                "risk: READ\n"
-                "---\n\n"
-                f"# {name}\n\n{desc}\n\n## 固化的做法\n\n{steps}\n"
-            )
-            with open(os.path.join(target, "SKILL.md"), "w", encoding="utf-8") as f:
-                f.write(md)
+            manifest = {
+                "name": name,
+                "description": desc,
+                "trigger": trigger or name,
+                "risk": "READ",
+            }
+            with open(os.path.join(target, "skill.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
+                f.write("\n")
             with open(os.path.join(target, "impl.py"), "w", encoding="utf-8") as f:
                 f.write(_IMPL_TEMPLATE.format(name=name, steps=steps_safe))
         except Exception as e:
@@ -100,4 +89,4 @@ class SkillScaffold(Tool):
             pass
         return CapabilityResult(
             ok=True,
-            output=f"已把做法固化为 skill「{name}」({target})。重启后可用 skill.{name} 复用。")
+            output=f"Saved workflow as skill `{name}` at {target}. Restart to use skill.{name}.")

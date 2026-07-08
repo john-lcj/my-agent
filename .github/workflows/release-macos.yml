@@ -65,4 +65,4 @@ jobs:
             "$OUT"/SHA256SUMS.txt \
             "$OUT"/latest.json \
             --title "Captain ${TAG#v}" \
-            --notes-file "$OUT/RELEASE_NOTES.md"
+            --notes-file "$OUT/RELEASE_NOTES.txt"

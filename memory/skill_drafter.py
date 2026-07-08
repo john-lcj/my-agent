@@ -56,8 +56,8 @@ def save_draft(log_dir: str, name: str, description: str, trigger: str, body: st
     }
     drafts.insert(0, item)
     os.makedirs(_drafts_dir(log_dir), exist_ok=True)
-    md_path = os.path.join(_drafts_dir(log_dir), f"{item['id']}.md")
-    with open(md_path, "w", encoding="utf-8") as f:
+    draft_path = os.path.join(_drafts_dir(log_dir), f"{item['id']}.txt")
+    with open(draft_path, "w", encoding="utf-8") as f:
         f.write(body)
     _write_drafts(log_dir, drafts)
     return item
@@ -77,9 +77,8 @@ def _default_draft_body(rep: str) -> str:
 async def draft_body_with_llm(rep: str, llm=None) -> str:
     """Generate a skill draft with the LLM, falling back to a template on failure."""
     prompt = (
-        f"The task pattern \"{rep}\" has repeated at least 3 times. Write a SKILL.md draft "
-        "with YAML frontmatter: name/description/trigger/risk. The description must be English. "
-        "The body should contain reusable steps and no extra explanation.\n\nOutput the full SKILL.md:"
+        f"The task pattern \"{rep}\" has repeated at least 3 times. Write a reusable skill playbook. "
+        "Use English metadata and concise reusable steps. Do not include extra explanation."
     )
     if llm is None:
         return _default_draft_body(rep)
@@ -167,16 +166,26 @@ def confirm_draft(log_dir: str, draft_id: str, skills_root: str | None = None) -
     skill_dir = os.path.join(root, raw_name)
     os.makedirs(skill_dir, exist_ok=True)
     body = item.get("body") or ""
-    if not body.strip().startswith("---"):
-        body = (
-            f"---\nname: {raw_name}\n"
-            f"description: {item.get('description') or normalize_description('Reusable repeated task skill')}\n"
-            f"trigger: {item.get('trigger') or raw_name}\n"
-            f"risk: READ\n"
-            f"---\n\n{body}\n"
+    manifest = {
+        "name": raw_name,
+        "description": item.get("description") or normalize_description("Reusable repeated task skill"),
+        "trigger": item.get("trigger") or raw_name,
+        "risk": "READ",
+    }
+    with open(os.path.join(skill_dir, "skill.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    steps = body.replace('"""', '\\"\\"\\"')
+    with open(os.path.join(skill_dir, "impl.py"), "w", encoding="utf-8") as f:
+        f.write(
+            f'"""Auto-generated reusable skill: {raw_name}."""\n'
+            "from __future__ import annotations\n\n"
+            "from core.types import CapabilityResult\n\n"
+            'SCHEMA = {"type": "object", "properties": {}}\n\n'
+            f'_STEPS = """{steps}"""\n\n'
+            "async def run(args: dict, ctx) -> CapabilityResult:\n"
+            "    return CapabilityResult(ok=True, output=_STEPS)\n"
         )
-    with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
-        f.write(body)
     item["status"] = "confirmed"
     item["skill_path"] = skill_dir
     _write_drafts(log_dir, drafts)

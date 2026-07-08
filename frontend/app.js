@@ -53,6 +53,7 @@ let streamingText = '';
 let streamRenderTimer = null;
 let streamRenderEl = null;
 let streamRenderText = '';
+let _wsQueueNoticeAt = 0;
 /** 简洁模式:Chat 默认隐藏工具轨迹;开「工具轨迹」后显示 call/result */
 let conciseChat = true;
 let _activeTraceGroup = null;
@@ -337,6 +338,9 @@ function handle(ev) {
 
   // ── 历史恢复 ──
   if (etype === 'history') {
+    if (streamingMsgEl && p.session_id && p.session_id === sessionId) {
+      return;
+    }
     if (p.session_id) sessionId = p.session_id;
     renderRestored(p.messages || []);
     if (_sessionInitResolve && p.session_id === _sessionInitExpected) {
@@ -644,6 +648,11 @@ function sendMsg() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     _wsSendQueue = text;
     if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) connect();
+    const now = Date.now();
+    if (now - _wsQueueNoticeAt > 1600) {
+      _wsQueueNoticeAt = now;
+      showToast(t('sendQueued'), 1800);
+    }
     return;
   }
   _wsSendQueue = null;
@@ -1486,6 +1495,7 @@ function showTaskUsage(detail) {
 // 恢复服务端发来的历史消息
 let pendingRestoreImages = [];
 function renderRestored(messages) {
+  resetStreamingBubble();
   const area = document.getElementById('chat-messages');
   area.innerHTML = '';
   if (!messages.length) {
@@ -4452,6 +4462,7 @@ const I18N = {
     footSettings: '设置',
     connecting: '连接中…',
     wsNotConnected: '未连接到 Captain，请稍候或刷新页面',
+    sendQueued: '正在重连，连上后自动发送',
     ctxLabel: '上下文',
     noHistory: '暂无历史',
     untitledChat: '(未命名对话)',
@@ -4813,6 +4824,7 @@ const I18N = {
     footSettings: 'Settings',
     connecting: 'Connecting…',
     wsNotConnected: 'Not connected to Captain — wait or refresh',
+    sendQueued: 'Reconnecting. Your message will send automatically.',
     ctxLabel: 'Context',
     noHistory: 'No history',
     untitledChat: '(Untitled)',

@@ -1,4 +1,4 @@
-"""Skill 目录解析 —— 内置 skills/ + 用户 ~/.agents/skills/ + 可选扩展目录。"""
+"""Resolve built-in, user, and optional extra skill directories."""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,7 @@ from config import Config
 
 
 def resolve_skills_dirs() -> list[str]:
-    """返回按优先级排序的 skill 根目录(先发现者优先,同名不覆盖)。"""
+    """Return skill roots in priority order; first discovered names win."""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dirs: list[str] = []
 
@@ -31,7 +31,7 @@ def resolve_skills_dirs() -> list[str]:
 
 
 def build_skill_registry():
-    """按 resolve_skills_dirs 构建 SkillRegistry。"""
+    """Build a SkillRegistry from resolved skill directories."""
     from skills.base import SkillRegistry
 
     return SkillRegistry(resolve_skills_dirs())

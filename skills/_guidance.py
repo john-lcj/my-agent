@@ -1,4 +1,4 @@
-"""guidance 型 skill 共用：从 SKILL.md 按章节切片返回。"""
+"""Shared helpers for guidance-only skills backed by local documentation."""
 from __future__ import annotations
 
 import os
@@ -34,4 +34,4 @@ def slice_between(body: str, start_re: str, end_re: str | None = None) -> str:
 def cap(text: str, limit: int = _MAX_CHARS) -> str:
     if len(text) <= limit:
         return text
-    return text[: limit - 80] + "\n\n…(已截断，可用 action=full 获取更完整片段)"
+    return text[: limit - 80] + "\n\n…(truncated; use action=full for the expanded body)"
