@@ -52,7 +52,7 @@ class VectorMemory:
                 importance REAL NOT NULL DEFAULT 0.5,
                 created_at REAL NOT NULL,
                 last_used REAL NOT NULL,
-                vec BLOB NOT NULL
+            vec BLOB NOT NULL
             )
             """
         )
@@ -62,6 +62,18 @@ class VectorMemory:
             self._conn.execute("ALTER TABLE vectors ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
         if "expires_at" not in cols:
             self._conn.execute("ALTER TABLE vectors ADD COLUMN expires_at REAL")
+        for column, definition in (
+            ("memory_id", "TEXT"), ("source", "TEXT NOT NULL DEFAULT 'agent'"),
+            ("confidence", "REAL NOT NULL DEFAULT 0.5"), ("evidence_ref", "TEXT NOT NULL DEFAULT ''"),
+            ("provenance", "TEXT NOT NULL DEFAULT 'agent'"), ("status", "TEXT NOT NULL DEFAULT 'active'"),
+            ("supersedes_id", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in cols:
+                self._conn.execute(f"ALTER TABLE vectors ADD COLUMN {column} {definition}")
+        import uuid
+        for row in self._conn.execute("SELECT id FROM vectors WHERE memory_id IS NULL OR memory_id='' ").fetchall():
+            self._conn.execute("UPDATE vectors SET memory_id=? WHERE id=?", (uuid.uuid4().hex, row[0]))
+        self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_memory_id ON vectors(memory_id)")
         self._conn.commit()
 
     def store(self, item: MemoryItem) -> None:
@@ -76,25 +88,25 @@ class VectorMemory:
             except Exception:
                 exp = None
         self._conn.execute(
-            "INSERT INTO vectors (kind, content, importance, scope, created_at, last_used, expires_at, vec) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (item.kind, item.content, item.importance, getattr(item, "scope", "") or "",
-             item.created_at, item.last_used, exp, _pack(vec)),
+            "INSERT INTO vectors (memory_id, kind, content, importance, source, scope, created_at, last_used, expires_at, confidence, evidence_ref, provenance, status, supersedes_id, vec) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (item.memory_id, item.kind, item.content, item.importance, item.source or "agent", getattr(item, "scope", "") or "",
+             item.created_at, item.last_used, exp, item.confidence, item.evidence_ref, item.provenance, item.status, item.supersedes_id, _pack(vec)),
         )
         self._conn.commit()
 
-    def retrieve(self, query: str, k: int = 5, scope: str | None = None) -> list[MemoryItem]:
+    def retrieve(self, query: str, k: int = 5, scope: str | None = None,
+                 min_similarity: float = 0.0) -> list[MemoryItem]:
         q_vec = np.array(self._to_vec(query), dtype=np.float32)
         # 隔离:scope 非 None 时只取 当前 scope 或 全局('');None=不过滤。
         if scope is not None:
             rows = self._conn.execute(
-                "SELECT id, kind, content, importance, scope, created_at, last_used, expires_at, vec "
-                "FROM vectors WHERE scope = ? OR scope = ''",
+                "SELECT * FROM vectors WHERE status='active' AND (scope = ? OR scope = '')",
                 (scope,),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT id, kind, content, importance, scope, created_at, last_used, expires_at, vec FROM vectors"
+                "SELECT * FROM vectors WHERE status='active'"
             ).fetchall()
         if not rows:
             return []
@@ -104,6 +116,8 @@ class VectorMemory:
         for row in rows:
             rv = _unpack(row["vec"])
             sim = _cosine(q_vec, rv)
+            if sim < min_similarity:
+                continue
             # 复合打分:相似度为主,重要性与近用性做温和乘性加权。
             # 相似度差距大时仍由相似度主导;相近时让"更重要、更近期"的记忆胜出。
             score = _rank_score(sim, row["importance"], row["created_at"], row["last_used"], now)
@@ -131,6 +145,10 @@ class VectorMemory:
                 created_at=row["created_at"], last_used=now,
                 expires_at=float(exp) if exp is not None else None,
                 stale=bool(expired),
+                memory_id=row["memory_id"], source=row["source"], confidence=row["confidence"],
+                evidence_ref=row["evidence_ref"], provenance=row["provenance"],
+                status=row["status"], supersedes_id=row["supersedes_id"],
+                similarity=float(sim),
             )
             if expired:
                 item.content = f"【需刷新·已过期】{item.content}"
@@ -144,6 +162,27 @@ class VectorMemory:
             "DELETE FROM vectors WHERE kind = ? AND content = ?", (kind, content))
         self._conn.commit()
         return cur.rowcount
+
+    def get_by_memory_id(self, memory_id: str) -> dict | None:
+        row = self._conn.execute("SELECT * FROM vectors WHERE memory_id=?", (memory_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_memory(self, memory_id: str, **fields) -> bool:
+        allowed = {"content", "importance", "confidence", "evidence_ref", "provenance", "status", "supersedes_id", "expires_at", "kind", "scope"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if "content" in updates:
+            updates["vec"] = _pack(self._to_vec(str(updates["content"])))
+        if not updates:
+            return False
+        sets = ",".join(f"{k}=?" for k in updates)
+        cur = self._conn.execute(f"UPDATE vectors SET {sets} WHERE memory_id=?", (*updates.values(), memory_id))
+        self._conn.commit()
+        return bool(cur.rowcount)
+
+    def delete_memory(self, memory_id: str) -> bool:
+        cur = self._conn.execute("UPDATE vectors SET status='deleted' WHERE memory_id=?", (memory_id,))
+        self._conn.commit()
+        return bool(cur.rowcount)
 
     def delete_by_content_prefix(self, kind: str, prefix: str) -> int:
         """按 kind+内容前缀删除(个人文档重新索引时清旧块)。"""

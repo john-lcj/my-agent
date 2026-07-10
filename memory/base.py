@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 import time
+import uuid
 
 
 @dataclass
@@ -27,6 +28,17 @@ class MemoryItem:
     last_used: float = field(default_factory=time.time)
     expires_at: float | None = None
     stale: bool = False          # 过期 fact 召回时标记需刷新
+    memory_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    confidence: float = 0.5
+    evidence_ref: str = ""
+    provenance: str = "agent"
+    status: str = "active"       # active | superseded | deleted | quarantined
+    supersedes_id: str = ""
+    similarity: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.confidence = max(0.0, min(1.0, float(self.confidence)))
+        self.provenance = self.provenance or self.source or "agent"
 
 
 @runtime_checkable

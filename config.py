@@ -84,7 +84,7 @@ class Config:
     MAX_COST_USD = float(os.environ.get("AGENT_MAX_COST_USD", "0") or "0") or None
 
     # 长期记忆向量嵌入:mock(确定性回归) / openai(需 OPENAI_API_KEY)
-    EMBED_PROVIDER = os.environ.get("AGENT_EMBED_PROVIDER", "mock")
+    EMBED_PROVIDER = os.environ.get("AGENT_EMBED_PROVIDER", "openai")
 
     # 偏好自动沉淀:会话结束后抽取耐用偏好写入长期记忆(on/off;mock provider 下自动关)
     PREF_MINING = os.environ.get("AGENT_PREF_MINING", "on").lower() in ("on", "1", "true")
