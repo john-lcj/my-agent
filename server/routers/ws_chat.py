@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
 from channels.web import WebChannel
-from core.types import Event, EventType, Role
+from core.types import CapabilityCall, Event, EventType, Role
 from core.status_bar import emit_status_event
 from server.events import to_wire
 
@@ -170,8 +170,17 @@ def register_ws(app, is_loopback, is_proxied) -> None:
                         "source": "system",
                     }))
                     return True
+                from governance.gateway import invoke_governed
+
                 args = parse_skill_args(cmd.target, cmd.task)
-                result = await cap.invoke(args, ctx)
+                result = await invoke_governed(
+                    bundle.registry,
+                    agent.policy,
+                    CapabilityCall(name=cap.name, args=args, intent="explicit slash skill"),
+                    ctx.identity,
+                    ctx,
+                    channel.confirm,
+                )
                 if result.ok:
                     channel.emit(Event(type=EventType.ASSISTANT_MESSAGE, payload={
                         "text": result.output or "(无输出)", "source": f"skill.{cmd.target}",

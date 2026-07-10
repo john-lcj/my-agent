@@ -274,7 +274,16 @@ class DeclarativePolicy:
                              reason=f"主体角色 {list(actor.roles)} 无权调用 {call.name}。",
                              rule="whitelist")
 
-        # 1.5) 记忆:仅禁止无人值守主体写入;其余自动记住,不再弹窗
+        risk = classify(call, self.registry)
+        if risk == Risk.FORBIDDEN:
+            detail = getattr(self.registry, "manifest_error", lambda _name: "unknown capability")(call.name)
+            return GovReview(
+                Decision.BLOCK,
+                reason=f"能力 {call.name} 缺少受信任的安全清单: {detail}。",
+                rule="manifest:default-deny",
+            )
+
+        # 1.5) 无人值守主体不能写记忆；其余写操作继续走统一确认门。
         if call.name == "memory.remember":
             mem_review = self._review_memory(call, actor)
             if mem_review is not None:
@@ -315,13 +324,7 @@ class DeclarativePolicy:
                                  reason=f"shell命令不在安全白名单内,已拒绝。",
                                  rule="shell_whitelist")
 
-        # 2.5) 本任务已点过「允许」→ 不再重复询问(一次弹窗管一整轮)
-        if getattr(ctx, "task_auto_approve", False):
-            return GovReview(
-                Decision.ALLOW,
-                reason="本任务已授权,后续同类操作自动放行。",
-                rule="task:auto",
-            )
+        # 2.5) Only explicit capability grants may skip a later confirmation.
         if self._capability_granted(call, ctx):
             return GovReview(
                 Decision.ALLOW,
@@ -330,17 +333,13 @@ class DeclarativePolicy:
             )
 
         # 3) 仅删/改/花钱/控屏需确认;路径已授权则写文件也可放行
-        risk = classify(call, self.registry)
-        if risk == Risk.FORBIDDEN:
-            return GovReview(Decision.BLOCK, reason="该能力被标记为禁止。", rule="risk:forbidden")
-
         need, reason, rule = self._needs_confirm(call)
-        # 风险兜底:任何 DESTRUCTIVE 能力(MCP 外部工具 / 未来新增工具等)默认需确认,
-        # 不能因为不在 confirm 名单里就自动放行。shell.run 有自己的命令级判定,排除在外。
-        if not need and call.name != "shell.run" and risk >= Risk.DESTRUCTIVE:
+        # All writes and destructive actions require confirmation unless a
+        # scoped path/capability grant above has explicitly authorized them.
+        if not need and risk >= Risk.WRITE:
             need = True
-            reason = "高危能力(可能不可逆或有外部副作用),需你确认。"
-            rule = "risk:destructive"
+            reason = "该能力会写入状态或产生副作用，需你确认。"
+            rule = "risk:write-default"
         if need:
             if (
                 call.name == "fs.write"
@@ -351,16 +350,6 @@ class DeclarativePolicy:
                     Decision.ALLOW,
                     reason="写操作,但该路径本会话已授权放手。",
                     rule="grant",
-                )
-            # Cowork(coworker)模式:全自动——确认门一律自动放行。
-            # 注意:此处只翻转"需确认(ASK)"的判定;前面的硬边界(forbidden_cmd/
-            # forbidden_path)、工作区越界保护、白名单 BLOCK 都在本判定之前返回,
-            # 不受影响,仍会拦。Chat 模式(coworker=False)维持原有确认行为。
-            if getattr(ctx, "coworker", False):
-                return GovReview(
-                    Decision.ALLOW,
-                    reason="Cowork 全自动模式:风险操作自动放行(硬边界仍拦截)。",
-                    rule="coworker:auto",
                 )
             return GovReview(Decision.ASK, reason=reason, rule=rule)
 
@@ -406,7 +395,7 @@ class DeclarativePolicy:
         return False
 
     def _review_memory(self, call: CapabilityCall, actor: Identity) -> GovReview | None:
-        """memory.remember:scheduler 禁止;其余自动放行。"""
+        """memory.remember:scheduler 禁止;其他主体继续按 WRITE 默认确认。"""
         mem_cfg = self.config.get("memory") or {}
         block_roles = mem_cfg.get("block_remember_for_roles") or ["scheduler"]
         if actor.roles and any(r in block_roles for r in actor.roles):
@@ -415,7 +404,7 @@ class DeclarativePolicy:
                 reason="无人值守主体(如定时任务)不允许写入长期记忆,避免错误记忆持久污染。",
                 rule="memory:block_unattended",
             )
-        return GovReview(Decision.ALLOW, reason="记住偏好/事实,自动放行。", rule="memory:auto")
+        return None
 
     @staticmethod
     def _granted(call: CapabilityCall, ctx: Any) -> bool:

@@ -693,13 +693,21 @@ class Agent:
         blocks: list[str] = []
         for route in routes[:1]:
             cap = self.registry.get(f"skill.{route.name}")
-            if cap is None:
+            if cap is None or cap.risk != Risk.READ:
                 continue
             try:
                 # 预取只为"提速开场",本身不能拖慢开场:超 1.5s 就放弃,
                 # 让 agent 该调时自己再调,不阻塞首轮响应。
+                from governance.gateway import invoke_governed
                 result = await asyncio.wait_for(
-                    cap.invoke(route.args, ctx), timeout=1.5,
+                    invoke_governed(
+                        self.registry,
+                        self.policy,
+                        CapabilityCall(name=cap.name, args=route.args, intent="skill prefetch"),
+                        ctx.identity,
+                        ctx,
+                    ),
+                    timeout=1.5,
                 )
             except Exception:
                 continue

@@ -7,13 +7,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from capabilities.base import CapabilityRegistry
 from capabilities.tools.fs import ListDir, ReadFile, WriteFile
+from capabilities.tools.shell import RunShell
 from capabilities.tools.web import WebFetch, WebSearch
 from core.types import CapabilityCall, Decision, Identity
 from governance.engine import DeclarativePolicy
 
 
 def _policy() -> DeclarativePolicy:
-    reg = CapabilityRegistry([ReadFile(), WriteFile(), ListDir(), WebSearch(), WebFetch()])
+    reg = CapabilityRegistry([
+        ReadFile(), WriteFile(), ListDir(), WebSearch(), WebFetch(), RunShell(),
+    ])
     return DeclarativePolicy(reg, config_path="governance/policy.yaml")
 
 

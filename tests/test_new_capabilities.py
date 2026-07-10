@@ -61,7 +61,7 @@ def test_new_caps_registered():
         assert n in names, f"{n} 未注册"
 
 
-# ── 治理:浏览器写操作 Chat 确认 / Cowork 自动 ──────────────────────────────
+# ── 治理:浏览器写操作默认确认，Cowork 也需要显式授权 ───────────────────────
 class _Ctx:
     def __init__(self, coworker): self.coworker = coworker
 
@@ -74,7 +74,7 @@ def test_browser_click_confirm_by_mode():
     pol = DeclarativePolicy(CapabilityRegistry([BrowserClick()]), config_path="governance/policy.yaml")
     c = CapabilityCall(name="browser.click", args={"selector": "#btn"})
     assert pol.review(c, Identity(), _Ctx(False)) == Decision.ASK
-    assert pol.review(c, Identity(), _Ctx(True)) == Decision.ALLOW
+    assert pol.review(c, Identity(), _Ctx(True)) == Decision.ASK
 
 
 # ── 分模式 prompt ───────────────────────────────────────────────────────────

@@ -59,8 +59,8 @@ def test_schedule_create_confirm_by_mode():
     os.environ.pop("AGENT_WORKSPACE_ROOT", None)
     pol = _policy()
     c = CapabilityCall(name="schedule.create", args={"name": "n", "prompt": "p", "schedule_type": "daily"})
-    assert pol.review(c, Identity(), _Ctx(False)) == Decision.ASK    # Chat:确认
-    assert pol.review(c, Identity(), _Ctx(True)) == Decision.ALLOW   # Cowork:自动
+    assert pol.review(c, Identity(), _Ctx(False)) == Decision.ASK
+    assert pol.review(c, Identity(), _Ctx(True)) == Decision.ASK
 
 
 def test_schedule_list_is_read_auto_allow():

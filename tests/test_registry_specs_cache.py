@@ -16,6 +16,17 @@ class _Cap:
         self.description = "d"
         self.schema = {}
         self.risk = Risk.READ
+        self.security_manifest = {
+            "name": name,
+            "risk": Risk.READ,
+            "data_scope": "test",
+            "side_effect": "none",
+            "reversible": True,
+            "authorization": "auto-read",
+            "timeout_seconds": 5,
+            "verification": "tool-result",
+            "source": "test",
+        }
     async def invoke(self, args, ctx):
         return CapabilityResult(ok=True, output="")
 

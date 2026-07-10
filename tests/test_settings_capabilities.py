@@ -103,4 +103,4 @@ def test_new_settings_confirm_gates():
     ]:
         c = CapabilityCall(name=name, args=args)
         assert pol.review(c, Identity(), _Ctx(False)) == Decision.ASK
-        assert pol.review(c, Identity(), _Ctx(True)) == Decision.ALLOW
+        assert pol.review(c, Identity(), _Ctx(True)) == Decision.ASK

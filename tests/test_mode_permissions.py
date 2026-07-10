@@ -1,10 +1,4 @@
-"""Chat / Cowork 模式权限分离。
-
-设计(用户拍板):
-- Cowork(coworker=True):全自动 —— 风险操作的"需确认"一律自动放行,
-  但 forbidden_patterns / forbidden_paths 等硬边界仍然 BLOCK。
-- Chat(coworker=False 或 ctx=None):维持原有确认行为(写/删/移动/花钱等弹确认)。
-"""
+"""Phase 1 permission defaults: Cowork still needs explicit scoped grants."""
 from __future__ import annotations
 
 import os
@@ -29,13 +23,13 @@ def _ctx(coworker: bool) -> Context:
     return c
 
 
-def test_cowork_auto_allows_write_chat_confirms():
+def test_write_confirms_in_both_modes_without_a_scoped_grant():
     os.environ.pop("AGENT_WORKSPACE_ROOT", None)
     pol = _policy()
     c = CapabilityCall(name="fs.write", args={"path": "note.txt", "content": "x"})
-    assert pol.review(c, Identity(), _ctx(True)) == Decision.ALLOW    # Cowork:自动放行
-    assert pol.review(c, Identity(), _ctx(False)) == Decision.ASK     # Chat:仍确认
-    assert pol.review(c, Identity(), None) == Decision.ASK            # 默认(无 ctx)=Chat
+    assert pol.review(c, Identity(), _ctx(True)) == Decision.ASK
+    assert pol.review(c, Identity(), _ctx(False)) == Decision.ASK
+    assert pol.review(c, Identity(), None) == Decision.ASK
 
 
 def test_cowork_still_blocks_hard_boundaries():
@@ -51,12 +45,14 @@ def test_cowork_still_blocks_hard_boundaries():
     assert pol.review(force_push, Identity(), _ctx(True)) == Decision.BLOCK
 
 
-def test_cowork_auto_allows_shell_write_chat_confirms():
+def test_explicit_capability_grant_can_allow_a_write():
     os.environ.pop("AGENT_WORKSPACE_ROOT", None)
     pol = _policy()
     wr = CapabilityCall(name="fs.write", args={"path": "a.txt", "content": "x"})
-    assert pol.review(wr, Identity(), _ctx(False)) == Decision.ASK     # Chat:确认
-    assert pol.review(wr, Identity(), _ctx(True)) == Decision.ALLOW    # Cowork:放行
+    ctx = _ctx(True)
+    assert pol.review(wr, Identity(), ctx) == Decision.ASK
+    ctx.grant_capability("fs.write")
+    assert pol.review(wr, Identity(), ctx) == Decision.ALLOW
 
 
 def test_cowork_workspace_escape_still_guarded():

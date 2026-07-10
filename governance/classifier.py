@@ -11,7 +11,9 @@ from core.types import CapabilityCall, Risk
 
 def classify(call: CapabilityCall, registry) -> Risk:
     cap = registry.get(call.name) if registry is not None else None
-    if cap is not None:
-        return cap.risk
-    # 未知能力:fail-safe,当作高危。
-    return call.declared_risk or Risk.DESTRUCTIVE
+    manifest = registry.manifest_for(call.name) if cap is not None else None
+    if manifest is not None:
+        return manifest.risk
+    # The model-declared risk is untrusted metadata. Missing or incomplete
+    # capability metadata is never executable.
+    return Risk.FORBIDDEN

@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from core.types import CapabilityResult, Risk
@@ -24,6 +24,7 @@ class SkillManifest:
     risk: Risk
     path: str            # skill directory
     source_root: str = ""  # source skills root (built-in/user/extra)
+    security_manifest: dict[str, Any] = field(default_factory=dict)
 
 
 class SkillCapability:
@@ -34,6 +35,7 @@ class SkillCapability:
         self.risk = manifest.risk
         self.description = manifest.description
         self.schema = schema
+        self.security_manifest = dict(manifest.security_manifest)
         self._run = run_fn
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -190,6 +192,20 @@ class SkillRegistry:
         name = str(meta.get("name") or os.path.basename(sdir)).strip()
         if not name:
             return None
+        security = meta.get("security_manifest")
+        if not isinstance(security, dict):
+            security = {
+                key: meta[key]
+                for key in (
+                    "data_scope", "side_effect", "reversible", "authorization",
+                    "timeout_seconds", "verification", "source",
+                )
+                if key in meta
+            }
+        if security:
+            security = dict(security)
+            security.setdefault("name", f"skill.{name}")
+            security.setdefault("risk", risk)
         return SkillManifest(
             name=name,
             description=str(meta.get("description") or f"{name} skill").strip(),
@@ -197,6 +213,7 @@ class SkillRegistry:
             risk=risk,
             path=sdir,
             source_root=source_root,
+            security_manifest=security,
         )
 
 

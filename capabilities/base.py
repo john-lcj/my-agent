@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from core.types import CapabilityResult, Risk
+from governance.capability_manifest import CapabilityManifest, resolve_manifest
 
 
 @runtime_checkable
@@ -32,6 +33,8 @@ class CapabilityRegistry:
 
     def __init__(self, capabilities: list[Capability] | None = None) -> None:
         self._caps: dict[str, Capability] = {}
+        self._manifests: dict[str, CapabilityManifest] = {}
+        self._manifest_errors: dict[str, str] = {}
         self._specs_cache: list[dict] | None = None
         for c in capabilities or []:
             self.register(c)
@@ -40,6 +43,11 @@ class CapabilityRegistry:
         if cap.name in self._caps:
             raise ValueError(f"能力重名:{cap.name}")
         self._caps[cap.name] = cap
+        manifest, error = resolve_manifest(cap)
+        if manifest is None:
+            self._manifest_errors[cap.name] = error or "incomplete manifest"
+        else:
+            self._manifests[cap.name] = manifest
         self._specs_cache = None   # 能力集变了,specs 缓存失效
 
     def get(self, name: str) -> Capability | None:
@@ -48,6 +56,16 @@ class CapabilityRegistry:
     def capabilities(self) -> list[Capability]:
         """返回已注册能力实例列表(供 Worker 白名单过滤等)。"""
         return list(self._caps.values())
+
+    def manifest_for(self, name: str) -> CapabilityManifest | None:
+        return self._manifests.get(name)
+
+    def manifest_error(self, name: str) -> str:
+        return self._manifest_errors.get(name, "unknown capability")
+
+    def manifest_audit(self) -> dict[str, str]:
+        """Return every registered capability missing complete security metadata."""
+        return dict(self._manifest_errors)
 
     def specs(self) -> list[dict]:
         """供 LLM 选择调用的能力清单(name/description/schema/risk)。
@@ -63,9 +81,10 @@ class CapabilityRegistry:
                 "name": c.name,
                 "description": c.description,
                 "schema": c.schema,
-                "risk": int(c.risk),
+                **self._manifests[c.name].to_dict(),
             }
             for c in self._caps.values()
+            if c.name in self._manifests
         ]
         self._specs_cache = cache
         return list(cache)
