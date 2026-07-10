@@ -784,6 +784,7 @@ class Agent:
                 capability=call.name, args=call.args,
                 decision=decision, ok=ok, detail=detail,
                 authority=str(getattr(ctx, "authority", "owner") or "owner"),
+                evidence=f"result:{'ok' if ok else 'failed'}",
             )
         except Exception:
             pass
