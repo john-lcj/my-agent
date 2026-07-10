@@ -56,6 +56,11 @@ def test_runtime_staging_is_code_only(tmp_path):
     assert not (destination / "desktop").exists()
     assert not list(destination.rglob("*.md"))
 
+    (destination / ".venv").mkdir()
+    (destination / ".venv" / "README.md").write_text("dependency docs")
+    stage(ROOT, destination, preserve_state=True)
+    assert (destination / ".venv" / "README.md").is_file()
+
 
 def test_model_text_cannot_override_failed_action():
     outcome = RunOutcome()

@@ -85,7 +85,11 @@ def stage(source: Path, destination: Path, *, preserve_state: bool) -> None:
     for state_dir in ("data", "logs", "uploads"):
         (destination / state_dir).mkdir(exist_ok=True)
 
-    forbidden = [path for path in destination.rglob("*.md") if path.is_file()]
+    forbidden = [
+        path
+        for path in destination.rglob("*.md")
+        if path.is_file() and path.relative_to(destination).parts[0] not in preserved
+    ]
     nested_desktop = destination / "desktop"
     if forbidden or nested_desktop.exists():
         raise RuntimeError(
