@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 
+from governance.sandbox import run_sync
 from governance.workspace import resolve_path, workspace_root
 
 _PYTEST_PREFIX = re.compile(r"^(?:(?:python3?|py\s+-3)\s+-m\s+)?pytest(?:\s+-q)?\s*")
@@ -33,13 +33,8 @@ def run_pytest(target: str, *, timeout: int = 120) -> tuple[bool, str, str]:
     normalized, error = normalize_test_target(target)
     if error:
         return False, "", error
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", normalized],
-            cwd=workspace_root(), capture_output=True, text=True, timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "", f"tests timed out after {timeout}s"
-    output = ((result.stdout or "") + (result.stderr or ""))[-1500:]
-    return result.returncode == 0, output, "" if result.returncode == 0 else f"pytest exited {result.returncode}"
+    ok, output, error = run_sync(
+        [sys.executable, "-m", "pytest", "-q", normalized],
+        workspace=workspace_root(), timeout=timeout,
+    )
+    return ok, output[-1500:], error

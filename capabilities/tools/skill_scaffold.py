@@ -13,15 +13,19 @@ from governance.workspace import resolve_path
 _IMPL_TEMPLATE = '''"""{name} —— 由自我改进固化的工作流 playbook(自动生成)。"""
 from __future__ import annotations
 
-from core.types import CapabilityResult
-
 SCHEMA = {{"type": "object", "properties": {{}}}}
+
+class _Result:
+    def __init__(self, ok, output="", error=None):
+        self.ok = ok
+        self.output = output
+        self.error = error
 
 _STEPS = """{steps}"""
 
 
-async def run(args: dict, ctx) -> CapabilityResult:
-    return CapabilityResult(ok=True, output=_STEPS)
+async def run(args: dict, ctx) -> _Result:
+    return _Result(ok=True, output=_STEPS)
 '''
 
 

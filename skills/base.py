@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -74,16 +75,19 @@ class SkillRegistry:
             raise ValueError(f"skill not found:{name}")
         impl_path = os.path.join(manifest.path, "impl.py")
         if os.path.isfile(impl_path):
-            spec = importlib.util.spec_from_file_location(f"skill_{name}", impl_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
-            run_fn = getattr(module, "run", None)
-            if run_fn is None:
-                raise ValueError(f"skill {name} impl.py is missing run")
-            schema = getattr(module, "SCHEMA", {
-                "type": "object",
-                "properties": {"input": {"type": "string"}},
-            })
+            if self._is_builtin(manifest):
+                spec = importlib.util.spec_from_file_location(f"skill_{name}", impl_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)  # type: ignore[union-attr]
+                run_fn = getattr(module, "run", None)
+                if run_fn is None:
+                    raise ValueError(f"skill {name} impl.py is missing run")
+                schema = getattr(module, "SCHEMA", {
+                    "type": "object",
+                    "properties": {"input": {"type": "string"}},
+                })
+            else:
+                run_fn, schema = self._make_sandboxed_runner(manifest, impl_path)
         else:
             run_fn, schema = self._make_guidance_runner(manifest)
         desc = manifest.description
@@ -92,6 +96,45 @@ class SkillRegistry:
         cap = SkillCapability(manifest, run_fn, schema)
         cap.description = desc
         return cap
+
+    @staticmethod
+    def _is_builtin(manifest: SkillManifest) -> bool:
+        builtin_root = os.path.realpath(os.path.dirname(__file__))
+        return os.path.realpath(manifest.source_root) == builtin_root
+
+    @staticmethod
+    def _make_sandboxed_runner(manifest: SkillManifest, impl_path: str):
+        from governance.workspace import resolve_path, workspace_root
+        full, error = resolve_path(impl_path, require_exists=True)
+        if error or not full:
+            raise ValueError("external skill implementation must be inside the workspace")
+
+        async def run(args: dict, ctx) -> CapabilityResult:
+            from governance.sandbox import run_async
+            root = workspace_root()
+            runner = os.path.join(root, ".agent", ".sandbox_runner.py")
+            os.makedirs(os.path.dirname(runner), exist_ok=True)
+            with open(os.path.join(os.path.dirname(__file__), "sandbox_runner.py"), "r", encoding="utf-8") as source:
+                with open(runner, "w", encoding="utf-8") as destination:
+                    destination.write(source.read())
+            ok, output, error = await run_async(
+                [sys.executable, runner, full], workspace=root, timeout=30,
+                input_data=json.dumps(args or {}, ensure_ascii=False),
+            )
+            marker = "__CAPTAIN_RESULT__"
+            for line in reversed(output.splitlines()):
+                if line.startswith(marker):
+                    try:
+                        payload = json.loads(line[len(marker):])
+                        return CapabilityResult(
+                            ok=bool(payload.get("ok")), output=str(payload.get("output") or ""),
+                            error=payload.get("error"),
+                        )
+                    except (TypeError, ValueError):
+                        break
+            return CapabilityResult(ok=False, output="", error=error or "sandboxed skill returned no result")
+
+        return run, {"type": "object", "properties": {}}
 
     @staticmethod
     def _make_guidance_runner(manifest: SkillManifest):
@@ -143,6 +186,13 @@ class SkillRegistry:
             return SkillRegistry._parse_manifest(md_path, sdir, source_root)
         impl_path = os.path.join(sdir, "impl.py")
         if os.path.isfile(impl_path):
+            builtin_root = os.path.realpath(os.path.dirname(__file__))
+            if source_root and os.path.realpath(source_root) != builtin_root:
+                # Never import external code merely to discover metadata.
+                return SkillManifest(
+                    name=dirname, description=f"{dirname} external skill", trigger="",
+                    risk=Risk.READ, path=sdir, source_root=source_root,
+                )
             return SkillRegistry._manifest_from_impl(dirname, impl_path, sdir, source_root)
         return None
 

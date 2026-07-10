@@ -55,6 +55,7 @@ def test_verification_rejects_shell_syntax_in_test_target(tmp_path, monkeypatch)
 
 def test_typed_runner_executes_only_a_workspace_test_file(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("AGENT_SANDBOX_ALLOW_USER_SITE", "1")
     tests = tmp_path / "tests"
     tests.mkdir()
     (tests / "test_ok.py").write_text("def test_ok():\n    assert 2 + 2 == 4\n", encoding="utf-8")
