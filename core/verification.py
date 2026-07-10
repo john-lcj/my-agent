@@ -7,6 +7,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
+from governance.workspace import resolve_path, workspace_root
+
 
 @dataclass
 class Verification:
@@ -30,20 +32,20 @@ def append_verification(frame: Any, kind: str, target: str = "") -> None:
 
 
 def _ws_root() -> str:
-    return os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
+    return workspace_root()
 
 
 def _resolve_path(target: str) -> str:
     t = (target or "").strip()
     if not t:
         return ""
-    if os.path.isabs(t):
-        return t
     root = _ws_root()
-    for c in (os.path.join(root, t), os.path.join(root, "产物", os.path.basename(t))):
-        if os.path.exists(c):
-            return c
-    return os.path.join(root, t)
+    candidates = [t, os.path.join("产物", os.path.basename(t))]
+    for candidate in candidates:
+        path, error = resolve_path(candidate, require_exists=True)
+        if not error:
+            return path
+    return ""
 
 
 def run_verification(v: Verification) -> Verification:

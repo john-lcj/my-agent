@@ -8,6 +8,7 @@ from typing import Any
 
 from capabilities.tools.base import Tool
 from core.types import CapabilityResult, Risk
+from governance.workspace import resolve_path
 
 _IMPL_TEMPLATE = '''"""{name} —— 由自我改进固化的工作流 playbook(自动生成)。"""
 from __future__ import annotations
@@ -24,9 +25,10 @@ async def run(args: dict, ctx) -> CapabilityResult:
 '''
 
 
-def _user_skills_dir() -> str:
-    d = os.environ.get("AGENT_USER_SKILLS_DIR", "~/.agents/skills")
-    return os.path.expanduser(d)
+def _generated_skills_dir() -> tuple[str, str]:
+    """Generated code is always a workspace artifact, never a home-directory write."""
+    configured = os.environ.get("AGENT_GENERATED_SKILLS_DIR", "").strip()
+    return resolve_path(configured or ".agent/skills")
 
 
 def _safe_name(name: str) -> str:
@@ -63,7 +65,9 @@ class SkillScaffold(Tool):
             return CapabilityResult(ok=False, error="steps is required")
         steps_safe = steps.replace('"""', '\\"\\"\\"')
 
-        base = _user_skills_dir()
+        base, error = _generated_skills_dir()
+        if error:
+            return CapabilityResult(ok=False, error=error)
         target = os.path.join(base, name)
         try:
             os.makedirs(target, exist_ok=True)
@@ -72,6 +76,15 @@ class SkillScaffold(Tool):
                 "description": desc,
                 "trigger": trigger or name,
                 "risk": "READ",
+                "security_manifest": {
+                    "data_scope": "workspace",
+                    "side_effect": "none",
+                    "reversible": True,
+                    "authorization": "auto-read",
+                    "timeout_seconds": 30,
+                    "verification": "tool-result",
+                    "source": "generated-workspace-skill",
+                },
             }
             with open(os.path.join(target, "skill.json"), "w", encoding="utf-8") as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)

@@ -10,6 +10,7 @@ from typing import Any
 
 from capabilities.tools.base import Tool
 from core.types import CapabilityResult, Risk
+from governance.workspace import resolve_path
 
 
 class ReadFile(Tool):
@@ -23,7 +24,9 @@ class ReadFile(Tool):
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        path = os.path.expanduser(str(args.get("path", "")))
+        path, error = resolve_path(str(args.get("path", "")), require_exists=True)
+        if error:
+            return CapabilityResult(ok=False, error=error)
         if not path:
             return CapabilityResult(ok=False, error="缺少参数 path")
         if not os.path.isfile(path):
@@ -46,7 +49,9 @@ class ListDir(Tool):
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        path = os.path.expanduser(str(args.get("path", "."))) or "."
+        path, error = resolve_path(str(args.get("path", "")), default=".", require_exists=True)
+        if error:
+            return CapabilityResult(ok=False, error=error)
         if not os.path.isdir(path):
             return CapabilityResult(ok=False, error=f"目录不存在:{path}")
         try:
@@ -74,8 +79,10 @@ class WriteFile(Tool):
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        path = os.path.expanduser(str(args.get("path", "")))
+        path, error = resolve_path(str(args.get("path", "")))
         content = str(args.get("content", ""))
+        if error:
+            return CapabilityResult(ok=False, error=error)
         if not path:
             return CapabilityResult(ok=False, error="缺少参数 path")
         try:

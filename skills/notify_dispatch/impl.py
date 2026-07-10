@@ -5,6 +5,8 @@ import os
 
 from core.types import CapabilityResult
 
+RISK = "WRITE"
+
 SCHEMA = {
     "type": "object",
     "properties": {

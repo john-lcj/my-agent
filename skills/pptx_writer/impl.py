@@ -4,6 +4,9 @@ from __future__ import annotations
 import os
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
+
+RISK = "WRITE"
 
 SCHEMA = {
     "type": "object",
@@ -36,8 +39,10 @@ def _parse(outline: str):
 
 
 async def run(args: dict, ctx) -> CapabilityResult:
-    path = os.path.expanduser(str(args.get("path", "")).strip())
+    path, error = resolve_path(str(args.get("path", "")).strip())
     outline = str(args.get("outline", ""))
+    if error:
+        return CapabilityResult(ok=False, error=error)
     if not path or not outline.strip():
         return CapabilityResult(ok=False, error="缺少 path 或 outline")
     if not path.endswith(".pptx"):

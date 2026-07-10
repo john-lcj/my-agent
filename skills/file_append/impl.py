@@ -4,6 +4,9 @@ from __future__ import annotations
 import os
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
+
+RISK = "WRITE"
 
 SCHEMA = {
     "type": "object",
@@ -17,8 +20,10 @@ SCHEMA = {
 
 
 async def run(args: dict, ctx) -> CapabilityResult:
-    path = os.path.expanduser(str(args.get("path", "")))
+    path, error = resolve_path(str(args.get("path", "")))
     content = str(args.get("content", ""))
+    if error:
+        return CapabilityResult(ok=False, error=error)
     if not path:
         return CapabilityResult(ok=False, error="缺少 path")
     add_nl = args.get("newline", True)

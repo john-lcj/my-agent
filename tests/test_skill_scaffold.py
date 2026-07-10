@@ -13,7 +13,7 @@ from capabilities.tools.skill_scaffold import SkillScaffold
 
 
 def test_scaffold_writes_loadable_skill(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_USER_SKILLS_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
 
     class Ctx:
         pass
@@ -25,7 +25,7 @@ def test_scaffold_writes_loadable_skill(tmp_path, monkeypatch):
     }, Ctx()))
     assert r.ok, r.error
 
-    skill_dir = tmp_path / "weekly_report"
+    skill_dir = tmp_path / ".agent" / "skills" / "weekly_report"
     manifest = skill_dir / "skill.json"
     assert manifest.is_file()
     assert json.loads(manifest.read_text(encoding="utf-8"))["name"] == "weekly_report"
@@ -41,7 +41,7 @@ def test_scaffold_writes_loadable_skill(tmp_path, monkeypatch):
 
 
 def test_rejects_empty_steps(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_USER_SKILLS_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
 
     class Ctx:
         pass
@@ -50,8 +50,17 @@ def test_rejects_empty_steps(tmp_path, monkeypatch):
     assert not r.ok
 
 
+def test_scaffold_rejects_generated_skills_directory_outside_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("AGENT_GENERATED_SKILLS_DIR", str(tmp_path.parent / "outside-skills"))
+    r = asyncio.run(SkillScaffold().invoke(
+        {"name": "x", "description": "d", "steps": "one"}, object()))
+    assert not r.ok
+    assert "outside" in (r.error or "")
+
+
 def test_triple_quote_in_steps_does_not_break_impl(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_USER_SKILLS_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
 
     class Ctx:
         pass
@@ -60,7 +69,7 @@ def test_triple_quote_in_steps_does_not_break_impl(tmp_path, monkeypatch):
         "steps": 'use """triple""" quotes safely',
     }, Ctx()))
     assert r.ok
-    impl = tmp_path / "tricky" / "impl.py"
+    impl = tmp_path / ".agent" / "skills" / "tricky" / "impl.py"
     spec = importlib.util.spec_from_file_location("tricky_impl", str(impl))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)   # 不应因三引号而语法错误

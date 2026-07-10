@@ -20,6 +20,7 @@ import os
 from typing import Any
 
 from core.types import CapabilityResult, Risk
+from governance.workspace import artifacts_dir, resolve_path
 
 _PW = None      # playwright 实例
 _BROWSER = None
@@ -38,10 +39,7 @@ def _state_file() -> str:
 
 
 def _artifacts_dir() -> str:
-    ws = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
-    d = os.path.join(ws, "产物")
-    os.makedirs(d, exist_ok=True)
-    return d
+    return artifacts_dir()
 
 
 async def _ensure_page(headless: bool | None = None):
@@ -105,9 +103,8 @@ async def _page_text(page, limit: int = 8000) -> str:
 
 def _safe_ws_path(p: str) -> str | None:
     """把用户给的路径限制在工作区内,防越权读本机任意文件上传。"""
-    ws = os.path.abspath(os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd())
-    full = os.path.abspath(p if os.path.isabs(p) else os.path.join(ws, p))
-    return full if (full == ws or full.startswith(ws + os.sep)) else None
+    full, error = resolve_path(p, require_exists=True)
+    return full if not error else None
 
 
 class BrowserOpen:
@@ -341,7 +338,11 @@ class BrowserDownload:
                 await _PAGE.click(sel, timeout=8000)
             download = await dl_info.value
             fname = str(args.get("name", "")).strip() or download.suggested_filename or "download.bin"
-            path = os.path.join(_artifacts_dir(), fname)
+            safe_name = os.path.basename(fname)
+            path, error = resolve_path(os.path.join("产物", safe_name))
+            if error:
+                return CapabilityResult(ok=False, error=error)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             await download.save_as(path)
             return CapabilityResult(ok=True, output=f"已下载到:{path}")
         except Exception as e:

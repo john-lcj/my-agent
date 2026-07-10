@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from core.types import CapabilityResult, Risk
+from governance.workspace import resolve_path, workspace_root
 
 _SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache",
               "my_agent.egg-info", ".cursor", "logs", "uploads", "snapshots"}
@@ -20,8 +21,7 @@ _MAX_BYTES = 1_000_000   # 单文件超过 1MB 跳过(避免读大二进制/日�
 
 
 def _base() -> str:
-    b = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
-    return os.path.realpath(os.path.expanduser(b))
+    return workspace_root()
 
 
 class FsSearch:
@@ -66,6 +66,9 @@ class FsSearch:
                 if not glob and ext not in _TEXT_EXTS:
                     continue
                 full = os.path.join(root, name)
+                full, error = resolve_path(full, require_exists=True)
+                if error:
+                    continue
                 try:
                     if os.path.getsize(full) > _MAX_BYTES:
                         continue

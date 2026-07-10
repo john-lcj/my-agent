@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
 
 SCHEMA = {
     "type": "object",
@@ -39,7 +40,9 @@ def _parse_pages(spec: str, total: int) -> list[int]:
 
 
 async def run(args: dict, ctx) -> CapabilityResult:
-    path = os.path.expanduser(str(args.get("path", "")).strip())
+    path, error = resolve_path(str(args.get("path", "")).strip(), require_exists=True)
+    if error:
+        return CapabilityResult(ok=False, error=error)
     if not path:
         return CapabilityResult(ok=False, error="缺少参数 path")
     if not os.path.isfile(path):

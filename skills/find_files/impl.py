@@ -5,6 +5,7 @@ import fnmatch
 import os
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
 
 SCHEMA = {
     "type": "object",
@@ -24,8 +25,8 @@ async def run(args: dict, ctx) -> CapabilityResult:
     pattern = str(args.get("pattern", "")).strip()
     if not pattern:
         return CapabilityResult(ok=False, error="缺少 pattern")
-    root = os.path.expanduser(str(args.get("path") or "."))
-    if not os.path.isdir(root):
+    root, error = resolve_path(str(args.get("path") or "."), require_exists=True)
+    if error or not os.path.isdir(root):
         return CapabilityResult(ok=False, error=f"目录不存在:{root}")
     try:
         max_results = max(1, min(int(args.get("max_results") or 100), 500))

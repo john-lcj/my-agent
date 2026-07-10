@@ -18,6 +18,7 @@ import uuid
 from typing import Any
 
 from core.types import CapabilityResult, Risk
+from governance.workspace import artifacts_dir, resolve_path
 
 
 def _parse_size(s: str, default: int = 1024) -> tuple[int, int]:
@@ -33,16 +34,12 @@ def _parse_size(s: str, default: int = 1024) -> tuple[int, int]:
 
 
 def _artifacts_dir() -> str:
-    ws = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
-    d = os.path.join(ws, "产物")
-    os.makedirs(d, exist_ok=True)
-    return d
+    return artifacts_dir()
 
 
 def _image_data_uri(path: str) -> tuple[str, str]:
-    base = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()
-    full = os.path.realpath(os.path.join(base, path)) if not os.path.isabs(path) else path
-    if not os.path.isfile(full):
+    full, error = resolve_path(path, require_exists=True)
+    if error or not os.path.isfile(full):
         return "", f"图片不存在:{path}"
     ext = os.path.splitext(full)[1].lstrip(".").lower() or "png"
     try:

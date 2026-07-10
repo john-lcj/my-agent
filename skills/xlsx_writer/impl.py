@@ -6,6 +6,9 @@ import io
 import os
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
+
+RISK = "WRITE"
 
 SCHEMA = {
     "type": "object",
@@ -20,7 +23,9 @@ SCHEMA = {
 
 
 async def run(args: dict, ctx) -> CapabilityResult:
-    path = os.path.expanduser(str(args.get("path", "")).strip())
+    path, error = resolve_path(str(args.get("path", "")).strip())
+    if error:
+        return CapabilityResult(ok=False, error=error)
     if not path:
         return CapabilityResult(ok=False, error="缺少参数 path")
     if not path.endswith(".xlsx"):

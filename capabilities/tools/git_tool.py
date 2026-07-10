@@ -16,6 +16,7 @@ from typing import Any
 
 from capabilities.tools.base import Tool
 from core.types import CapabilityResult, Risk
+from governance.workspace import resolve_path, workspace_root
 
 # 只读子命令白名单 → 安全 argv 模板(N/target 由参数填)
 _READ_OPS = {
@@ -36,11 +37,11 @@ _MAX_OUT = 12000
 
 def _repo_dir(args: dict) -> tuple[str, str]:
     """解析仓库目录:参数 path 优先,否则工作区根;必须在工作区内且是 git 仓库。"""
-    ws = os.path.realpath(os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd())
+    ws = workspace_root()
     p = str(args.get("path", "")).strip()
-    d = os.path.realpath(os.path.join(ws, p)) if p and not os.path.isabs(p) else os.path.realpath(p or ws)
-    if not (d == ws or d.startswith(ws + os.sep)):
-        return "", f"目录越出工作区:{d}"
+    d, error = resolve_path(p, default=".", require_exists=True)
+    if error:
+        return "", "目录越出工作区" if "outside" in error else error
     if not os.path.isdir(d):
         return "", f"不是有效目录:{d}"
     if not os.path.isdir(os.path.join(d, ".git")):
@@ -105,7 +106,7 @@ class GitRead(Tool):
 
 class GitCommit(Tool):
     name = "git.commit"
-    risk = Risk.WRITE   # 默认询问;Cowork 自动放行,仅硬边界拦
+    risk = Risk.WRITE   # 默认询问;仅显式授权后才可免确认。
     description = ("把改动提交到本地 git 仓库:暂存(add)+ 提交(commit -m)。"
                   "只提交到本地,**绝不 push**;提交前自动挡住 .env 等敏感文件。"
                   "push/回滚/重置请让主人自己执行。")

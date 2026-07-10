@@ -7,6 +7,7 @@ import os
 import statistics
 
 from core.types import CapabilityResult
+from governance.workspace import resolve_path
 
 SCHEMA = {
     "type": "object",
@@ -31,8 +32,8 @@ async def run(args: dict, ctx) -> CapabilityResult:
     delim = (str(args.get("delimiter") or ",") or ",")[0]
 
     if path:
-        path = os.path.expanduser(path)
-        if not os.path.isfile(path):
+        path, error = resolve_path(path, require_exists=True)
+        if error or not os.path.isfile(path):
             return CapabilityResult(ok=False, error=f"文件不存在:{path}")
         try:
             with open(path, "r", encoding="utf-8-sig", newline="") as f:

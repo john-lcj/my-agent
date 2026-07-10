@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 from core.types import CapabilityResult, Risk
+from governance.workspace import resolve_path
 
 
 class RunShell:
@@ -40,12 +41,10 @@ class RunShell:
         full_command = f"{wrapper} {command}" if wrapper else command
         # 工作目录:显式 AGENT_SHELL_CWD 优先,否则锁到工作区根(若已配置),
         # 让 shell 默认在工作区内活动(注:shell 命令文本无法完全沙箱,真正隔离需 OS 级)。
-        cwd = (os.environ.get("AGENT_SHELL_CWD", "").strip()
-               or os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or None)
-        if cwd:
-            cwd = os.path.expanduser(cwd)
-            if not os.path.isdir(cwd):
-                return CapabilityResult(ok=False, error=f"工作目录不是有效目录:{cwd}")
+        cwd_raw = os.environ.get("AGENT_SHELL_CWD", "").strip() or "."
+        cwd, error = resolve_path(cwd_raw, require_exists=True)
+        if error or not os.path.isdir(cwd):
+            return CapabilityResult(ok=False, error=error or "working directory is invalid")
         try:
             proc = await asyncio.create_subprocess_shell(
                 full_command,

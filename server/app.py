@@ -225,22 +225,16 @@ _ext_channel_tasks: dict[str, asyncio.Task] = {}
 
 
 def _resolve_in_workspace(path: str) -> tuple:
+    from governance.workspace import resolve_path
     raw = (path or "").strip()
     if not raw:
         return False, "", "缺少 path"
-    root = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
-    if root:
-        root = os.path.realpath(os.path.expanduser(root))
-    if not os.path.isabs(raw):
-        base = root or os.getcwd()
-        raw = os.path.join(base, raw)
-    real = os.path.realpath(os.path.expanduser(raw))
+    real, error = resolve_path(raw)
+    if error:
+        return False, "", error
     low = real.lower()
     if any(s in low for s in (".env", ".ssh", "id_rsa", "credentials", "model_keys.json")):
         return False, "", "敏感路径,拒绝读取"
-    if root:
-        if real != root and not real.startswith(root + os.sep):
-            return False, "", "路径在工作区之外"
     return True, real, ""
 
 
