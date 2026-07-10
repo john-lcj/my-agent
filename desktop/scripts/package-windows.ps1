@@ -16,6 +16,7 @@ npm --prefix $DesktopRoot install
 if ($LASTEXITCODE -ne 0) { Write-Fail "npm install 失败" }
 
 Write-Info "准备 App 内置后端与 Python runtime"
+$env:CAPTAIN_BUNDLE_TRUST = "installer-bundled"
 npm --prefix $DesktopRoot run windows:prepare-bundle
 if ($LASTEXITCODE -ne 0) { Write-Fail "windows:prepare-bundle 失败" }
 

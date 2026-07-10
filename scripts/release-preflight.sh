@@ -14,6 +14,9 @@ read_version() {
 }
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
+PYTHON="$(test -x .venv/bin/python && printf '%s' .venv/bin/python || command -v python3)"
+"$PYTHON" scripts/check_version_contract.py --root "$ROOT" \
+  || fail "版本契约校验失败"
 PKG_VERSION="$(node -e "console.log(require('./desktop/package.json').version)")"
 TAURI_VERSION="$(node -e "console.log(require('./desktop/src-tauri/tauri.conf.json').package.version)")"
 CARGO_VERSION="$(grep '^version = ' desktop/src-tauri/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"

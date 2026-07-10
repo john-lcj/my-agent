@@ -15,6 +15,7 @@ import asyncio
 import hmac
 import ipaddress
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from typing import List, Optional
@@ -27,6 +28,7 @@ from core.bootstrap import build_agent_bundle
 from core.coordinator_stack import build_coordinator_stack
 from core.status_bar import emit_status_event
 from core.types import Event, EventType, Identity
+from core.process_lock import ProcessFileLock
 from channels.web import WebChannel
 from channels.config_store import ChannelConfigStore
 from core.persona import load_persona
@@ -49,7 +51,29 @@ from server.async_tasks import (
     _daemon_monitor_watch, _register_mcp_tools,
 )
 
-_FRONTEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FRONTEND = os.path.join(_PROJECT_ROOT, "frontend")
+
+_LOCK_META = {
+    "project_root": _PROJECT_ROOT,
+    "log_dir": os.path.realpath(Config.LOG_DIR),
+    "port": os.environ.get("AGENT_WEB_PORT", "8000"),
+}
+_backend_lock = ProcessFileLock(
+    os.path.join(Config.LOG_DIR, ".captain.backend.lock"), role="backend"
+)
+_worker_leader_lock = ProcessFileLock(
+    os.path.join(Config.LOG_DIR, ".captain.workers.lock"), role="background-workers"
+)
+_runtime_leader_state = {"backend": False, "workers": False}
+if os.environ.get("CAPTAIN_DISABLE_INSTANCE_LOCK", "") != "1":
+    if not _backend_lock.acquire(_LOCK_META):
+        _owner = _backend_lock.owner()
+        raise RuntimeError(
+            "Captain backend already owns this data directory "
+            f"(pid={_owner.get('pid', 'unknown')}, port={_owner.get('port', 'unknown')})"
+        )
+    _runtime_leader_state["backend"] = True
 
 # ── 跨连接共享的单例:持久化会话、长期记忆、人设、频道配置、定时任务 ──────────
 _session_store = SessionStore(db_path=f"{Config.LOG_DIR}/sessions.db")
@@ -181,12 +205,17 @@ if not os.environ.get("VISION_MODEL", "").strip():
     _vm = (_runtime_cfg.load().get("vision_model") or "").strip()
     if _vm:
         os.environ["VISION_MODEL"] = _vm
-_channel_cfg = ChannelConfigStore(path=f"{Config.LOG_DIR}/channels.json")
+_channel_cfg = ChannelConfigStore(
+    path=f"{Config.LOG_DIR}/channels.json",
+    vault=_vault,
+    env_path=os.path.join(_PROJECT_ROOT, ".env"),
+)
 _model_keys = ModelKeyStore(path=f"{Config.LOG_DIR}/model_keys.json")
 _task_store = TaskStore(db_path=f"{Config.LOG_DIR}/tasks.db")
 from memory.project_store import ProjectStore
 _project_store = ProjectStore(path=f"{Config.LOG_DIR}/projects.json")
 _scheduler_holder: list = [None]   # [Scheduler|None]，lifespan 启动后填充
+_background_tasks: set[asyncio.Task] = set()
 
 # ── 外部渠道注册表(启动时按 .env 填充)───────────────────────────────────────
 _ext_channels: dict[str, object] = {}
@@ -302,16 +331,14 @@ def _build_scheduler_agent(actor: Identity, model: str | None = None):
 async def _deliver_result(channel: str, to: str, subject: str, body: str) -> None:
     ch = _ext_channels.get(channel)
     if ch is None:
-        print(f"[scheduler] 渠道 {channel} 未启用,跳过投递")
-        return
+        raise RuntimeError(f"delivery channel is not enabled: {channel}")
     if channel == "email":
         target = to or ch.user
         await ch._send_email(target, subject, body, attachments=_extract_artifacts(body))
     elif channel == "wecom":
         target = (to or "").strip()
         if not target:
-            print("[scheduler] 企微投递缺少 UserId")
-            return
+            raise ValueError("WeCom delivery target is required")
         text = f"{subject}\n\n{body}".strip() if subject else body
         await ch.send_text(target, text)
 
@@ -434,6 +461,7 @@ def _daemon_enqueue(text: str, source: str = "api", mode: str = "coworker") -> s
         "id": tid, "status": "queued", "source": source, "mode": mode,
         "text": (text or "")[:500], "result": "", "error": "",
         "created": time.time(), "finished": 0.0,
+        "execution_status": "", "delivery_status": "not_requested",
     }
     if _task_queue is not None:
         _task_queue.put_nowait((tid, text, mode, source))
@@ -491,22 +519,20 @@ def _proactive_context() -> str:
     return "\n\n".join(parts)
 
 
-async def _proactive_deliver(source: str, body: str) -> None:
+async def _proactive_deliver(source: str, body: str) -> bool:
     body = (body or "").strip()
     if source == "proactive":
         stripped = body.replace("。", "").replace(".", "").strip()
         if len(body) < 6 or stripped in ("无", "暂无", "没有", "无需打扰"):
-            return
+            return False
     if not body:
-        return
+        return False
     to = os.environ.get("AGENT_BRIEFING_TO", "").strip() or os.environ.get("EMAIL_USER", "").strip()
     if not to:
-        return
+        return False
     subject = "Captain · 每日主动简报" if source == "digest" else "Captain · 主动汇报"
-    try:
-        await _deliver_result("email", to, subject, body)
-    except Exception as e:
-        print(f"[proactive] 投递失败: {e}")
+    await _deliver_result("email", to, subject, body)
+    return True
 
 
 async def _proactive_patrol() -> None:
@@ -565,82 +591,142 @@ def create_app():
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        for name in ("email", "wecom"):
-            try:
-                ok = await _enable_channel_async(name)
-                if ok:
-                    print(f"[server] {name} 渠道已启动")
-            except Exception as e:
-                print(f"[server] {name} 渠道启动失败: {e}")
+        if not _backend_lock.acquire(_LOCK_META):
+            owner = _backend_lock.owner()
+            raise RuntimeError(
+                "Captain backend already owns this data directory "
+                f"(pid={owner.get('pid', 'unknown')}, port={owner.get('port', 'unknown')})"
+            )
+        _runtime_leader_state["backend"] = True
+        workers = _worker_leader_lock.acquire(_LOCK_META)
+        _runtime_leader_state["workers"] = workers
 
-        _scheduler_holder[0] = Scheduler(_task_store, _run_scheduled_task, _deliver_result)
-        _scheduler_holder[0].start()
-        print(f"[server] 定时任务调度器已启动({len(_task_store.list())} 个任务)")
-
-        from core.briefing import ensure_briefing_task
-        if _runtime_cfg.get_briefing_enabled() and ensure_briefing_task(
-            _task_store,
-            at_hhmm=_runtime_cfg.get_briefing_at(),
-            channel=Config.BRIEFING_CHANNEL,
-            to=Config.BRIEFING_TO,
-        ):
-            print(f"[server] 已注册每日简报任务({Config.BRIEFING_AT} → {Config.BRIEFING_CHANNEL})")
+        def spawn(coro) -> asyncio.Task:
+            task = asyncio.create_task(coro)
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+            return task
 
         try:
-            from core.workflow_templates import seed_workflow_templates
-            wf_n = seed_workflow_templates(_template_store)
-            if wf_n:
-                print(f"[server] 已注册 {wf_n} 个工作流模板")
-        except Exception as e:
-            print(f"[server] 工作流模板注册跳过: {e}")
+            if workers:
+                for name in ("email", "wecom"):
+                    try:
+                        ok = await _enable_channel_async(name)
+                        if ok:
+                            print(f"[server] {name} 渠道已启动")
+                    except Exception as e:
+                        print(f"[server] {name} 渠道启动失败: {e}")
 
-        for m in _mission_store.list(status="executing"):
-            mid = str(m.get("id") or "")
-            if mid:
-                print(f"[server] 恢复 executing mission #{mid[:8]}")
-                asyncio.create_task(_run_mission_and_deliver(mid))
+                _scheduler_holder[0] = Scheduler(
+                    _task_store, _run_scheduled_task, _deliver_result
+                )
+                _scheduler_holder[0].start()
+                print(f"[server] 定时任务调度器已启动({len(_task_store.list())} 个任务)")
 
-        if Config.PERSONAL_DIRS and not any(
-            t.task_type == "memory_ingest" for t in _task_store.list()
-        ):
-            _task_store.create(
-                name="个人数据索引",
-                prompt="(内置任务)扫描 AGENT_PERSONAL_DIRS 目录,增量索引个人文档到长期记忆",
-                schedule_type="daily",
-                at_hhmm="03:30",
-                deliver="none",
-                task_type="memory_ingest",
-            )
-            print(f"[server] 已注册个人数据索引任务({len(Config.PERSONAL_DIRS)} 个目录,每天 03:30)")
+                from core.briefing import ensure_briefing_task
+                if _runtime_cfg.get_briefing_enabled() and ensure_briefing_task(
+                    _task_store,
+                    at_hhmm=_runtime_cfg.get_briefing_at(),
+                    channel=Config.BRIEFING_CHANNEL,
+                    to=Config.BRIEFING_TO,
+                ):
+                    print(
+                        f"[server] 已注册每日简报任务({Config.BRIEFING_AT} → "
+                        f"{Config.BRIEFING_CHANNEL})"
+                    )
 
-        await _register_mcp_tools()
+                for m in _mission_store.list(status="executing"):
+                    mid = str(m.get("id") or "")
+                    if mid:
+                        print(f"[server] 恢复 executing mission #{mid[:8]}")
+                        spawn(_run_mission_and_deliver(mid))
 
-        global _task_queue
-        _task_queue = asyncio.Queue()
-        asyncio.create_task(_daemon_worker())
-        if os.environ.get("AGENT_INBOX_WATCH", "1") != "0":
-            asyncio.create_task(_daemon_inbox_watch())
-        if os.environ.get("AGENT_MONITOR_WATCH", "1") != "0":
-            asyncio.create_task(_daemon_monitor_watch())
-        print("[server] 后台任务守护已启动(收件箱监听 + 主动监控 + HTTP /api/task)")
-        if os.environ.get("AGENT_PROACTIVE", "0") != "0" or _runtime_cfg.get_proactive():
-            asyncio.create_task(_proactive_patrol())
-            print("[server] 主动巡逻已启动(设置或 AGENT_PROACTIVE=1 → 按小时巡检)")
+                if Config.PERSONAL_DIRS and not any(
+                    t.task_type == "memory_ingest" for t in _task_store.list()
+                ):
+                    _task_store.create(
+                        name="个人数据索引",
+                        prompt="(内置任务)扫描 AGENT_PERSONAL_DIRS 目录,增量索引个人文档到长期记忆",
+                        schedule_type="daily",
+                        at_hhmm="03:30",
+                        deliver="none",
+                        task_type="memory_ingest",
+                    )
+                    print(
+                        f"[server] 已注册个人数据索引任务({len(Config.PERSONAL_DIRS)} "
+                        "个目录,每天 03:30)"
+                    )
 
-        if not any(getattr(t, "task_type", "") == "rating_weekly" for t in _task_store.list()):
-            _task_store.create(
-                name="任务自评周汇总",
-                prompt="(内置)汇总近7天任务自评",
-                schedule_type="every",
-                interval_sec=7 * 86400,
-                deliver="none",
-                task_type="rating_weekly",
-            )
-        print("[server] 每日简报经 scheduler 注册(默认开启,见 每日简报 定时任务)")
+                global _task_queue
+                _task_queue = asyncio.Queue()
+                spawn(_daemon_worker())
+                if os.environ.get("AGENT_INBOX_WATCH", "1") != "0":
+                    spawn(_daemon_inbox_watch())
+                if os.environ.get("AGENT_MONITOR_WATCH", "1") != "0":
+                    spawn(_daemon_monitor_watch())
+                print("[server] 后台任务守护已启动(收件箱监听 + 主动监控 + HTTP /api/task)")
+                if (
+                    os.environ.get("AGENT_PROACTIVE", "0") != "0"
+                    or _runtime_cfg.get_proactive()
+                ):
+                    spawn(_proactive_patrol())
+                    print("[server] 主动巡逻已启动(设置或 AGENT_PROACTIVE=1 → 按小时巡检)")
 
-        yield
-        if _scheduler_holder[0] is not None:
-            _scheduler_holder[0].stop()
+                if not any(
+                    getattr(t, "task_type", "") == "rating_weekly"
+                    for t in _task_store.list()
+                ):
+                    _task_store.create(
+                        name="任务自评周汇总",
+                        prompt="(内置)汇总近7天任务自评",
+                        schedule_type="every",
+                        interval_sec=7 * 86400,
+                        deliver="none",
+                        task_type="rating_weekly",
+                    )
+                print("[server] 每日简报经 scheduler 注册(默认开启,见 每日简报 定时任务)")
+            else:
+                print("[server] background worker leadership is held by another process")
+
+            try:
+                from core.workflow_templates import seed_workflow_templates
+                wf_n = seed_workflow_templates(_template_store)
+                if wf_n:
+                    print(f"[server] 已注册 {wf_n} 个工作流模板")
+            except Exception as e:
+                print(f"[server] 工作流模板注册跳过: {e}")
+
+            await _register_mcp_tools()
+            yield
+        finally:
+            if _scheduler_holder[0] is not None:
+                _scheduler_holder[0].stop()
+                await _scheduler_holder[0].wait_stopped()
+                _scheduler_holder[0] = None
+            for task in list(_background_tasks):
+                if not task.done():
+                    task.cancel()
+            if _background_tasks:
+                await asyncio.gather(*list(_background_tasks), return_exceptions=True)
+            channel_tasks = list(_ext_channel_tasks.values())
+            for task in channel_tasks:
+                if not task.done():
+                    task.cancel()
+            if channel_tasks:
+                await asyncio.gather(*channel_tasks, return_exceptions=True)
+            for channel in list(_ext_channels.values()):
+                if hasattr(channel, "stop_polling"):
+                    try:
+                        await channel.stop_polling()
+                    except Exception:
+                        pass
+            _ext_channel_tasks.clear()
+            _ext_channels.clear()
+            _ext_coordinators.clear()
+            _ext_templates.clear()
+            _worker_leader_lock.release()
+            _backend_lock.release()
+            _runtime_leader_state.update({"backend": False, "workers": False})
 
     app = FastAPI(title="my-agent", lifespan=_lifespan)
 
@@ -750,7 +836,8 @@ def create_app():
 
     from server.routers.system import register_system
     register_system(app, _task_store, _template_store, _vault, _ext_channels,
-                    _scheduler_holder, _daemon_results, _START_TS)
+                    _scheduler_holder, _daemon_results, _START_TS,
+                    _runtime_leader_state)
 
     from server.routers.backup import register_backup
     register_backup(app)
@@ -893,4 +980,21 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    # Keep the legacy command working while ensuring Uvicorn imports the app by
+    # its canonical module name. This prevents duplicate module-level stores.
+    _host = os.environ.get("AGENT_WEB_HOST", "127.0.0.1")
+    _port = os.environ.get("AGENT_WEB_PORT", "8000")
+    _backend_lock.release()
+    os.execv(
+        sys.executable,
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "server.app:app",
+            "--host",
+            _host,
+            "--port",
+            _port,
+        ],
+    )

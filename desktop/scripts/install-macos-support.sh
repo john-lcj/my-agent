@@ -62,18 +62,11 @@ PY
 copy_from_repo() {
   local src="$1"
   info "同步后端到 $APP_ROOT"
-  mkdir -p "$APP_ROOT"
-  rsync -a --delete \
-    --exclude '.git/' \
-    --exclude '.env' \
-    --exclude '.env.*' \
-    --exclude '.venv/' \
-    --exclude 'data/' \
-    --exclude 'logs/' \
-    --exclude 'uploads/' \
-    --exclude 'desktop/node_modules/' \
-    --exclude 'desktop/src-tauri/target/' \
-    "$src/" "$APP_ROOT/"
+  python3 "$src/scripts/stage_runtime.py" \
+    --source "$src" --destination "$APP_ROOT" --preserve-state
+  python3 "$src/scripts/build_bundle_stamp.py" \
+    --root "$src" --output "$APP_ROOT/.captain_bundle_stamp" \
+    --platform "macos-development" --trust "development"
 }
 
 clone_or_update() {
@@ -161,6 +154,13 @@ fi
 
 install_python_env
 ensure_env
+
+LEGACY_PLIST="$HOME/Library/LaunchAgents/com.captain.backend.plist"
+if [[ -f "$LEGACY_PLIST" ]]; then
+  warn "移除旧的独立后端 LaunchAgent，由 Captain.app 统一托管后端"
+  launchctl bootout "gui/$(id -u)/com.captain.backend" >/dev/null 2>&1 || true
+  rm -f "$LEGACY_PLIST"
+fi
 
 ok "macOS 支持目录已准备好: $APP_ROOT"
 printf '\n下一步可运行:\n'

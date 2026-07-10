@@ -33,7 +33,11 @@ class ScheduledTask:
     last_run: float = 0.0
     next_run: float = 0.0
     last_result: str = ""
-    last_status: str = ""             # ok / error / blocked
+    last_status: str = ""             # succeeded / partial / blocked / failed / delivery_failed
+    execution_status: str = ""
+    delivery_status: str = "not_requested"
+    last_error: str = ""
+    last_delivery_error: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -69,6 +73,15 @@ class TaskStore:
 
     def _row_to_task(self, row) -> ScheduledTask:
         d = json.loads(row["data"])
+        legacy = str(d.get("last_status") or "")
+        if legacy == "ok":
+            d["last_status"] = "succeeded"
+        elif legacy == "error":
+            d["last_status"] = "failed"
+        if not d.get("execution_status") and d.get("last_status") in {
+            "succeeded", "partial", "blocked", "failed"
+        }:
+            d["execution_status"] = d["last_status"]
         return ScheduledTask(**d)
 
     def list(self) -> list[ScheduledTask]:

@@ -2017,6 +2017,23 @@ function insertTemplate(content) {
 }
 
 /* ── 自定义:定时任务 ── */
+function taskStatusMeta(task) {
+  const status = task.last_status || '';
+  const labels = {
+    succeeded: '已完成',
+    partial: '部分完成',
+    blocked: '已阻塞',
+    failed: '执行失败',
+    delivery_failed: task.execution_status === 'succeeded' ? '投递失败' : '执行/投递失败',
+  };
+  return status ? { status, label: labels[status] || status } : null;
+}
+
+function taskStatusBadge(task) {
+  const meta = taskStatusMeta(task);
+  return meta ? `<span class="task-status" data-status="${escHtml(meta.status)}">${escHtml(meta.label)}</span>` : '';
+}
+
 async function renderSchedules() {
   const box = document.getElementById('sch-list'); if (!box) return;
   try {
@@ -2025,7 +2042,7 @@ async function renderSchedules() {
     const fmtTs = ts => ts ? new Date(ts * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
     box.innerHTML = (rows.length ? rows.map(t => `
       <div class="expert-card" style="margin-bottom:8px">
-        <h3>${escHtml(t.name || t.id)} <span style="font-size:11px;color:${t.enabled===false?'#888':'var(--accent)'}">${t.enabled===false?'已停用':'启用'}</span></h3>
+        <h3>${escHtml(t.name || t.id)} ${taskStatusBadge(t)} <span style="font-size:11px;color:${t.enabled===false?'#888':'var(--accent)'}">${t.enabled===false?'已停用':'启用'}</span></h3>
         <div class="role">${escHtml(t.schedule_type || '')} ${escHtml(t.at_hhmm || t.interval_sec ? '每'+t.interval_sec+'秒' : '')} · ${escHtml((t.prompt||'').slice(0,80))}</div>
         <div style="font-size:11px;color:var(--dim);margin-top:4px">上次: ${fmtTs(t.last_run)} · 下次: ${fmtTs(t.next_run)}</div>
         <button class="btn-sm" style="margin-top:6px" onclick="delSchedule('${t.id}')" data-i18n="schDelete">删除</button>
@@ -3692,7 +3709,7 @@ async function refreshTasks() {
       const next = t.next_run ? new Date(t.next_run*1000).toLocaleString('zh-CN') : '-';
       row.innerHTML = `
         <div class="task-info">
-          <div class="task-name">${escHtml(t.name)}</div>
+          <div class="task-name">${escHtml(t.name)} ${taskStatusBadge(t)}</div>
           <div class="task-meta">${sched} · ${t.enabled?'启用':'暂停'} · 上次:${last} · 下次:${next}</div>
           <div class="task-meta" style="margin-top:2px">${escHtml(t.prompt.slice(0,80))}</div>
           ${t.last_result ? `<div class="task-result">${escHtml(t.last_result.slice(0,120))}</div>` : ''}
@@ -5502,12 +5519,29 @@ async function doUpdate() {
     status.style.color = 'var(--muted)';
     status.textContent = `发现新版本 ${check.latest || ''}，正在处理…`.trim();
     btn.textContent = '更新中…';
+    const tauri = window.__TAURI__;
+    if (tauri?.updater?.checkUpdate && tauri?.updater?.installUpdate) {
+      const update = await tauri.updater.checkUpdate();
+      if (!update.shouldUpdate) {
+        status.textContent = `✓ 已是最新版本 ${check.current || ''}`.trim();
+        return;
+      }
+      status.textContent = '正在验证并安装签名更新包…';
+      await tauri.updater.installUpdate();
+      status.style.color = '#3ecf8e';
+      status.textContent = '✓ 更新已安装，正在重启…';
+      if (tauri.process?.relaunch) await tauri.process.relaunch();
+      return;
+    }
     const r = await fetch('/api/system/update', { method: 'POST' });
     const d = await r.json();
     if (!d.ok) {
       status.style.color = 'var(--danger, #e55)';
       const fallback = d.fallback_command ? `\n备用更新命令：${d.fallback_command}` : '';
       status.textContent = '失败：' + (d.error || '未知错误') + fallback;
+    } else if (d.desktop_updater) {
+      status.style.color = 'var(--muted)';
+      status.textContent = d.message || '请从 Captain 托盘菜单运行签名更新。';
     } else if (d.opened_url) {
       status.style.color = 'var(--muted)';
       status.textContent = d.message || ('已打开下载页面：' + d.opened_url);

@@ -16,12 +16,21 @@ from typing import Awaitable, Callable, Optional
 
 from core.context import Context
 from core.types import Identity
+from core.task_outcome import (
+    TaskExecutionResult,
+    TaskStatus,
+    normalize_execution_result,
+)
 from scheduler.store import ScheduledTask, TaskStore
 
 # run_task(task, actor) -> 执行结果文本
-RunTaskFn = Callable[[ScheduledTask, Identity], Awaitable[str]]
+RunTaskFn = Callable[[ScheduledTask, Identity], Awaitable[str | TaskExecutionResult]]
 # deliver(channel, to, subject, body) -> None
 DeliverFn = Callable[[str, str, str, str], Awaitable[None]]
+
+
+class TaskAlreadyRunning(RuntimeError):
+    """Raised when the same scheduled task is triggered concurrently."""
 
 
 class Scheduler:
@@ -38,6 +47,7 @@ class Scheduler:
         self.tick_sec = tick_sec
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        self._running_task_ids: set[str] = set()
 
     def start(self) -> None:
         if self._task and not self._task.done():
@@ -49,6 +59,17 @@ class Scheduler:
         self._running = False
         if self._task and not self._task.done():
             self._task.cancel()
+
+    async def wait_stopped(self) -> None:
+        task = self._task
+        if task is None:
+            return
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._task = None
 
     async def _loop(self) -> None:
         while self._running:
@@ -65,31 +86,52 @@ class Scheduler:
                 continue
             if task.next_run and task.next_run > now:
                 continue
+            if self.is_running(task.id):
+                continue
             # 防止刚创建/刚跑完又立刻触发:next_run 为 0 视为"尽快跑一次"
             await self.run_once(task)
 
+    def is_running(self, task_id: str) -> bool:
+        return task_id in self._running_task_ids
+
     async def run_once(self, task: ScheduledTask) -> ScheduledTask:
         """立即执行一个任务(供调度循环或"手动运行"调用)。"""
-        # 定时任务的主体:带 scheduler 角色,便于 policy 单独管控其权限。
-        actor = Identity(subject_id=f"scheduler:{task.id}", agent_name="scheduler",
-                         channel="scheduler", roles=("scheduler",))
+        if self.is_running(task.id):
+            raise TaskAlreadyRunning(f"task {task.id} is already running")
+        self._running_task_ids.add(task.id)
         try:
-            result = await self._run_task(task, actor)
-            task.last_status = "ok"
-            task.last_result = (result or "")[:2000]
-        except Exception as e:
-            task.last_status = "error"
-            task.last_result = str(e)[:2000]
-
-        task.last_run = time.time()
-        task.next_run = task.compute_next_run(task.last_run)
-        self.store.save(task)
-
-        # 投递结果
-        if self._deliver and task.deliver and task.deliver != "none":
+            # 定时任务的主体:带 scheduler 角色,便于 policy 单独管控其权限。
+            actor = Identity(subject_id=f"scheduler:{task.id}", agent_name="scheduler",
+                             channel="scheduler", roles=("scheduler",))
             try:
-                await self._deliver(task.deliver, task.deliver_to,
-                                    f"[定时任务] {task.name}", task.last_result)
+                outcome = normalize_execution_result(await self._run_task(task, actor))
+                task.execution_status = outcome.status
+                task.last_status = outcome.status
+                task.last_result = (outcome.output or outcome.error or "")[:2000]
+                task.last_error = (outcome.error or "")[:2000]
             except Exception as e:
-                print(f"[scheduler] 投递失败: {e}")
-        return task
+                task.execution_status = TaskStatus.FAILED.value
+                task.last_status = TaskStatus.FAILED.value
+                task.last_result = str(e)[:2000]
+                task.last_error = str(e)[:2000]
+
+            task.last_run = time.time()
+            task.next_run = task.compute_next_run(task.last_run)
+            task.delivery_status = "not_requested"
+            task.last_delivery_error = ""
+
+            # 投递结果
+            if self._deliver and task.deliver and task.deliver != "none":
+                try:
+                    await self._deliver(task.deliver, task.deliver_to,
+                                        f"[定时任务] {task.name}", task.last_result)
+                    task.delivery_status = TaskStatus.SUCCEEDED.value
+                except Exception as e:
+                    task.delivery_status = TaskStatus.FAILED.value
+                    task.last_delivery_error = str(e)[:2000]
+                    task.last_status = TaskStatus.DELIVERY_FAILED.value
+                    print(f"[scheduler] 投递失败: {e}")
+            self.store.save(task)
+            return task
+        finally:
+            self._running_task_ids.discard(task.id)

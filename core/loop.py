@@ -34,6 +34,7 @@ from core.task_lifecycle import (
     role_report_prompt,
     update_plan as lifecycle_update_plan,
 )
+from core.task_outcome import RunOutcome, TaskStatus
 
 # 软边界确认回调:由 channel 提供(CLI 用 input,Web 用确认卡片)。
 # confirm(call, decision, reason="") -> bool。reason 为治理给出的"为什么需要确认"。
@@ -98,6 +99,7 @@ class Agent:
         self._session_id = getattr(ctx, "session_id", "") or ""
         self._delivery_nudged = False   # 交付校验门:每轮 run 只拦一次,防死循环
         self._model_ms_total = 0.0      # 本轮模型累计耗时(诊断"慢在哪")
+        ctx.run_outcome = RunOutcome()
 
         def emit(etype: EventType, payload: dict) -> None:
             self.bus.publish(Event(type=etype, payload=payload, trace_id=trace_id))
@@ -131,7 +133,12 @@ class Agent:
 
         ctx.confirm_fn = confirm
         try:
-            return await self._run_loop(user_text, ctx, confirm, record_user)
+            result = await self._run_loop(user_text, ctx, confirm, record_user)
+            ctx.run_outcome.finalize()
+            return result
+        except Exception as exc:
+            ctx.run_outcome.stop(TaskStatus.FAILED.value, str(exc))
+            raise
         finally:
             ctx.confirm_fn = None
 
@@ -173,6 +180,12 @@ class Agent:
                            f"【状态】部分完成（{reason}）")
                 else:
                     msg = f"已停止:{reason}"
+                status = (
+                    TaskStatus.PARTIAL.value
+                    if ctx.run_outcome.successful_actions
+                    else TaskStatus.FAILED.value
+                )
+                ctx.run_outcome.stop(status, reason)
                 emit(EventType.ERROR, {"message": f"已停止:{reason}"})
                 ctx.add_system(f"已停止:{reason}")
                 return msg
@@ -206,6 +219,7 @@ class Agent:
             except Exception as e:
                 from llm.errors import format_llm_error
                 text = format_llm_error(e)
+                ctx.run_outcome.stop(TaskStatus.FAILED.value, text)
                 emit(EventType.ERROR, {"message": text})
                 ctx.add_assistant(text)
                 emit(EventType.ASSISTANT_MESSAGE, {"text": text})
@@ -288,6 +302,12 @@ class Agent:
                 msg = (f"已停止:检测到反复执行同一动作({call.name})且无进展。\n"
                        + (f"【已收集的阶段性成果】\n{partial}" if partial else "未能取得有效进展。"))
                 emit(EventType.ERROR, {"message": f"卡死保护:反复调用 {call.name}"})
+                status = (
+                    TaskStatus.PARTIAL.value
+                    if ctx.run_outcome.successful_actions
+                    else TaskStatus.FAILED.value
+                )
+                ctx.run_outcome.stop(status, f"repeated capability call: {call.name}")
                 ctx.add_assistant(msg)
                 emit(EventType.ASSISTANT_MESSAGE, {"text": msg})
                 return msg
@@ -338,6 +358,7 @@ class Agent:
                 tr.decision(decision.value, review.reason or "")
             if decision == Decision.BLOCK:
                 note = f"能力 [{call.name}] 被策略拒绝:{review.reason}"
+                ctx.run_outcome.action_blocked(note)
                 emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note})
                 self._audit(ctx, call, "block", False, review.rule or review.reason)
                 ctx.add_tool_result(note, call.call_id, name=call.name)
@@ -347,6 +368,7 @@ class Agent:
                 emit(EventType.APPROVAL_RESULT, {"name": call.name, "approved": approved})
                 if not approved:
                     note = f"用户拒绝了能力 [{call.name}]。"
+                    ctx.run_outcome.action_blocked(note)
                     emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note})
                     self._audit(ctx, call, "ask-denied", False, review.rule)
                     ctx.add_tool_result(note, call.call_id, name=call.name)
@@ -435,6 +457,10 @@ class Agent:
                     if _ap:
                         cap_payload["artifact_path"] = _ap
             emit(EventType.CAPABILITY_RESULT, cap_payload)
+            if result.ok:
+                ctx.run_outcome.action_succeeded()
+            else:
+                ctx.run_outcome.action_failed(result.error or f"{call.name} failed")
             if tr is not None:
                 tr.result(result.ok, result.output or "", result.error or "")
             self._audit(ctx, call, decision.value, result.ok,
@@ -456,6 +482,12 @@ class Agent:
                            "判定为当前不可用,停止空转。\n"
                            + (f"【已收集的阶段性成果】\n{partial}" if partial
                               else "请补齐该能力所需配置(如缺 key),或改用其它方案。"))
+                    status = (
+                        TaskStatus.PARTIAL.value
+                        if ctx.run_outcome.successful_actions
+                        else TaskStatus.FAILED.value
+                    )
+                    ctx.run_outcome.stop(status, result.error or f"{call.name} repeatedly failed")
                     emit(EventType.ERROR, {"message": f"thrash 保护:{call.name} 反复失败"})
                     ctx.add_assistant(msg)
                     emit(EventType.ASSISTANT_MESSAGE, {"text": msg})

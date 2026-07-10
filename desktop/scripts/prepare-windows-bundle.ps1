@@ -15,66 +15,33 @@ function Write-Info([string]$Message) { Write-Host "==> $Message" -ForegroundCol
 function Write-Ok([string]$Message) { Write-Host "OK  $Message" -ForegroundColor Green }
 function Write-Fail([string]$Message) { Write-Host "ERROR $Message" -ForegroundColor Red; exit 1 }
 
-function Get-ProjectVersion {
-    $pyproject = Join-Path $RepoRoot "pyproject.toml"
-    $match = Select-String -Path $pyproject -Pattern '^\s*version\s*=\s*"([^"]+)"' | Select-Object -First 1
-    if ($match) { return $match.Matches[0].Groups[1].Value }
-    return "0.1.0"
+function Invoke-RepoPython {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        & py -3.12 @Arguments
+    } elseif (Get-Command python -ErrorAction SilentlyContinue) {
+        & python @Arguments
+    } else {
+        Write-Fail "Python 3.12 is required to stage the runtime"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Python command failed: $($Arguments -join ' ')"
+    }
 }
 
 function Sync-BackendSource {
     Write-Info "准备 App 内置后端资源"
-    if (Test-Path $ResourceApp) {
-        Remove-Item -Recurse -Force $ResourceApp
-    }
-    New-Item -ItemType Directory -Force -Path $ResourceApp | Out-Null
+    Invoke-RepoPython (Join-Path $RepoRoot "scripts\stage_runtime.py") `
+        --source $RepoRoot --destination $ResourceApp
+}
 
-    $excludeDirs = @(
-        ".git", ".github", ".cursor", ".pytest_cache", ".venv", ".venv312",
-        "__pycache__", "build", "data", "demo", "desktop", "evals", "htmlcov",
-        "license_server", "logs", "release-assets", "report", "tests", "uploads",
-        "收件箱", "产物"
-    )
-    $excludeFiles = @(
-        ".DS_Store", ".dockerignore", ".env", "Dockerfile", "Makefile",
-        "CLAUDE.local.md", "docker-compose.yml", "*.pyc", "*.pem", "*.github_token",
-        "票据市场行情报告_*.md"
-    )
-
-    $robocopyArgs = @(
-        $RepoRoot, $ResourceApp, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS"
-    )
-    foreach ($dir in $excludeDirs) {
-        $robocopyArgs += "/XD"
-        $robocopyArgs += $dir
-    }
-    foreach ($file in $excludeFiles) {
-        $robocopyArgs += "/XF"
-        $robocopyArgs += $file
-    }
-
-    & robocopy @robocopyArgs | Out-Null
-    $code = $LASTEXITCODE
-    if ($code -ge 8) {
-        Write-Fail "robocopy 同步失败, exit code $code"
-    }
-
-    $version = Get-ProjectVersion
-    $builtAt = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
-    $stampLines = @(
-        "version=$version",
-        "built_at=$builtAt"
-    )
-    Push-Location $RepoRoot
-    try {
-        $gitHead = (& git rev-parse --short HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $gitHead) {
-            $stampLines += "git=$gitHead"
-        }
-    } finally {
-        Pop-Location
-    }
-    Set-Content -Path (Join-Path $ResourceApp ".captain_bundle_stamp") -Value $stampLines -Encoding UTF8
+function Write-BundleStamp {
+    $trust = if ($env:CAPTAIN_BUNDLE_TRUST) { $env:CAPTAIN_BUNDLE_TRUST } else { "development" }
+    Invoke-RepoPython (Join-Path $RepoRoot "scripts\build_bundle_stamp.py") `
+        --root $RepoRoot `
+        --output (Join-Path $ResourceApp ".captain_bundle_stamp") `
+        --platform "windows-x86_64" `
+        --trust $trust
 }
 
 function Download-PythonRuntime {
@@ -194,7 +161,10 @@ function Install-PythonDependencies {
 }
 
 Sync-BackendSource
-Download-PythonRuntime
-Install-PythonDependencies
+if ($env:CAPTAIN_SKIP_RUNTIME -ne "1") {
+    Download-PythonRuntime
+    Install-PythonDependencies
+}
+Write-BundleStamp
 
 Write-Ok "App 内置资源已准备好: $ResourceApp"

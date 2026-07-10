@@ -78,22 +78,32 @@ def test_system_diagnostics_and_update_check(monkeypatch):
         return
     import server.routers.system as system_routes
 
-    monkeypatch.setattr(system_routes, "_github_latest_release", lambda: {
-        "tag_name": "v9.9.9",
-        "html_url": "https://example.com/releases/v9.9.9",
-        "assets": [
-            {"name": "Captain_9.9.9_arm64.dmg", "browser_download_url": "https://example.com/Captain_arm64.dmg"}
-        ],
+    monkeypatch.setattr(system_routes, "_latest_update_manifest", lambda: {
+        "version": "9.9.9",
+        "contract_version": 1,
+        "platforms": {
+            "darwin-aarch64": {
+                "url": "https://github.com/john-lcj/my-agent/releases/download/v9.9.9/Captain_9.9.9_arm64.app.tar.gz",
+                "signature": "signed-value",
+            }
+        },
     })
     r = c.get("/api/system/update/check", headers=_H)
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and body["latest"] == "9.9.9"
-    assert body["download_url"].endswith(".dmg")
+    assert body["download_url"].endswith(".app.tar.gz")
+    assert body["signed"] is True
 
     r = c.get("/api/system/diagnostics", headers=_H)
     assert r.status_code == 200
-    assert r.json()["ok"] is True
+    diagnostics = r.json()
+    assert diagnostics["ok"] is True
+    assert diagnostics["version"]
+    assert diagnostics["commit"]
+    assert diagnostics["frontend_asset_hash"]
+    assert "database_schema" in diagnostics
+    assert set(diagnostics["leader"]) == {"backend", "workers"}
 
     r = c.get("/api/system/diagnostics/export", headers=_H)
     assert r.status_code == 200
@@ -149,9 +159,9 @@ def test_system_update_check_release_missing(monkeypatch):
     import server.routers.system as system_routes
 
     def missing_release():
-        raise urllib.error.HTTPError("https://api.github.com/repos/john-lcj/my-agent/releases/latest", 404, "Not Found", None, None)
+        raise urllib.error.HTTPError("https://example.com/latest.json", 404, "Not Found", None, None)
 
-    monkeypatch.setattr(system_routes, "_github_latest_release", missing_release)
+    monkeypatch.setattr(system_routes, "_latest_update_manifest", missing_release)
     r = c.get("/api/system/update/check", headers=_H)
     assert r.status_code == 200
     body = r.json()

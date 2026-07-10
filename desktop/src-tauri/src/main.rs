@@ -1,9 +1,12 @@
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
+use sha2::{Digest, Sha256};
 use std::{
-    env,
-    fs,
-    io,
+    collections::HashMap,
+    env, fs, io,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
@@ -92,11 +95,7 @@ fn windows_support_app_root() -> Option<PathBuf> {
     if let Ok(raw) = env::var("CAPTAIN_WINDOWS_SUPPORT_DIR") {
         return Some(PathBuf::from(raw).join("app"));
     }
-    env::var_os("LOCALAPPDATA").map(|local| {
-        PathBuf::from(local)
-            .join("Captain")
-            .join("app")
-    })
+    env::var_os("LOCALAPPDATA").map(|local| PathBuf::from(local).join("Captain").join("app"))
 }
 
 fn windows_resource_app_roots() -> Vec<PathBuf> {
@@ -150,59 +149,162 @@ fn copy_dir_preserving_symlinks(src: &Path, dst: &Path) -> io::Result<()> {
 fn should_preserve_support_entry(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|name| name.to_str()),
-        Some(".env" | "data" | "logs" | "uploads")
+        Some(".env" | ".venv" | "data" | "logs" | "uploads")
     )
 }
 
-fn copy_dir_preserving_state(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if should_preserve_support_entry(&dst_path) {
-            continue;
-        }
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            copy_dir_preserving_state(&src_path, &dst_path)?;
-        } else if file_type.is_symlink() {
-            let target = fs::read_link(&src_path)?;
-            #[cfg(unix)]
-            {
-                let _ = fs::remove_file(&dst_path);
-                std::os::unix::fs::symlink(target, &dst_path)?;
-            }
-            #[cfg(not(unix))]
-            {
-                fs::copy(&src_path, &dst_path)?;
-            }
-        } else if file_type.is_file() {
-            if let Some(parent) = dst_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(&src_path, &dst_path)?;
-            let permissions = fs::metadata(&src_path)?.permissions();
-            fs::set_permissions(&dst_path, permissions)?;
-        }
-    }
-    Ok(())
+fn file_text(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
-fn file_text(path: &Path) -> String {
-    fs::read_to_string(path).unwrap_or_default().trim().to_string()
+fn parse_bundle_stamp(root: &Path) -> HashMap<String, String> {
+    let mut values = HashMap::new();
+    for line in file_text(&root.join(".captain_bundle_stamp")).lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            values.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    values
+}
+
+fn stamp_manifest_hash(stamp: &HashMap<String, String>) -> String {
+    let mut keys = stamp
+        .keys()
+        .filter(|key| key.as_str() != "manifest_hash")
+        .collect::<Vec<_>>();
+    keys.sort();
+    let canonical = keys
+        .into_iter()
+        .map(|key| format!("{key}={}\n", stamp.get(key).unwrap_or(&String::new())))
+        .collect::<String>();
+    format!("{:x}", Sha256::digest(canonical.as_bytes()))
+}
+
+fn stamp_integrity_valid(stamp: &HashMap<String, String>) -> bool {
+    stamp
+        .get("manifest_hash")
+        .map(|expected| expected == &stamp_manifest_hash(stamp))
+        .unwrap_or(false)
+}
+
+fn version_parts(raw: &str) -> Option<(u64, u64, u64)> {
+    let core = raw.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn stamp_is_trusted(stamp: &HashMap<String, String>) -> bool {
+    matches!(
+        stamp.get("trust").map(String::as_str),
+        Some("platform-signed" | "tauri-signed")
+    ) && stamp.get("stamp_schema").map(String::as_str) == Some("1")
+        && stamp_integrity_valid(stamp)
 }
 
 fn support_needs_bundle_refresh(support_root: &Path, resource_root: &Path) -> bool {
+    let resource = parse_bundle_stamp(resource_root);
     if !has_server(support_root) {
-        return true;
+        return resource.get("stamp_schema").map(String::as_str) == Some("1")
+            && stamp_integrity_valid(&resource);
     }
-    let resource_stamp = file_text(&resource_root.join(".captain_bundle_stamp"));
-    if resource_stamp.is_empty() {
+    if !stamp_is_trusted(&resource) {
         return false;
     }
-    file_text(&support_root.join(".captain_bundle_stamp")) != resource_stamp
+    let support = parse_bundle_stamp(support_root);
+    if support.is_empty() {
+        return true;
+    }
+    let resource_version = resource
+        .get("version")
+        .and_then(|value| version_parts(value));
+    let support_version = support
+        .get("version")
+        .and_then(|value| version_parts(value));
+    match (resource_version, support_version) {
+        (Some(new), Some(old)) if new > old => true,
+        (Some(new), Some(old)) if new < old => false,
+        (Some(_), Some(_)) => {
+            let newer_build = resource.get("built_at") > support.get("built_at");
+            let changed = resource.get("manifest_hash") != support.get("manifest_hash");
+            newer_build && changed
+        }
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn remove_path(path: &Path) -> io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() && !path.is_symlink() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
+}
+
+fn refresh_support_atomically(resource_root: &Path, support_root: &Path) -> io::Result<()> {
+    let parent = support_root.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "support directory has no parent",
+        )
+    })?;
+    fs::create_dir_all(parent)?;
+    let suffix = format!("{}-{}", std::process::id(), chrono_like_timestamp());
+    let stage = parent.join(format!(".captain-app-next-{suffix}"));
+    let backup = parent.join(format!(".captain-app-previous-{suffix}"));
+    remove_path(&stage)?;
+    remove_path(&backup)?;
+    copy_dir_preserving_symlinks(resource_root, &stage)?;
+
+    if !support_root.exists() {
+        return fs::rename(stage, support_root);
+    }
+
+    fs::rename(support_root, &backup)?;
+    if let Err(err) = fs::rename(&stage, support_root) {
+        let _ = fs::rename(&backup, support_root);
+        return Err(err);
+    }
+
+    let mut moved = Vec::new();
+    let mut move_error = None;
+    for entry in fs::read_dir(&backup)? {
+        let entry = entry?;
+        let old_path = entry.path();
+        if !should_preserve_support_entry(&old_path) {
+            continue;
+        }
+        let new_path = support_root.join(entry.file_name());
+        if let Err(err) = remove_path(&new_path).and_then(|_| fs::rename(&old_path, &new_path)) {
+            move_error = Some(err);
+            break;
+        }
+        moved.push(entry.file_name());
+    }
+
+    if let Some(err) = move_error {
+        for name in moved.into_iter().rev() {
+            let _ = fs::rename(support_root.join(&name), backup.join(&name));
+        }
+        let _ = remove_path(support_root);
+        let _ = fs::rename(&backup, support_root);
+        return Err(err);
+    }
+
+    remove_path(&backup)?;
+    Ok(())
 }
 
 fn random_hex(bytes: usize) -> io::Result<String> {
@@ -370,20 +472,16 @@ fn ensure_support_from_bundle(
     for resource_root in resource_roots {
         if has_server(&resource_root) {
             if support_needs_bundle_refresh(&support_root, &resource_root) {
-                if let Some(parent) = support_root.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                if support_root.exists() && !has_server(&support_root) {
-                    fs::remove_dir_all(&support_root)?;
-                    copy_dir_preserving_symlinks(&resource_root, &support_root)?;
-                } else if support_root.exists() {
-                    copy_dir_preserving_state(&resource_root, &support_root)?;
-                } else {
-                    copy_dir_preserving_symlinks(&resource_root, &support_root)?;
-                }
+                refresh_support_atomically(&resource_root, &support_root)?;
             }
-            ensure_default_env(&support_root)?;
-            return Ok(Some(support_root));
+            if has_server(&support_root) {
+                ensure_default_env(&support_root)?;
+                return Ok(Some(support_root));
+            }
+            if cfg!(debug_assertions) {
+                ensure_default_env(&resource_root)?;
+                return Ok(Some(resource_root));
+            }
         }
     }
 
@@ -472,7 +570,10 @@ fn project_root() -> Result<PathBuf, io::Error> {
         }
     }
 
-    for candidate in dev_project_roots().into_iter().chain(packaged_project_roots()) {
+    for candidate in dev_project_roots()
+        .into_iter()
+        .chain(packaged_project_roots())
+    {
         if has_server(&candidate) {
             ensure_default_env(&candidate)?;
             return Ok(candidate);
@@ -489,12 +590,17 @@ fn candidate_python_paths(root: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
     if cfg!(windows) {
-        candidates.push(root.join(".venv").join("Scripts").join("python.exe"));
         candidates.push(root.join("runtime").join("python").join("python.exe"));
+        candidates.push(root.join(".venv").join("Scripts").join("python.exe"));
         candidates.push(PathBuf::from("python"));
     } else {
+        candidates.push(
+            root.join("runtime")
+                .join("python")
+                .join("bin")
+                .join("python3"),
+        );
         candidates.push(root.join(".venv").join("bin").join("python"));
-        candidates.push(root.join("runtime").join("python").join("bin").join("python3"));
         candidates.push(PathBuf::from("python3"));
         candidates.push(PathBuf::from("python"));
     }
@@ -556,18 +662,17 @@ fn release_gui_lock(root: &Path) {
     }
 }
 
-fn diagnostics_project_root(port: u16) -> Option<String> {
+fn diagnostics_value(port: u16, key: &str) -> Option<String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .ok()?;
-    let req = "GET /api/system/diagnostics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    let req =
+        "GET /api/system/diagnostics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
     stream.write_all(req.as_bytes()).ok()?;
     let mut body = String::new();
     stream.read_to_string(&mut body).ok()?;
     let json = body.split("\r\n\r\n").nth(1).unwrap_or(&body);
-    let needle = "\"project_root\":\"";
-    let start = json.find(needle)? + needle.len();
+    let needle = format!("\"{}\":\"", key);
+    let start = json.find(&needle)? + needle.len();
     let rest = &json[start..];
     let end = rest.find('"')?;
     Some(rest[..end].to_string())
@@ -575,21 +680,19 @@ fn diagnostics_project_root(port: u16) -> Option<String> {
 
 fn find_existing_backend(root: &Path) -> Option<u16> {
     let root_str = root.to_string_lossy();
+    let log_str = root.join("logs").to_string_lossy().to_string();
     for port in 8000u16..=8099 {
-        if let Some(pr) = diagnostics_project_root(port) {
-            if pr == root_str {
-                return Some(port);
-            }
+        let same_root = diagnostics_value(port, "project_root")
+            .map(|value| value == root_str)
+            .unwrap_or(false);
+        let same_data = diagnostics_value(port, "log_dir")
+            .map(|value| value == log_str)
+            .unwrap_or(false);
+        if same_root || same_data {
+            return Some(port);
         }
     }
     None
-}
-
-fn kill_stale_backends(root: &Path) {
-    let python = resolve_python(root);
-    let marker = format!("{} -m server.app", python.to_string_lossy());
-    let _ = Command::new("pkill").arg("-f").arg(&marker).status();
-    thread::sleep(Duration::from_millis(300));
 }
 
 fn pick_port() -> (u16, u16, bool) {
@@ -682,10 +785,7 @@ fn backend_error_page(info: &LaunchInfo) -> io::Result<PathBuf> {
             info.preferred_port, info.port
         )
     } else {
-        format!(
-            "本地服务未能在端口 <code>{}</code> 上就绪。",
-            info.port
-        )
+        format!("本地服务未能在端口 <code>{}</code> 上就绪。", info.port)
     };
     let html = format!(
         r#"<!doctype html><meta charset="utf-8">
@@ -726,7 +826,12 @@ fn spawn_backend(root: &Path, port: u16) -> Result<Child, io::Error> {
     let mut command = Command::new(&python);
     command
         .arg("-m")
-        .arg("server.app")
+        .arg("uvicorn")
+        .arg("server.app:app")
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
         .current_dir(root)
         .env("AGENT_PROJECT_ROOT", root.as_os_str())
         .env("CAPTAIN_PROJECT_ROOT", root.as_os_str())
@@ -834,7 +939,6 @@ fn main() {
                 if let Some(existing) = find_existing_backend(&root) {
                     (existing, preferred, existing != preferred, None)
                 } else {
-                    kill_stale_backends(&root);
                     let (port, preferred_port, port_switched) = pick_port();
                     let child = spawn_backend(&root, port)?;
                     (port, preferred_port, port_switched, Some(child))
@@ -919,4 +1023,90 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Captain desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_root(name: &str) -> PathBuf {
+        let path = env::temp_dir().join(format!(
+            "captain-{name}-{}-{}",
+            std::process::id(),
+            chrono_like_timestamp()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_runtime(root: &Path, version: &str, built_at: &str, trust: &str) {
+        fs::create_dir_all(root.join("server")).unwrap();
+        fs::write(root.join("server/app.py"), "app = None\n").unwrap();
+        let mut stamp = HashMap::from([
+            ("built_at".to_string(), built_at.to_string()),
+            ("commit".to_string(), "abc".to_string()),
+            ("stamp_schema".to_string(), "1".to_string()),
+            ("trust".to_string(), trust.to_string()),
+            ("version".to_string(), version.to_string()),
+        ]);
+        stamp.insert("manifest_hash".to_string(), stamp_manifest_hash(&stamp));
+        let mut keys = stamp.keys().collect::<Vec<_>>();
+        keys.sort();
+        let content = keys
+            .into_iter()
+            .map(|key| format!("{key}={}\n", stamp.get(key).unwrap()))
+            .collect::<String>();
+        fs::write(root.join(".captain_bundle_stamp"), content).unwrap();
+    }
+
+    #[test]
+    fn refresh_requires_a_trusted_newer_bundle() {
+        let root = temp_root("refresh-order");
+        let support = root.join("support");
+        let resource = root.join("resource");
+        write_runtime(&support, "1.0.0", "20260701000000", "development");
+        write_runtime(&resource, "1.1.0", "20260702000000", "platform-signed");
+        assert!(support_needs_bundle_refresh(&support, &resource));
+
+        write_runtime(&resource, "0.9.0", "20260703000000", "platform-signed");
+        assert!(!support_needs_bundle_refresh(&support, &resource));
+
+        write_runtime(&resource, "2.0.0", "20260704000000", "development");
+        assert!(!support_needs_bundle_refresh(&support, &resource));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn atomic_refresh_preserves_state_and_removes_old_code() {
+        let root = temp_root("atomic-refresh");
+        let support = root.join("support");
+        let resource = root.join("resource");
+        write_runtime(&support, "1.0.0", "20260701000000", "development");
+        fs::create_dir_all(support.join("logs")).unwrap();
+        fs::write(support.join("logs/state.db"), "user-state").unwrap();
+        fs::write(support.join("obsolete.py"), "old").unwrap();
+        write_runtime(&resource, "1.1.0", "20260702000000", "platform-signed");
+        fs::write(resource.join("current.py"), "new").unwrap();
+
+        refresh_support_atomically(&resource, &support).unwrap();
+
+        assert_eq!(file_text(&support.join("logs/state.db")), "user-state");
+        assert!(support.join("current.py").is_file());
+        assert!(!support.join("obsolete.py").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn tampered_bundle_stamp_is_rejected() {
+        let root = temp_root("tampered-stamp");
+        let support = root.join("support");
+        let resource = root.join("resource");
+        write_runtime(&resource, "1.1.0", "20260702000000", "platform-signed");
+        assert!(support_needs_bundle_refresh(&support, &resource));
+        let mut content = file_text(&resource.join(".captain_bundle_stamp"));
+        content.push_str("\nversion=9.9.9\n");
+        fs::write(resource.join(".captain_bundle_stamp"), content).unwrap();
+        assert!(!support_needs_bundle_refresh(&support, &resource));
+        let _ = fs::remove_dir_all(root);
+    }
 }

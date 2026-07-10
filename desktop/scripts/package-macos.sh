@@ -12,6 +12,9 @@ info() { printf '\033[36m==>\033[0m %s\n' "$1"; }
 ok() { printf '\033[32mOK\033[0m %s\n' "$1"; }
 fail() { printf '\033[31mERROR\033[0m %s\n' "$1" >&2; exit 1; }
 
+[[ -n "${APPLE_SIGNING_IDENTITY:-}" ]] \
+  || fail "正式 macOS 打包必须设置 APPLE_SIGNING_IDENTITY，未签名本地构建不得标记为可信发布包"
+
 info "安装桌面依赖"
 npm --prefix "$DESKTOP_ROOT" install
 
@@ -28,6 +31,7 @@ for raw_arch in $TARGETS; do
   fi
 
   info "准备 App 内置后端与 Python runtime ($DMG_ARCH)"
+  export CAPTAIN_BUNDLE_TRUST="platform-signed"
   npm --prefix "$DESKTOP_ROOT" run macos:prepare-bundle
 
   info "构建 macOS App ($DMG_ARCH)"

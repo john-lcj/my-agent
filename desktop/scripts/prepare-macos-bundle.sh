@@ -90,55 +90,17 @@ PY
 
 sync_backend_source() {
   info "准备 App 内置后端资源"
-  rm -rf "$RESOURCE_APP"
-  mkdir -p "$RESOURCE_APP"
-  rsync -a --delete \
-    --exclude '.git/' \
-    --exclude '.github/' \
-    --exclude '.DS_Store' \
-    --exclude '.cursor/' \
-    --exclude '.dockerignore' \
-    --exclude '.env' \
-    --exclude '.env.*' \
-    --exclude '.pytest_cache/' \
-    --exclude '.venv*/' \
-    --exclude '__pycache__/' \
-    --exclude '*.pyc' \
-    --exclude '*.pem' \
-    --exclude '*.github_token' \
-    --exclude 'CLAUDE.local.md' \
-    --exclude 'Dockerfile' \
-    --exclude 'Makefile' \
-    --exclude 'build/' \
-    --exclude 'data/' \
-    --exclude 'demo/' \
-    --exclude 'desktop/' \
-    --exclude 'docker-compose.yml' \
-    --exclude 'evals/' \
-    --exclude 'htmlcov/' \
-    --exclude 'license_server/' \
-    --exclude 'logs/' \
-    --exclude 'release-assets/' \
-    --exclude 'report/' \
-    --exclude 'tests/' \
-    --exclude 'uploads/' \
-    --exclude '收件箱/' \
-    --exclude '票据市场行情报告_*.md' \
-    --exclude '产物/' \
-    "$REPO_ROOT/" "$RESOURCE_APP/"
-  {
-    printf 'version=%s\n' "$(python3 - "$REPO_ROOT/pyproject.toml" <<'PY'
-import re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
-print(m.group(1) if m else "0.1.0")
-PY
-)"
-    printf 'built_at=%s\n' "$(date -u +%Y%m%d%H%M%S)"
-    if git -C "$REPO_ROOT" rev-parse --short HEAD >/dev/null 2>&1; then
-      printf 'git=%s\n' "$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
-    fi
-  } > "$RESOURCE_APP/.captain_bundle_stamp"
+  python3 "$REPO_ROOT/scripts/stage_runtime.py" \
+    --source "$REPO_ROOT" \
+    --destination "$RESOURCE_APP"
+}
+
+write_bundle_stamp() {
+  python3 "$REPO_ROOT/scripts/build_bundle_stamp.py" \
+    --root "$REPO_ROOT" \
+    --output "$RESOURCE_APP/.captain_bundle_stamp" \
+    --platform "macos-$(arch_name)" \
+    --trust "${CAPTAIN_BUNDLE_TRUST:-development}"
 }
 
 install_python_dependencies() {
@@ -156,7 +118,10 @@ install_python_dependencies() {
 }
 
 sync_backend_source
-download_python_runtime
-install_python_dependencies
+if [[ "${CAPTAIN_SKIP_RUNTIME:-0}" != "1" ]]; then
+  download_python_runtime
+  install_python_dependencies
+fi
+write_bundle_stamp
 
 ok "App 内置资源已准备好: $RESOURCE_APP"

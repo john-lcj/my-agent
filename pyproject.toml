@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "my-agent"
-version = "0.1.1"
+version = "0.2.0"
 description = "A measured multi-agent platform with governed tool access, hybrid memory, MCP connectors, and Web/CLI/Desktop interfaces."
 requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }

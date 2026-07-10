@@ -5,7 +5,6 @@ import json
 import os
 import re
 import time as _time
-import shutil
 import urllib.error
 import zipfile
 
@@ -13,6 +12,7 @@ from fastapi import Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from config import Config
+from core.runtime_identity import runtime_diagnostics
 from server.keychain_store import secret_ref, set_secret, should_use_for_path
 
 
@@ -63,40 +63,48 @@ def _current_version() -> str:
     return "0.1.0"
 
 
-def _github_latest_release() -> dict:
+def _latest_update_manifest() -> dict:
     import urllib.request
+
     url = os.environ.get(
-        "CAPTAIN_RELEASE_API",
-        "https://api.github.com/repos/john-lcj/my-agent/releases/latest",
+        "CAPTAIN_UPDATE_MANIFEST",
+        "https://github.com/john-lcj/my-agent/releases/latest/download/latest.json",
     )
-    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=12) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        value = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(value, dict) or not value.get("version"):
+        raise ValueError("invalid Captain update manifest")
+    return value
 
 
-def _release_download_url(release: dict) -> str:
-    assets = release.get("assets") or []
-    machine = os.uname().machine if hasattr(os, "uname") else ""
-    prefer = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
-    for asset in assets:
-        name = (asset.get("name") or "").lower()
-        if name.endswith(".dmg") and prefer in name:
-            return asset.get("browser_download_url") or ""
-    for asset in assets:
-        name = (asset.get("name") or "").lower()
-        if name.endswith(".dmg"):
-            return asset.get("browser_download_url") or ""
-    return release.get("html_url") or "https://github.com/john-lcj/my-agent/releases"
+def _version_tuple(raw: str) -> tuple[int, int, int]:
+    match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", str(raw or "").strip())
+    return tuple(int(part) for part in match.groups()) if match else (0, 0, 0)
 
 
-def _open_url(url: str) -> None:
-    import subprocess
+def _manifest_platform_entry(manifest: dict) -> dict:
+    machine = os.uname().machine if hasattr(os, "uname") else "x86_64"
     if os.name == "nt":
-        os.startfile(url)  # type: ignore[attr-defined]
+        candidates = ("windows-x86_64", "windows-x86_64-nsis")
     elif hasattr(os, "uname") and os.uname().sysname == "Darwin":
-        subprocess.Popen(["open", url])
+        arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
+        candidates = (f"darwin-{arch}", f"macos-{arch}")
     else:
-        subprocess.Popen(["xdg-open", url])
+        candidates = (f"linux-{machine}",)
+    platforms = manifest.get("platforms") or {}
+    for key in candidates:
+        entry = platforms.get(key)
+        if isinstance(entry, dict):
+            return entry
+    return {}
+
+
+def _release_page_from_asset(url: str) -> str:
+    match = re.match(r"^(https://github\.com/[^/]+/[^/]+)/releases/download/([^/]+)/", url or "")
+    return f"{match.group(1)}/releases/tag/{match.group(2)}" if match else (
+        "https://github.com/john-lcj/my-agent/releases"
+    )
 
 
 _SECRET_REPLACEMENTS: tuple[tuple[re.Pattern, str], ...] = (
@@ -149,7 +157,8 @@ def _write_redacted_member(z: zipfile.ZipFile, source: str, arcname: str,
 
 
 def register_system(app, task_store, template_store, vault, ext_channels,
-                    scheduler_holder, daemon_results, start_ts) -> None:
+                    scheduler_holder, daemon_results, start_ts,
+                    leader_state=None) -> None:
     """scheduler_holder = [Scheduler|None]；start_ts = 进程启动时刻（float）。"""
 
     @app.get("/api/stats")
@@ -192,7 +201,11 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "secrets":          len(vault.list()) if vault else 0,
             "channels":         list(ext_channels.keys()),
             "daemon":           daemon,
-            "scheduler_running": scheduler_holder[0] is not None,
+            "scheduler_running": bool(
+                scheduler_holder[0] is not None
+                and getattr(scheduler_holder[0], "_running", False)
+            ),
+            "leader": dict(leader_state or {}),
             "security":         security,
         })
 
@@ -219,16 +232,23 @@ def register_system(app, task_store, template_store, vault, ext_channels,
     async def system_update_check() -> JSONResponse:
         current = _current_version()
         try:
-            release = _github_latest_release()
-            latest = str(release.get("tag_name") or release.get("name") or "").lstrip("v")
-            url = _release_download_url(release)
+            manifest = _latest_update_manifest()
+            latest = str(manifest.get("version") or "").lstrip("v")
+            entry = _manifest_platform_entry(manifest)
+            if not entry or not entry.get("signature"):
+                raise ValueError("the update manifest has no signed artifact for this platform")
+            url = str(entry.get("url") or "")
             return JSONResponse({
                 "ok": True,
                 "current": current,
                 "latest": latest or current,
-                "already_latest": bool(latest and latest == current),
+                "already_latest": bool(
+                    latest and _version_tuple(latest) <= _version_tuple(current)
+                ),
                 "download_url": url,
-                "release_url": release.get("html_url") or url,
+                "release_url": _release_page_from_asset(url),
+                "signed": bool(entry.get("signature")),
+                "contract_version": 1,
             })
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -248,6 +268,7 @@ def register_system(app, task_store, template_store, vault, ext_channels,
     @app.get("/api/system/diagnostics")
     async def diagnostics_status() -> JSONResponse:
         root = _project_root()
+        identity = runtime_diagnostics(root, Config.LOG_DIR)
         return JSONResponse({
             "ok": True,
             "project_root": root,
@@ -257,6 +278,9 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "python": os.sys.executable,
             "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
             "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
+            "pid": os.getpid(),
+            "leader": dict(leader_state or {}),
+            **identity,
         })
 
     @app.post("/api/system/logs/open")
@@ -316,172 +340,67 @@ def register_system(app, task_store, template_store, vault, ext_channels,
 
     @app.post("/api/system/update")
     async def system_update() -> JSONResponse:
-        import subprocess, sys
+        import subprocess
+        import sys
+
         root = _project_root()
-        fallback_command = (
-            'powershell -NoProfile -ExecutionPolicy Bypass -Command '
-            '\'$u = "https://raw.githubusercontent.com/john-lcj/my-agent/main/install.ps1"; '
-            '$p = Join-Path $env:TEMP "captain-install.ps1"; '
-            '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; '
-            '(New-Object Net.WebClient).DownloadFile($u, $p); '
-            'powershell -NoProfile -ExecutionPolicy Bypass -File $p -UpdateOnly\''
-        ) if os.name == "nt" else (
-            "curl -fsSL https://raw.githubusercontent.com/john-lcj/my-agent/main/install.sh | bash"
-        )
-
-        portable_git = os.path.join(root, "runtime", "git", "bin", "git.exe")
-        if os.path.exists(portable_git):
-            git_cmd = portable_git
-        elif shutil.which("git"):
-            git_cmd = "git"
-        else:
-            if os.environ.get("CAPTAIN_DESKTOP", "") == "1":
-                try:
-                    release = _github_latest_release()
-                    url = _release_download_url(release)
-                    _open_url(url)
-                    return JSONResponse({
-                        "ok": True,
-                        "already_latest": False,
-                        "opened_url": url,
-                        "message": "已打开最新安装包页面。下载 DMG 后拖入 Applications 覆盖即可。",
-                        "fallback_command": fallback_command,
-                    })
-                except urllib.error.HTTPError as e:
-                    if e.code == 404:
-                        return JSONResponse({
-                            "ok": False,
-                            "error": "当前 GitHub 仓库还没有发布安装包。请先创建 Release 并上传 DMG。",
-                            "fallback_command": fallback_command,
-                        }, status_code=404)
-                    return JSONResponse({"ok": False, "error": f"GitHub 返回 HTTP {e.code}",
-                                         "fallback_command": fallback_command}, status_code=502)
-                except Exception as e:
-                    return JSONResponse({"ok": False, "error": f"检查 GitHub Release 失败:{e}",
-                                         "fallback_command": fallback_command}, status_code=500)
-            return JSONResponse({"ok": False, "error": "未找到 git",
-                                 "fallback_command": fallback_command}, status_code=500)
-
-        if not os.path.isdir(os.path.join(root, ".git")) and os.environ.get("CAPTAIN_DESKTOP", "") == "1":
+        if os.environ.get("CAPTAIN_DESKTOP", "") == "1" or not os.path.isdir(
+            os.path.join(root, ".git")
+        ):
             try:
-                release = _github_latest_release()
-                url = _release_download_url(release)
-                _open_url(url)
+                manifest = _latest_update_manifest()
+                entry = _manifest_platform_entry(manifest)
+                if not entry or not entry.get("signature"):
+                    raise ValueError("the update manifest has no signed artifact for this platform")
                 return JSONResponse({
                     "ok": True,
-                    "already_latest": False,
-                    "opened_url": url,
-                    "message": "已打开最新安装包页面。下载 DMG 后拖入 Applications 覆盖即可。",
-                    "fallback_command": fallback_command,
+                    "desktop_updater": True,
+                    "latest": str(manifest.get("version") or ""),
+                    "signed": bool(entry.get("signature")),
+                    "message": "请使用 Captain 桌面更新器安装并重启；更新包会先验证签名。",
                 })
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    return JSONResponse({
-                        "ok": False,
-                        "error": "当前 GitHub 仓库还没有发布安装包。请先创建 Release 并上传 DMG。",
-                        "fallback_command": fallback_command,
-                    }, status_code=404)
-                return JSONResponse({"ok": False, "error": f"GitHub 返回 HTTP {e.code}",
-                                     "fallback_command": fallback_command}, status_code=502)
             except Exception as e:
-                return JSONResponse({"ok": False, "error": f"检查 GitHub Release 失败:{e}",
-                                     "fallback_command": fallback_command}, status_code=500)
+                return JSONResponse(
+                    {"ok": False, "error": f"检查签名更新清单失败:{e}"},
+                    status_code=502,
+                )
 
-        portable_pip = os.path.join(root, "runtime", "python", "Scripts", "pip.exe")
-        venv_pip_win = os.path.join(root, ".venv", "Scripts", "pip.exe")
-        venv_pip_unix = os.path.join(root, ".venv", "bin", "pip")
-        if os.path.exists(portable_pip):
-            pip_cmd = [portable_pip]
-        elif os.path.exists(venv_pip_win):
-            pip_cmd = [venv_pip_win]
-        elif os.path.exists(venv_pip_unix):
-            pip_cmd = [venv_pip_unix]
-        else:
-            pip_cmd = [sys.executable, "-m", "pip"]
-
-        git_env = os.environ.copy()
-        git_bin_dir = os.path.dirname(git_cmd)
-        git_env["PATH"] = git_bin_dir + os.pathsep + git_env.get("PATH", "")
-
-        try:
-            fetch = subprocess.run(
-                [git_cmd, "-C", root, "fetch", "--depth=1", "origin", "main"],
-                capture_output=True, text=True, timeout=60, env=git_env,
+        script = os.path.join(root, "scripts", "update.sh")
+        if os.name == "nt" or not os.path.isfile(script):
+            return JSONResponse(
+                {"ok": False, "error": "当前开发环境没有可用的安全更新脚本"},
+                status_code=501,
             )
-            if fetch.returncode != 0:
-                return JSONResponse({"ok": False, "error": fetch.stderr.strip(),
-                                     "fallback_command": fallback_command}, status_code=500)
-            local = subprocess.run(
-                [git_cmd, "-C", root, "rev-parse", "HEAD"],
-                capture_output=True, text=True, env=git_env,
-            ).stdout.strip()
-            remote = subprocess.run(
-                [git_cmd, "-C", root, "rev-parse", "FETCH_HEAD"],
-                capture_output=True, text=True, env=git_env,
-            ).stdout.strip()
-            already_latest = (local == remote)
-            if not already_latest:
-                dirty = subprocess.run(
-                    [git_cmd, "-C", root, "status", "--porcelain"],
-                    capture_output=True, text=True, timeout=15, env=git_env,
-                )
-                had_stash = bool((dirty.stdout or "").strip())
-                if had_stash:
-                    stash = subprocess.run(
-                        [git_cmd, "-C", root, "stash", "push", "--include-untracked",
-                         "--message", "captain-auto-update-backup"],
-                        capture_output=True, text=True, timeout=15, env=git_env,
-                    )
-                    if stash.returncode != 0:
-                        return JSONResponse({"ok": False, "error": stash.stderr.strip(),
-                                             "fallback_command": fallback_command}, status_code=500)
-                reset = subprocess.run(
-                    [git_cmd, "-C", root, "reset", "--hard", "FETCH_HEAD"],
-                    capture_output=True, text=True, timeout=30, env=git_env,
-                )
-                if reset.returncode != 0:
-                    if had_stash:
-                        subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
-                                       capture_output=True, timeout=10, env=git_env)
-                    return JSONResponse({"ok": False, "error": reset.stderr.strip(),
-                                         "fallback_command": fallback_command}, status_code=500)
-                if had_stash:
-                    subprocess.run([git_cmd, "-C", root, "stash", "pop", "--quiet"],
-                                   capture_output=True, timeout=10, env=git_env)
-
-            req_lock = os.path.join(root, "requirements.lock.txt")
-            req_base = os.path.join(root, "requirements-base.txt")
-            req_full = os.path.join(root, "requirements.txt")
-            req = req_lock if os.path.exists(req_lock) else (req_base if os.path.exists(req_base) else req_full)
-            if os.path.exists(req) and not already_latest:
-                primary = os.environ.get("PIP_INDEX_URL", "").strip() or "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-                extra = os.environ.get("PIP_EXTRA_INDEX_URL", "").strip() or "https://mirrors.aliyun.com/pypi/simple"
-                pip_result = subprocess.run(
-                    pip_cmd + ["install", "-q", "-r", req,
-                                "-i", primary, "--extra-index-url", extra],
-                    capture_output=True, timeout=180,
-                )
-                if pip_result.returncode != 0:
-                    err = (pip_result.stderr or b"").decode(errors="replace").strip()
-                    return JSONResponse({"ok": False, "error": f"pip install 失败: {err}",
-                                         "fallback_command": fallback_command}, status_code=500)
-            if not already_latest:
-                async def _restart():
-                    await asyncio.sleep(1)
-                    port = int(os.environ.get("AGENT_WEB_PORT", "8000"))
-                    try:
-                        subprocess.Popen(
-                            [sys.executable, "-m", "uvicorn", "server.app:app",
-                             "--host", "127.0.0.1", "--port", str(port)],
-                            cwd=root, start_new_session=True,
-                        )
-                    except Exception:
-                        pass
-                    os._exit(0)
-                asyncio.create_task(_restart())
-            return JSONResponse({"ok": True, "already_latest": already_latest,
-                                 "log": fetch.stderr.strip(),
-                                 "fallback_command": fallback_command})
+        try:
+            result = subprocess.run(
+                ["bash", script],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=420,
+            )
         except Exception as e:
-            return JSONResponse({"ok": False, "error": str(e),
-                                 "fallback_command": fallback_command}, status_code=500)
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout or "update failed").strip()
+            return JSONResponse({"ok": False, "error": error}, status_code=409)
+
+        already_latest = "Already current" in result.stdout
+        if not already_latest:
+            async def _restart():
+                await asyncio.sleep(1)
+                port = int(os.environ.get("AGENT_WEB_PORT", "8000"))
+                os.chdir(root)
+                os.execve(
+                    sys.executable,
+                    [sys.executable, "-m", "uvicorn", "server.app:app",
+                     "--host", "127.0.0.1", "--port", str(port)],
+                    {**os.environ, "AGENT_WEB_PORT": str(port)},
+                )
+
+            asyncio.create_task(_restart())
+        return JSONResponse({
+            "ok": True,
+            "already_latest": already_latest,
+            "log": result.stdout[-4000:],
+        })

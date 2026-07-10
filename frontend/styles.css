@@ -565,6 +565,12 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .task-row.disabled{opacity:.55}
 .task-info{flex:1;min-width:0}
 .task-name{font-weight:600;font-size:14px;margin-bottom:2px}
+.task-status{display:inline-flex;align-items:center;min-height:18px;margin-left:6px;padding:1px 5px;
+             border:1px solid var(--border);border-radius:4px;font-size:10px;font-weight:600;
+             line-height:1.2;vertical-align:middle;color:var(--muted);background:var(--panel)}
+.task-status[data-status="succeeded"]{color:#238568;border-color:rgba(35,133,104,.35);background:rgba(35,133,104,.08)}
+.task-status[data-status="partial"],.task-status[data-status="blocked"]{color:#9a6718;border-color:rgba(154,103,24,.35);background:rgba(154,103,24,.08)}
+.task-status[data-status="failed"],.task-status[data-status="delivery_failed"]{color:var(--red);border-color:rgba(205,74,69,.35);background:rgba(205,74,69,.08)}
 .task-meta{font-size:11px;color:var(--muted);line-height:1.5}
 .task-actions{display:flex;gap:4px;flex-shrink:0}
 .task-result{font-size:11px;color:var(--dim);margin-top:4px;max-height:40px;overflow:hidden}
@@ -820,7 +826,7 @@ option{background:var(--card)}
 #app #view-chat:not(.has-messages) .welcome-greet{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:0}
 #app #view-chat:not(.has-messages) .welcome-greet-ic{font-size:28px;line-height:1;color:var(--accent);filter:drop-shadow(0 0 8px rgba(217,119,87,.25))}
 #app #view-chat:not(.has-messages) .welcome-title{font-family:ui-serif,Georgia,'Iowan Old Style','Palatino Linotype',serif;
-  font-size:clamp(2.15rem,5vw,2.85rem);font-weight:400;letter-spacing:-.03em;line-height:1.12}
+  font-size:2.5rem;font-weight:400;letter-spacing:0;line-height:1.12}
 #app #view-chat:not(.has-messages) .welcome-sub{display:none}
 #app #view-chat:not(.has-messages) .welcome-chips,#app #view-chat:not(.has-messages) .welcome-scenarios{display:none}
 #app #view-chat:not(.has-messages) #chat-status-bar{display:none}
@@ -992,11 +998,12 @@ option{background:var(--card)}
 
 /* ── 响应式 ──────────────────────────────────────────────────── */
 @media(max-width:900px){
-  #app,#app.wb-open{grid-template-columns:minmax(0,1fr)}
+  #app,#app:not(.wb-open),#app.wb-open,
+  #app.work-mode-coworker:not(.wb-open){grid-template-columns:minmax(0,1fr)!important}
   #app.wb-open #workbench{display:none}
 }
 @media(max-width:680px){
-  #app{grid-template-columns:minmax(0,1fr)}
+  #main,#view-chat,.chat-shell{width:100%;min-width:0}
   #app:not(.sb-mobile-open) #sidebar{display:none}
   #app.sb-mobile-open #sidebar{display:flex;position:fixed;inset:0 auto 0 0;width:min(280px,88vw);
                                z-index:90;visibility:visible;opacity:1;pointer-events:all;
@@ -1024,16 +1031,20 @@ option{background:var(--card)}
   /* 汉堡在两种模式下都能用 */
   #btn-sb-toggle.sb-toggle{display:inline-flex!important}
   /* 对话区铺满 + 收紧边距 */
-  .chat-column,#app.work-mode-coworker .chat-column{padding:0 12px!important;max-width:none}
-  #app #view-chat:not(.has-messages) .chat-column{max-width:42rem!important;margin:0 auto}
+  .chat-column,#app.work-mode-coworker .chat-column{width:100%;padding:0 12px!important;max-width:none}
+  #app #view-chat:not(.has-messages) .chat-column{width:100%;max-width:42rem!important;margin:0 auto}
   #chat-messages{padding:12px 0 16px!important}
   .composer-wrap{padding:0}
-  .composer-dock{padding-left:12px;padding-right:12px}
+  .composer-dock{width:100%;max-width:100%;padding-left:12px;padding-right:12px}
   /* 输入框 font-size≥16px 防止 iOS 自动缩放 */
   #composer-input,#composer-input *{font-size:16px!important}
   /* 输入工具条:允许换行,触控热区放大,发送常驻 */
-  .composer-toolbar{flex-wrap:wrap;row-gap:6px}
-  .composer-left,.composer-right{gap:2px}
+  .composer-toolbar{display:grid;grid-template-columns:minmax(0,1fr);row-gap:4px}
+  .composer-left,.composer-right{width:100%;min-width:0;gap:2px}
+  .composer-right .model-picker-wrap{flex:1;min-width:0}
+  .composer .model-pill{display:block;width:100%;max-width:100%;text-align:left}
+  .composer-right .btn-send{margin-left:auto}
+  #app #view-chat:not(.has-messages) .welcome-title{font-size:2.1rem}
   /* 触控热区最小 44px（Apple HIG 标准）*/
   .composer-tool{width:44px;height:44px}
   .btn-send{width:44px;height:44px}

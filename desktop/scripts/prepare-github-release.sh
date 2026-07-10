@@ -46,6 +46,13 @@ make_updater_bundle() {
   rm -rf "$mount"
   mkdir -p "$mount"
   hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -quiet
+  codesign --verify --deep --strict "$app" \
+    || fail "${arch} App code signature verification failed"
+  stamp="$(find "$app/Contents/Resources" -name .captain_bundle_stamp -type f -print -quit)"
+  [[ -n "$stamp" ]] || fail "${arch} App 缺少 .captain_bundle_stamp"
+  python3 "$REPO_ROOT/scripts/check_bundle_stamp.py" "$stamp" \
+    --version "$VERSION" --trust platform-signed \
+    || fail "${arch} bundle identity verification failed"
   tar -czf "$tgz" -C "$app" .
   hdiutil detach "$mount" -quiet
   rm -rf "$mount"
@@ -72,6 +79,9 @@ const fs = require('fs');
 const out = process.argv[1];
 const payload = {
   version: process.argv[2],
+  contract_version: 1,
+  bundle_schema: 1,
+  commit: process.argv[8],
   notes: process.argv[3],
   pub_date: process.argv[4],
   platforms: {
@@ -86,7 +96,7 @@ const payload = {
   },
 };
 fs.writeFileSync(out, JSON.stringify(payload, null, 2) + '\n');
-" "$OUT_DIR/latest.json" "$VERSION" "$NOTES" "$PUB_DATE" "$arm_sig" "$BASE_URL" "$intel_sig"
+" "$OUT_DIR/latest.json" "$VERSION" "$NOTES" "$PUB_DATE" "$arm_sig" "$BASE_URL" "$intel_sig" "$(git -C "$REPO_ROOT" rev-parse HEAD)"
 
 info "生成发布说明草稿"
 cat > "$NOTES_OUT" <<EOF

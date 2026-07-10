@@ -64,6 +64,12 @@ desktop/dist/
 scripts/*
 !scripts/setup_wizard.py
 !scripts/release-preflight.sh
+!scripts/build_bundle_stamp.py
+!scripts/check_bundle_stamp.py
+!scripts/check_version_contract.py
+!scripts/stage_runtime.py
+!scripts/sync-all.sh
+!scripts/update.sh
 *.pem
 send_news_mail.py
 demo/

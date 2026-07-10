@@ -11,6 +11,7 @@ import os
 import time
 
 from config import Config
+from core.task_outcome import TaskExecutionResult, TaskStatus
 
 # _monitor_store 原先是 app.py 的模块级全局变量，移到这里随 _daemon_monitor_watch 一起管理。
 _monitor_store = None
@@ -20,38 +21,47 @@ _monitor_store = None
 # 定时任务执行入口
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _run_scheduled_task(task, actor) -> str:
+async def _run_scheduled_task(task, actor) -> TaskExecutionResult:
     """定时任务执行入口:confirm 恒为 False(无人值守 → 自动拒绝需确认的动作)。"""
     import server.app as _sa
 
     if task.task_type == "memory_forget":
         removed = _sa._longterm.forget()
-        return f"记忆清理完成,删除 {removed} 条低价值记忆"
+        return TaskExecutionResult.succeeded(f"记忆清理完成,删除 {removed} 条低价值记忆")
 
     if task.task_type == "rating_weekly":
         from memory.task_rating import weekly_summary
-        from config import Config
         ws = weekly_summary(Config.LOG_DIR, days=7.0)
         if ws.get("count", 0) == 0:
-            return "近 7 天无任务自评记录"
-        return f"近7天自评 {ws['count']} 次,均分 {ws['avg']}/5"
+            return TaskExecutionResult.succeeded("近 7 天无任务自评记录")
+        return TaskExecutionResult.succeeded(
+            f"近7天自评 {ws['count']} 次,均分 {ws['avg']}/5"
+        )
 
     if task.task_type == "memory_ingest":
         if not Config.PERSONAL_DIRS:
-            return "未配置 AGENT_PERSONAL_DIRS,跳过个人数据索引"
+            return TaskExecutionResult(
+                status=TaskStatus.BLOCKED.value,
+                output="未配置 AGENT_PERSONAL_DIRS,跳过个人数据索引",
+                error="AGENT_PERSONAL_DIRS is not configured",
+            )
         from memory.ingest import ingest_dirs
         stats = ingest_dirs(
             Config.PERSONAL_DIRS, _sa._longterm,
             state_path=f"{Config.LOG_DIR}/ingest_state.json",
         )
-        return (f"个人数据索引完成:扫描 {stats['scanned']},新索引 {stats['indexed']},"
-                f"未变跳过 {stats['skipped']},清理旧块 {stats['removed_chunks']}")
+        return TaskExecutionResult.succeeded(
+            f"个人数据索引完成:扫描 {stats['scanned']},新索引 {stats['indexed']},"
+            f"未变跳过 {stats['skipped']},清理旧块 {stats['removed_chunks']}"
+        )
 
     from core.briefing import BRIEFING_TASK_NAME, format_daily_briefing_email
     if task.name == BRIEFING_TASK_NAME or getattr(task, "task_type", "") == "briefing":
-        return format_daily_briefing_email(
-            log_dir=Config.LOG_DIR,
-            mission_store=_sa._mission_store,
+        return TaskExecutionResult.succeeded(
+            format_daily_briefing_email(
+                log_dir=Config.LOG_DIR,
+                mission_store=_sa._mission_store,
+            )
         )
 
     prompt = task.prompt
@@ -61,7 +71,14 @@ async def _run_scheduled_task(task, actor) -> str:
     async def deny(call, decision, reason=""):
         return False
 
-    return await agent.run(prompt, ctx, deny)
+    output = await agent.run(prompt, ctx, deny)
+    outcome = ctx.run_outcome
+    status = outcome.finalize() if outcome is not None else TaskStatus.FAILED.value
+    return TaskExecutionResult(
+        status=status,
+        output=output,
+        error=(outcome.reason if outcome and status != TaskStatus.SUCCEEDED.value else ""),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -220,12 +237,25 @@ async def _daemon_worker() -> None:
 
                 out = await agent.run(text, ctx, _deny)
                 rec["result"] = (out or "")[:5000]
-                rec["status"] = "done"
+                outcome = ctx.run_outcome
+                rec["status"] = (
+                    outcome.finalize() if outcome is not None else TaskStatus.FAILED.value
+                )
+                rec["execution_status"] = rec["status"]
                 if source in ("proactive", "digest"):
-                    await _sa._proactive_deliver(source, out or "")
+                    try:
+                        delivered = await _sa._proactive_deliver(source, out or "")
+                        rec["delivery_status"] = (
+                            TaskStatus.SUCCEEDED.value if delivered else "not_requested"
+                        )
+                    except Exception as delivery_error:
+                        rec["delivery_status"] = TaskStatus.FAILED.value
+                        rec["delivery_error"] = str(delivery_error)[:1000]
+                        rec["status"] = TaskStatus.DELIVERY_FAILED.value
             except Exception as e:
                 rec["error"] = str(e)[:1000]
-                rec["status"] = "error"
+                rec["status"] = TaskStatus.FAILED.value
+                rec["execution_status"] = TaskStatus.FAILED.value
             finally:
                 rec["finished"] = time.time()
                 _sa._daemon_results[tid] = rec

@@ -28,6 +28,8 @@ class Context:
     intent_frame: Any = None
     # 每轮任务生命周期状态:目标/计划/执行/自检/返修/汇报
     task_frame: Any = None
+    # Model-independent accounting for the current Agent.run invocation.
+    run_outcome: Any = None
     # Agent.run 期间注入,供能力回调确认门(软边界确认)
     confirm_fn: Any = None
     working: WorkingMemory = field(default_factory=WorkingMemory)

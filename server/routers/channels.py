@@ -4,6 +4,8 @@ from __future__ import annotations
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from scheduler.scheduler import TaskAlreadyRunning
+
 
 def _enabled_map(ext_channels) -> dict:
     return {
@@ -159,7 +161,13 @@ def register_tasks(app, task_store, scheduler_holder, daemon_enqueue, daemon_res
         scheduler = scheduler_holder[0]
         if scheduler is None:
             return JSONResponse({"ok": False, "error": "调度器未就绪"}, status_code=503)
-        task = await scheduler.run_once(task)
+        try:
+            task = await scheduler.run_once(task)
+        except TaskAlreadyRunning:
+            return JSONResponse(
+                {"ok": False, "error": "任务正在运行，请勿重复触发"},
+                status_code=409,
+            )
         return JSONResponse({"ok": True, "task": task.to_dict()})
 
     @app.post("/api/task")

@@ -1,6 +1,6 @@
 [package]
 name = "captain-desktop"
-version = "0.1.1"
+version = "0.2.0"
 description = "Captain desktop shell"
 authors = ["captain"]
 edition = "2021"
@@ -10,6 +10,7 @@ license = "MIT"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
+sha2 = "0.10"
 tauri = { version = "1", features = ["shell-open", "system-tray", "updater"] }
 
 [features]

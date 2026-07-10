@@ -32,12 +32,15 @@ def test_submit_and_query_task():
         assert r.status_code == 200, r.text
         tid = r.json()["task_id"]
         assert tid
-        # 立即查:应能查到记录,状态在 queued/running/done/error 之一
+        # 立即查:应能查到记录,并使用结构化执行状态。
         g = c.get(f"/api/task/{tid}", headers=H)
         assert g.status_code == 200
         rec = g.json()["task"]
         assert rec["id"] == tid
-        assert rec["status"] in ("queued", "running", "done", "error")
+        assert rec["status"] in (
+            "queued", "running", "succeeded", "partial", "blocked",
+            "failed", "delivery_failed",
+        )
         assert rec["source"] == "api"
 
 
