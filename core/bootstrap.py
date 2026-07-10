@@ -86,7 +86,8 @@ def build_registry(
     from capabilities.tools.suggest import SuggestAdd, SuggestList
     from capabilities.tools.git_tool import GitRead, GitCommit
     from capabilities.tools.calendar_tool import CalendarAdd, CalendarList, CalendarRemove
-    caps = [ReadFile(), ListDir(), WriteFile(), RunShell(),
+    from capabilities.tools.dev import RunTests
+    caps = [ReadFile(), ListDir(), WriteFile(), RunShell(), RunTests(),
             WebSearch(), WebFetch(), FsSearch(),
             RememberMemory(), RecallMemory(),
             ProgramRemember(), ProgramRecall(), ProgramList(),

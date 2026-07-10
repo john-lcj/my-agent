@@ -11,7 +11,7 @@ ALL_CAPS = [
     "plan.update", "memory.remember", "memory.recall",
     "fs.read", "fs.list", "fs.write", "fs.search",
     "web.search", "web.fetch", "http.request", "exa.search",
-    "shell.run", "skill.scaffold",
+    "shell.run", "dev.run_tests", "skill.scaffold",
     "browser.open", "browser.click", "browser.fill",
     "image.generate", "image.ocr", "vision.see",
     "calendar.add", "calendar.list",
@@ -87,6 +87,10 @@ class TestKeywordRouting:
         result = names(route("帮我 git commit 一下", ALL_SPECS))
         assert "git.read" in result
         assert "git.commit" in result
+
+    def test_test_keyword_uses_typed_runner(self):
+        result = names(route("跑一下 pytest 测试", ALL_SPECS))
+        assert "dev.run_tests" in result
 
     def test_monitor_keyword(self):
         result = names(route("帮我监控这个网址的变化", ALL_SPECS))

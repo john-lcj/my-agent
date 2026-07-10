@@ -34,7 +34,7 @@ class CapabilityManifest:
 
 
 _BUILTIN_NAMES = frozenset({
-    "fs.read", "fs.list", "fs.write", "fs.search", "shell.run",
+    "fs.read", "fs.list", "fs.write", "fs.search", "shell.run", "dev.run_tests",
     "web.search", "web.fetch", "exa.search", "http.request",
     "memory.remember", "memory.recall", "program.remember", "program.recall",
     "program.list", "schedule.create", "schedule.list", "schedule.delete",

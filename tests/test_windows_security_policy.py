@@ -24,7 +24,7 @@ def _shell(command: str) -> CapabilityCall:
     return CapabilityCall(name="shell.run", args={"command": command})
 
 
-def test_windows_readonly_shell_commands_are_allowed():
+def test_windows_raw_shell_commands_are_disabled():
     p = _policy()
     actor = Identity(roles=("executor",))
     for command in [
@@ -39,7 +39,7 @@ def test_windows_readonly_shell_commands_are_allowed():
         "Test-Path .\\install.ps1",
     ]:
         r = p.review_detailed(_shell(command), actor, None)
-        assert r.decision != Decision.BLOCK, f"{command}: {r.reason}"
+        assert r.decision == Decision.BLOCK, f"{command}: {r.reason}"
 
 
 def test_windows_destructive_commands_are_hard_blocked():
@@ -61,7 +61,7 @@ def test_windows_destructive_commands_are_hard_blocked():
         assert r.decision == Decision.BLOCK, f"{command}: {r.decision} {r.reason}"
 
 
-def test_windows_write_and_process_commands_require_confirmation():
+def test_windows_raw_write_and_process_commands_are_disabled():
     p = _policy()
     actor = Identity(roles=("executor",))
     for command in [
@@ -76,4 +76,4 @@ def test_windows_write_and_process_commands_require_confirmation():
         "icacls out.txt /grant Users:F",
     ]:
         r = p.review_detailed(_shell(command), actor, None)
-        assert r.decision == Decision.ASK, f"{command}: {r.decision} {r.reason}"
+        assert r.decision == Decision.BLOCK, f"{command}: {r.decision} {r.reason}"

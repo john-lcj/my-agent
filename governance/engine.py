@@ -91,41 +91,12 @@ _DEFAULT_POLICY = {
     },
     "capability_whitelist": {
         "readonly": ["fs.read", "fs.list", "web.search", "web.fetch"],
-        "researcher": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."],
-        "executor": ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule.", "channel.", "model_key.", "goal.", "monitor."],
+        "researcher": ["fs.read", "fs.list", "fs.write", "dev.", "web.search", "web.fetch", "skill."],
+        "executor": ["fs.read", "fs.list", "fs.write", "dev.", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule.", "channel.", "model_key.", "goal.", "monitor."],
         "delegate":  ["fs.read", "fs.list", "web.search", "web.fetch"],
         "scheduler": ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."],
     },
-    "shell_whitelist": [
-        {"pattern": r"^python3\s", "reason": "运行Python脚本"},
-        {"pattern": r"^(python|py\s+-3)\s", "reason": "运行Python脚本"},
-        {"pattern": r"\bmkdir\s+-p\b", "reason": "创建工作区子目录"},
-        {"pattern": r"\bwc\b", "reason": "文件统计"},
-        {"pattern": r"\bfind\b", "reason": "查找文件"},
-        {"pattern": r"\bls\b", "reason": "列出目录"},
-        {"pattern": r"\bhead\b", "reason": "预览文件头部"},
-        {"pattern": r"\btail\b", "reason": "预览文件尾部"},
-        {"pattern": r"\bcat\b\s+", "reason": "读取文件"},
-        {"pattern": r"\bgrep\b", "reason": "文本搜索"},
-        {"pattern": r"\bsort\b", "reason": "文本排序"},
-        {"pattern": r"\buniq\b", "reason": "文本去重"},
-        {"pattern": r"\bcut\b", "reason": "文本列提取"},
-        {"pattern": r"\bawk\b.*print", "reason": "纯打印awk"},
-        {"pattern": r"\b(date|pwd|which)\b", "reason": "系统查询"},
-        {"pattern": r"\bfile\b\s+", "reason": "文件类型"},
-        {"pattern": r"\bdu\s+", "reason": "磁盘用量"},
-        {"pattern": r"^echo\s+", "reason": "调试输出"},
-        {"pattern": r"^python3\s.*>\s", "reason": "Python脚本输出到文件"},
-        {"pattern": r"^(python|py\s+-3)\s.*>\s", "reason": "Python脚本输出到文件"},
-        {"pattern": r"^(dir|type|where)\b", "reason": "Windows 只读查询"},
-        {"pattern": r"^(Get-ChildItem|Get-Content|Select-String|Measure-Object|Get-Location|Get-Date|Get-Command|Test-Path)\b",
-         "reason": "PowerShell 只读查询"},
-        {"pattern": r"^(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item)\b",
-         "reason": "PowerShell 文件写操作,需确认"},
-        {"pattern": r"^(Stop-Process|Start-Process|Start-Service|Stop-Service|Set-Service|Set-ExecutionPolicy)\b",
-         "reason": "PowerShell 进程/服务/执行策略操作,需确认"},
-        {"pattern": r"^(icacls|attrib)\b", "reason": "Windows 权限/属性操作,需确认"},
-    ],
+    "shell_whitelist": [],
     "modes": {
         "conservative": {},
         "balanced": {},
@@ -181,11 +152,6 @@ class DeclarativePolicy:
         self.config = config
         self._forbidden_cmd = _compile_rules(self.config.get("forbidden_patterns", []))
         self._forbidden_path = _compile_rules(self.config.get("forbidden_paths", []))
-        self._confirm_shell = _compile_rules(
-            (self.config.get("confirm") or {}).get("shell_patterns", [])
-            or _DEFAULT_POLICY["confirm"]["shell_patterns"]
-        )
-        self._shell_whitelist = _compile_rules(self.config.get("shell_whitelist", []))
 
     def _maybe_reload(self) -> None:
         """policy.yaml 变更后热重载,避免改规则必须重启 server。"""
@@ -316,16 +282,25 @@ class DeclarativePolicy:
         if ws is not None:
             return ws
 
-        # 2.45) shell 白名单:shell.run 命令不在白名单内 → BLOCK(默认拒绝 + 仅放行安全命令)
-        if call.name == "shell.run" and self._shell_whitelist:
-            cmd = str(call.args.get("command", "")).strip()
-            if cmd and not self._whitelist_cmd_allowed(cmd):
-                return GovReview(Decision.BLOCK,
-                                 reason=f"shell命令不在安全白名单内,已拒绝。",
-                                 rule="shell_whitelist")
+        # P1-04: raw command strings are no longer an agent execution surface.
+        # The residual runner accepts only an administrator-configured command_id
+        # and its implementation uses argv execution rather than a shell.
+        if call.name == "shell.run":
+            if str(call.args.get("command", "")).strip():
+                return GovReview(
+                    Decision.BLOCK,
+                    reason="raw shell commands are disabled; use a typed capability or approved command_id.",
+                    rule="shell:raw-command-disabled",
+                )
+            if not str(call.args.get("command_id", "")).strip():
+                return GovReview(
+                    Decision.BLOCK,
+                    reason="shell.run requires an administrator-approved command_id.",
+                    rule="shell:missing-command-id",
+                )
 
         # 2.5) Only explicit capability grants may skip a later confirmation.
-        if self._capability_granted(call, ctx):
+        if call.name != "shell.run" and self._capability_granted(call, ctx):
             return GovReview(
                 Decision.ALLOW,
                 reason="该能力本会话已授权放手。",
@@ -356,7 +331,7 @@ class DeclarativePolicy:
         return GovReview(Decision.ALLOW, reason="无需确认,自动放行。", rule="auto")
 
     def _needs_confirm(self, call: CapabilityCall) -> tuple[bool, str, str]:
-        """仅删/改/花钱/控屏返回 True。shell.run 按命令内容细分。"""
+        """Return confirmation rules for effects beyond the generic risk default."""
         confirm_cfg = self.config.get("confirm") or _DEFAULT_POLICY.get("confirm") or {}
         caps = confirm_cfg.get("capabilities") or ["fs.write", "gui.control", "payment."]
         for prefix in caps:
@@ -369,30 +344,7 @@ class DeclarativePolicy:
                     return True, "涉及花钱/支付,需你确认。", "confirm:payment"
                 return True, "该操作会改动系统或产生费用,需你确认。", f"confirm:{call.name}"
 
-        if call.name == "shell.run":
-            cmd = str(call.args.get("command", "")).strip()
-            if not cmd:
-                return False, "", ""
-            for regex, reason in self._confirm_shell:
-                if regex.search(cmd):
-                    return (
-                        True,
-                        reason or "命令可能删除或修改文件,需你确认。",
-                        f"confirm:shell:{regex.pattern}",
-                    )
         return False, "", ""
-
-    def _whitelist_cmd_allowed(self, cmd: str) -> bool:
-        """检查 shell 命令是否在安全白名单内。白名单空 = 未启用 = 所有命令都放行(回退旧行为)。"""
-        if not self._shell_whitelist:
-            return True  # 未配置白名单 → 兼容模式
-        cmd_stripped = cmd.strip()
-        if not cmd_stripped:
-            return True
-        for regex, _ in self._shell_whitelist:
-            if regex.search(cmd_stripped):
-                return True
-        return False
 
     def _review_memory(self, call: CapabilityCall, actor: Identity) -> GovReview | None:
         """memory.remember:scheduler 禁止;其他主体继续按 WRITE 默认确认。"""

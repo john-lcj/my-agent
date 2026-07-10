@@ -15,7 +15,7 @@ ALWAYS_INCLUDE: frozenset[str] = frozenset({
     "memory.remember", "memory.recall",
     "fs.read", "fs.list", "fs.write", "fs.search",
     "web.search", "web.fetch", "http.request", "exa.search",
-    "shell.run",
+    "dev.run_tests",
     "skill.scaffold",
 })
 
@@ -47,6 +47,9 @@ ROUTING_TABLE: list[tuple[str, list[str]]] = [
     ]),
     ("git.", [
         "git", "提交", "commit", "仓库", "版本", "diff", "push", "pull", "代码版本",
+    ]),
+    ("dev.", [
+        "测试", "test", "pytest", "单元测试", "回归", "验证代码",
     ]),
     ("monitor.", [
         "监控", "monitor", "监听", "告警", "alert", "watch", "盯着",

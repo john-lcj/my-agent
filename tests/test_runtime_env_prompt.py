@@ -10,9 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def test_env_block_in_system_prompt():
     from core.prompts import build_system_prompt, runtime_env_block
     blk = runtime_env_block()
-    assert "Python 解释器" in blk and "cd" in blk and "工作目录" in blk
-    sp = build_system_prompt([{"name": "shell.run"}, {"name": "fs.write"}])
-    assert "运行环境" in sp and "Python 解释器" in sp
+    assert "dev.run_tests" in blk and "cd" in blk and "工作目录" in blk
+    sp = build_system_prompt([{"name": "dev.run_tests"}, {"name": "fs.write"}])
+    assert "运行环境" in sp and "dev.run_tests" in sp
 
 
 def test_windows_env_block_uses_windows_commands(monkeypatch):
@@ -21,7 +21,7 @@ def test_windows_env_block_uses_windows_commands(monkeypatch):
 
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     blk = runtime_env_block()
-    assert "py -3" in blk and "mkdir -p" not in blk
+    assert "dev.run_tests" in blk and "mkdir -p" not in blk
 
 
 def test_plan_guidance_in_system_prompt():

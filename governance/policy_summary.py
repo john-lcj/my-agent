@@ -29,7 +29,7 @@ def load_policy_summary(policy_path: str | None = None) -> dict[str, Any]:
 
     auto_samples = [
         "fs.read", "fs.list", "memory.remember", "memory.recall",
-        "web.search", "web.fetch", "shell.run(白名单内)",
+        "web.search", "web.fetch",
     ]
     auto = [{"capability": c, "reason": "只读或低风险,默认放行"} for c in auto_samples]
     return {"block": block, "confirm": confirm, "auto": auto}

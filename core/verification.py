@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.test_runner import run_pytest
 from governance.workspace import resolve_path, workspace_root
 
 
@@ -61,14 +61,9 @@ def run_verification(v: Verification) -> Verification:
             v.evidence = text[:800]
             return v
         if v.kind == "run_test":
-            cmd = v.target or "python3 -m pytest -q tests/test_regression.py"
-            r = subprocess.run(
-                cmd, shell=True, cwd=_ws_root(),
-                capture_output=True, text=True, timeout=120,
-            )
-            out = (r.stdout or "") + (r.stderr or "")
-            v.evidence = out[-1500:]
-            v.status = "pass" if r.returncode == 0 else "fail"
+            ok, output, error = run_pytest(v.target)
+            v.evidence = output or error
+            v.status = "pass" if ok else "fail"
             return v
         if v.kind == "check_link":
             path = _resolve_path(v.target)

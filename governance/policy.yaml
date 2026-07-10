@@ -4,59 +4,9 @@
 defaults:
   mode: balanced
 
-# ★ shell 安全白名单:仅以下命令允许无人值守自动执行。
-# 不在列表中的 shell 命令将被 BLOCK(默认拒绝 + 白名单放行)。
-shell_whitelist:
-  - pattern: '^python3\s'
-    reason: 运行Python脚本
-  - pattern: '^(python|py\s+-3)\s'
-    reason: Windows/Python 脚本执行
-  - pattern: '\bmkdir\s+-p\b'
-    reason: 创建工作区子目录
-  - pattern: '\bwc\b(?:\s+-[a-z]+\s+|\s+)(?!/dev/)'
-    reason: 文件统计(行数/字数)
-  - pattern: '\bfind\b(?:\s+.*\s+-type\s+[fdl]\b)|\bfind\b\s+\.\s+'
-    reason: 查找文件与目录
-  - pattern: '\bls\b(?:\s+-[a-zA-Z]+\s+|\s+)'
-    reason: 列出目录内容
-  - pattern: '\bhead\b(?:\s+-[a-z]+\s+|\s+)'
-    reason: 预览文件头部
-  - pattern: '\btail\b(?:\s+-[a-z]+\s+|\s+)'
-    reason: 预览文件尾部
-  - pattern: '\bcat\b\s+'
-    reason: 读取文件内容
-  - pattern: '\begrep\b|\bgrep\b(?:\s+-[a-zA-Z]+\s+|\s+)'
-    reason: 文本搜索
-  - pattern: '\bsort\b(?:\s+-[a-zA-Z]+\s+|\s+[^\|;>&]*)'
-    reason: 文本排序
-  - pattern: '\buniq\b(?:\s+-[a-z]+\s+|\s*)'
-    reason: 文本去重
-  - pattern: '\bcut\b(?:\s+-[a-z]+\s+|\s+)'
-    reason: 文本列提取
-  - pattern: '\bawk\b(?:\s+.*)?\{\s*print\b'
-    reason: 纯打印 awk(无写操作)
-  - pattern: '\b(date|pwd|which)\b'
-    reason: 系统信息查询
-  - pattern: '\bfile\b\s+'
-    reason: 文件类型识别
-  - pattern: '\bdu\s+-[a-z]+\s+'
-    reason: 磁盘用量统计
-  - pattern: '^echo\s+'
-    reason: 调试输出
-  - pattern: '^python3\s.*>\s'
-    reason: Python脚本输出到文件
-  - pattern: '^(python|py\s+-3)\s.*>\s'
-    reason: Windows/Python 脚本输出到文件
-  - pattern: '^(dir|type|where)\b'
-    reason: Windows cmd 只读查询
-  - pattern: '^(Get-ChildItem|Get-Content|Select-String|Measure-Object|Get-Location|Get-Date|Get-Command|Test-Path)\b'
-    reason: PowerShell 只读查询
-  - pattern: '^(Set-Content|Add-Content|Out-File|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item)\b'
-    reason: PowerShell 文件写操作,需确认
-  - pattern: '^(Stop-Process|Start-Process|Start-Service|Stop-Service|Set-Service|Set-ExecutionPolicy)\b'
-    reason: PowerShell 进程/服务/执行策略操作,需确认
-  - pattern: '^(icacls|attrib)\b'
-    reason: Windows 权限/属性操作,需确认
+# Raw shell strings are disabled. shell.run only accepts an administrator
+# configured command_id and always requires an explicit action approval.
+shell_whitelist: []
 
 # 治理档位(保留供 Web runtime 切换;确认规则见 confirm 段,与档位无关)
 modes:
@@ -204,14 +154,14 @@ memory:
 
 capability_whitelist:
   readonly:  ["fs.read", "fs.list", "web.search", "web.fetch"]
-  executor:  ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."]
+  executor:  ["fs.read", "fs.list", "fs.write", "dev.", "shell.run", "web.search", "web.fetch", "skill."]
   delegate:  ["fs.read", "fs.list", "web.search", "web.fetch"]
   scheduler: ["fs.read", "fs.list", "memory.recall", "web.search", "web.fetch", "skill."]
 
   # 固定子 agent + 心理咨询(researcher 与 roster 一致:调研可交付产物)
-  researcher:          ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."]
+  researcher:          ["fs.read", "fs.list", "fs.write", "dev.", "web.search", "web.fetch", "skill."]
   verifier:            ["fs.read", "fs.list", "web.search", "web.fetch", "skill."]
   writer:              ["fs.read", "fs.list", "fs.write", "web.search", "web.fetch", "skill."]
-  coder:               ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill."]
-  executor:            ["fs.read", "fs.list", "fs.write", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule.", "channel.", "model_key.", "goal.", "monitor."]
+  coder:               ["fs.read", "fs.list", "fs.write", "dev.", "shell.run", "web.search", "web.fetch", "skill."]
+  executor:            ["fs.read", "fs.list", "fs.write", "dev.", "shell.run", "web.search", "web.fetch", "skill.", "notify.notify_dispatch", "schedule.", "channel.", "model_key.", "goal.", "monitor."]
   adler_counselor_agent: ["memory.remember", "memory.recall"]

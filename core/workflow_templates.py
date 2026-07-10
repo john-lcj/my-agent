@@ -24,7 +24,7 @@ WORKFLOW_TEMPLATES = [
             "2) 改完后跑最小测试\n"
             "3) 汇报附 pytest 原始输出"
         ),
-        "verifications": [{"kind": "run_test", "target": "python3 -m pytest -q tests/test_regression.py"}],
+        "verifications": [{"kind": "run_test", "target": "tests/test_roadmap_p0_p6.py"}],
     },
     {
         "name": "调研报告",

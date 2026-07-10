@@ -430,19 +430,13 @@ class Agent:
                             append_verification(task_frame, "visual_check", path)
                     except Exception:
                         pass
-            if result.ok and call.name == "shell.run":
-                cmd = str((call.args or {}).get("command") or "")
+            if result.ok and call.name == "dev.run_tests":
+                target = str((call.args or {}).get("target") or "")
                 task_frame = getattr(ctx, "task_frame", None)
-                if task_frame is not None and cmd.strip():
+                if task_frame is not None and target:
                     try:
                         from core.verification import append_verification
-                        if "pytest" in cmd or "test" in cmd.lower():
-                            append_verification(task_frame, "run_test", cmd.strip())
-                        elif re.search(r"\.py\b|python3?\s", cmd, re.I):
-                            append_verification(
-                                task_frame, "run_test",
-                                "python3 -m pytest -q tests/test_regression.py",
-                            )
+                        append_verification(task_frame, "run_test", target)
                     except Exception:
                         pass
             if result.ok and call.name == "image.generate" and result.output:

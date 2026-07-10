@@ -57,7 +57,7 @@ class T2:
 
 
 class T3:
-    """安全 shell 命令:executor 角色应放行"""
+    """Raw shell strings are retired, including formerly safe-looking commands."""
     WL = [
         "python3 a.py",
         "python3 -c print(1)",
@@ -80,18 +80,17 @@ class T3:
         po = P()
         for c in self.WL:
             r = po.review_detailed(S(c), E, N)
-            assert r.decision != Bl, f"WL rej: {c} -> {r.reason}"
-            assert r.decision in (Al, Ak), f"WL unexpected: {c} -> {r.decision}"
+            assert r.decision == Bl, f"raw shell command should be blocked: {c} -> {r.reason}"
 
 
 class T3b:
-    """python3 统计脚本、输出重定向、md/html 生成"""
+    """Raw Python and output redirects must migrate to typed tools."""
     def test_python3_stats(self):
         po = P()
         r1 = po.review_detailed(S("python3 scripts/stats.py"), E, N)
-        assert r1.decision != Bl, f"python3 script blocked: {r1.reason}"
+        assert r1.decision == Bl, f"raw Python should be blocked: {r1.reason}"
         r2 = po.review_detailed(S("python3 scripts/stats.py > data/out.txt"), E, N)
-        assert r2.decision != Bl, f"python3 > file blocked: {r2.reason}"
+        assert r2.decision == Bl, f"raw redirect should be blocked: {r2.reason}"
 
     def test_generate_md_html(self):
         po = P()
@@ -159,7 +158,7 @@ class T4:
             "> o.txt",
             "tee o.txt",
         ]
-        # 在白名单内,但触发确认规则 → ASK
+        # Legacy raw forms are blocked before command-specific confirmation.
         confirm_trigger = [
             "cat f.txt > o.txt",
             "cat f.txt >> o.txt",
@@ -178,7 +177,7 @@ class T4:
             assert r.decision == Bl, f"WL should block: {c!r} -> {r.decision}/{r.rule}"
         for c in confirm_trigger:
             r = po.review_detailed(S(c), E, N)
-            assert r.decision == Ak, f"Confirm not ASK: {c!r} -> {r.decision}/{r.rule}"
+            assert r.decision == Bl, f"Raw command not blocked: {c!r} -> {r.decision}/{r.rule}"
 
 
 class T5:
@@ -226,10 +225,10 @@ class T6:
 
 
 class T7:
-    """researcher: 可读/可写/可搜索/安全 shell"""
+    """researcher: raw shell is unavailable."""
     def test_shell(self):
         r = P().review_detailed(S("python3 -c print(1)"), R, N)
-        assert r.decision != Bl, f"researcher python3 should not BLOCK: {r.decision}"
+        assert r.decision == Bl, f"researcher raw shell should be blocked: {r.decision}"
     def test_read(self):
         assert P().review(Rf("x"), R, N) == Al, "researcher fs.read should ALLOW"
     def test_write(self):
@@ -238,10 +237,10 @@ class T7:
 
 
 class T8:
-    """executor: 可 shell(白名单内)/可读/可写"""
+    """executor: raw shell is unavailable."""
     def test_shell(self):
         r = P().review_detailed(S("python3 -c print(1)"), E, N)
-        assert r.decision != Bl, f"executor python3 should be allowed: {r.decision}"
+        assert r.decision == Bl, f"executor raw shell should be blocked: {r.decision}"
     def test_read(self):
         assert P().review(Rf("x"), E, N) == Al, "executor fs.read should ALLOW"
     def test_write(self):
@@ -258,7 +257,7 @@ class T10:
         r = po.review_detailed(S(chr(114)+chr(109)+" f"), A, N)
         assert r.decision == Bl, f"anonymous rm should BLOCK: {r.decision}"
         r = po.review_detailed(S("ls -la"), A, N)
-        assert r.decision != Bl, f"anonymous ls should not BLOCK: {r.decision}"
+        assert r.decision == Bl, f"anonymous raw shell should be blocked: {r.decision}"
 
 
 class T9:
