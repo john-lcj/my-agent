@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from core.process_lock import ProcessFileLock
 from core.runtime_identity import (
     build_bundle_stamp,
+    runtime_source_hash,
     stamp_integrity_valid,
     validate_version_contract,
     write_bundle_stamp,
@@ -55,6 +56,10 @@ def test_runtime_staging_is_code_only(tmp_path):
     assert (destination / "frontend/app.js").is_file()
     assert not (destination / "desktop").exists()
     assert not list(destination.rglob("*.md"))
+    stamp = build_bundle_stamp(
+        str(ROOT), target_platform="test", trust="development", commit="abc123"
+    )
+    assert runtime_source_hash(str(destination)) == stamp["source_hash"]
 
     (destination / ".venv").mkdir()
     (destination / ".venv" / "README.md").write_text("dependency docs")

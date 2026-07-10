@@ -88,6 +88,8 @@ def runtime_source_hash(root: str | None = None) -> str:
             for path in directory.rglob("*")
             if path.is_file()
             and path.suffix not in {".pyc", ".pyo", ".md"}
+            and path.name != ".DS_Store"
+            and not path.name.endswith((".pem", ".github_token"))
             and "__pycache__" not in path.parts
         )
     rels.extend(name for name in sorted(RUNTIME_FILES) if (base / name).is_file())
