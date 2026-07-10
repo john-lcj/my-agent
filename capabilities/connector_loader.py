@@ -43,7 +43,8 @@ def _auth_headers(auth: dict, ctx: Any) -> tuple[dict, str]:
         return {}, ""
     ref = (auth.get("secret_ref") or "").strip()
     vault = getattr(ctx, "vault", None)
-    token = vault.get(ref) if (vault and ref) else None
+    broker = getattr(ctx, "secret_broker", None)
+    token = broker.resolve_named(ref) if (broker and ref) else (vault.get(ref) if (vault and ref) else None)
     if ref and token is None:
         return {}, f"保险库里没有「{ref}」的凭据,请先用 secret.save / 连接器面板保存"
     atype = auth.get("type", "bearer")
@@ -108,8 +109,13 @@ class _ConnectorTool(Tool):
         if missing:
             return CapabilityResult(ok=False, error=f"缺少路径参数:{', '.join(missing)}")
         url = spec.get("base_url", "").rstrip("/") + "/" + path.lstrip("/")
-        from governance.egress import check_egress
-        ok_e, why = check_egress(url)
+        from urllib.parse import urlparse
+        from governance.egress import check_egress, classify_data
+        ok_e, why = check_egress(
+            url, method=method,
+            data_classification=classify_data(action.get("body"), bool((spec.get("auth") or {}).get("secret_ref"))),
+            destination="connector", allow_domains=[urlparse(spec.get("base_url", "")).hostname or ""],
+        )
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
 

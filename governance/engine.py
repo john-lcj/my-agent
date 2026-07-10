@@ -98,9 +98,9 @@ _DEFAULT_POLICY = {
     },
     "shell_whitelist": [],
     "modes": {
-        "conservative": {},
+        "conservative": {"confirm_external_reads": True},
         "balanced": {},
-        "aggressive": {},
+        "aggressive": {"allow_owner_task_writes": True},
     },
 }
 
@@ -249,6 +249,21 @@ class DeclarativePolicy:
                 rule="manifest:default-deny",
             )
 
+        authority = str(getattr(ctx, "authority", "owner") or "owner")
+        if authority not in {"owner", "system"} and risk >= Risk.WRITE:
+            return GovReview(
+                Decision.BLOCK,
+                reason=f"untrusted {authority} content cannot authorize side effects.",
+                rule="authority:untrusted-side-effect",
+            )
+
+        mode_cfg = self._mode_cfg()
+        if (
+            risk == Risk.READ and mode_cfg.get("confirm_external_reads")
+            and call.name.startswith(("web.", "browser.", "http.", "exa."))
+        ):
+            return GovReview(Decision.ASK, reason="conservative mode confirms external reads.", rule="mode:conservative-external-read")
+
         # 1.5) 无人值守主体不能写记忆；其余写操作继续走统一确认门。
         if call.name == "memory.remember":
             mem_review = self._review_memory(call, actor)
@@ -316,6 +331,11 @@ class DeclarativePolicy:
             reason = "该能力会写入状态或产生副作用，需你确认。"
             rule = "risk:write-default"
         if need:
+            if (
+                mode_cfg.get("allow_owner_task_writes") and authority == "owner"
+                and bool(getattr(ctx, "task_auto_approve", False)) and call.name == "fs.write"
+            ):
+                return GovReview(Decision.ALLOW, reason="owner task explicitly approved in aggressive mode.", rule="mode:aggressive-owner-task")
             if (
                 call.name == "fs.write"
                 and self.config.get("write_auto_allow_if_granted", True)

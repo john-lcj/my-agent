@@ -33,7 +33,9 @@ class HttpRequest(Tool):
         "properties": {
             "url": {"type": "string", "description": "完整请求地址(http/https)"},
             "method": {"type": "string", "description": "GET/POST/PUT/PATCH/DELETE,默认 GET"},
-            "headers": {"type": "object", "description": "请求头,如 {\"Authorization\": \"Bearer xxx\"}"},
+            "headers": {"type": "object", "description": "Non-secret request headers. Authorization and API key headers are forbidden."},
+            "secret_handle": {"type": "string", "description": "One-time handle issued by secret.issue_handle."},
+            "secret_header": {"type": "string", "description": "Header name for the resolved secret; defaults to Authorization."},
             "json": {"type": "object", "description": "JSON body(自动设 Content-Type)"},
             "data": {"type": "object", "description": "表单 body(application/x-www-form-urlencoded)"},
             "params": {"type": "object", "description": "URL 查询参数"},
@@ -46,16 +48,28 @@ class HttpRequest(Tool):
         url = str(args.get("url", "")).strip()
         if not (url.startswith("http://") or url.startswith("https://")):
             return CapabilityResult(ok=False, error="url 必须以 http:// 或 https:// 开头")
-        from governance.egress import check_egress
-        ok_e, why = check_egress(url)
-        if not ok_e:
-            return CapabilityResult(ok=False, error=why)
         method = str(args.get("method", "GET")).strip().upper() or "GET"
         if method not in _ALLOWED_METHODS:
             return CapabilityResult(ok=False, error=f"不支持的方法:{method}")
         headers = args.get("headers") or {}
         if not isinstance(headers, dict):
             return CapabilityResult(ok=False, error="headers 必须是对象")
+        if any(str(key).lower() in {"authorization", "x-api-key", "api-key", "cookie"} for key in headers):
+            return CapabilityResult(ok=False, error="secret headers require a one-time secret_handle")
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+        handle = str(args.get("secret_handle", "")).strip()
+        from governance.egress import check_egress, classify_data
+        data_class = "secret" if handle else classify_data(args.get("json"), args.get("data"))
+        ok_e, why = check_egress(url, method=method, data_classification=data_class, destination="http")
+        if not ok_e:
+            return CapabilityResult(ok=False, error=why)
+        if handle:
+            broker = getattr(ctx, "secret_broker", None)
+            secret = broker.resolve(handle, capability=self.name, destination=host) if broker else ""
+            if not secret:
+                return CapabilityResult(ok=False, error="secret handle is invalid, expired, or bound to another destination")
+            headers[str(args.get("secret_header", "Authorization"))] = f"Bearer {secret}"
         try:
             timeout = float(args.get("timeout", 30))
         except (TypeError, ValueError):

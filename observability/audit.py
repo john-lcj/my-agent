@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import hashlib
 
 from observability.log_rotation import append_text
 
@@ -70,11 +71,51 @@ def read_recent(limit: int = 100, *, capability: str = "", agent: str = "",
     return out
 
 
+def _previous_hash(path: str) -> str:
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            lines = f.read().splitlines()
+        return json.loads(lines[-1]).get("hash", "") if lines else ""
+    except Exception:
+        return ""
+
+
+def verify_chain(path: str | None = None) -> bool:
+    target = path or _audit_path()
+    previous = ""
+    try:
+        with open(target, encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                digest = record.pop("hash", "")
+                # Pre-P1 records were append-only but unchained. They form a
+                # legacy prefix; once a chain record appears, every following
+                # record must be chained.
+                if not digest and not previous:
+                    continue
+                if not digest:
+                    return False
+                if record.get("prev_hash", "") != previous:
+                    return False
+                encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                if digest != hashlib.sha256((previous + encoded).encode()).hexdigest():
+                    return False
+                previous = digest
+    except FileNotFoundError:
+        return True
+    except Exception:
+        return False
+    return True
+
+
 def audit(*, trace_id: str = "", agent: str = "", capability: str = "",
           args: dict | None = None, decision: str = "", ok: bool | None = None,
-          detail: str = "") -> None:
+          detail: str = "", authority: str = "owner", evidence: str = "") -> None:
     """追加一条审计记录。任何异常都吞掉(审计不能拖垮主流程)。"""
     try:
+        path = _audit_path()
         rec = {
             "ts": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "trace": trace_id,
@@ -84,8 +125,12 @@ def audit(*, trace_id: str = "", agent: str = "", capability: str = "",
             "decision": decision,
             "ok": ok,
             "detail": str(detail)[:200],
+            "authority": authority,
+            "evidence": str(evidence)[:200],
+            "prev_hash": _previous_hash(path),
         }
-        path = _audit_path()
+        encoded = json.dumps(rec, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        rec["hash"] = hashlib.sha256((rec["prev_hash"] + encoded).encode()).hexdigest()
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)

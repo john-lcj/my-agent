@@ -103,3 +103,30 @@ class SecretList(Tool):
                 parts.append(r["url"])
             lines.append(" | ".join(parts))
         return CapabilityResult(ok=True, output="\n".join(lines))
+
+
+class SecretIssueHandle(Tool):
+    name = "secret.issue_handle"
+    risk = Risk.WRITE
+    description = "Issue a one-time secret handle bound to one capability and destination."
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Saved credential name"},
+            "capability": {"type": "string", "description": "Target capability, such as http.request"},
+            "destination": {"type": "string", "description": "Approved destination hostname"},
+        },
+        "required": ["name", "capability", "destination"],
+    }
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        broker = getattr(ctx, "secret_broker", None)
+        name = str(args.get("name", "")).strip()
+        capability = str(args.get("capability", "")).strip()
+        destination = str(args.get("destination", "")).strip().lower()
+        if not broker or not name or not capability or not destination:
+            return CapabilityResult(ok=False, error="secret broker, name, capability, and destination are required")
+        handle = broker.issue(name, capability=capability, destination=destination)
+        if not handle:
+            return CapabilityResult(ok=False, error="credential is unavailable")
+        return CapabilityResult(ok=True, output=f"Issued one-time secret handle: {handle}")

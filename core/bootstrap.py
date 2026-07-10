@@ -74,7 +74,7 @@ def build_registry(
     )
     from capabilities.tools.vision import VisionSee
     from capabilities.tools.http_request import HttpRequest
-    from capabilities.tools.secret import SecretSave, SecretList
+    from capabilities.tools.secret import SecretSave, SecretList, SecretIssueHandle
     from capabilities.tools.wechat import WechatFormat
     from capabilities.tools.skill_scaffold import SkillScaffold
     from capabilities.tools.multimodal import ImageOCR, ImageGenerate
@@ -97,7 +97,7 @@ def build_registry(
             BrowserWait(), BrowserScreenshot(), BrowserUpload(), BrowserDownload(),
             BrowserLoginAssist(),
             VisionSee(), HttpRequest(),
-            SecretSave(), SecretList(), WechatFormat(), SkillScaffold(),
+            SecretSave(), SecretList(), SecretIssueHandle(), WechatFormat(), SkillScaffold(),
             ImageOCR(), ImageGenerate(),
             MonitorCreate(), MonitorList(), MonitorDelete(),
             GoalSet(), GoalList(), GoalRemove(),
@@ -200,8 +200,11 @@ def build_agent_bundle(
         from memory.secrets_vault import SecretsVault
         ctx.vault = SecretsVault(db_path=f"{Config.LOG_DIR}/vault.db",
                                  key_file=f"{Config.LOG_DIR}/.vault_key")
+        from governance.secret_broker import SecretBroker
+        ctx.secret_broker = SecretBroker(ctx.vault)
     except Exception as _e:
         ctx.vault = None
+        ctx.secret_broker = None
         print(f"[bootstrap] 凭据保险库初始化失败(降级为不可用): {_e}")
     from memory.monitor_store import MonitorStore
     ctx.monitors = MonitorStore(path=f"{Config.LOG_DIR}/monitors.json")

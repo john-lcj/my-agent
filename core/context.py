@@ -24,6 +24,10 @@ class Context:
     captain_only: bool = False
     # Cowork 模式:全自动确认(仅硬边界拦),Chat 模式写操作需确认
     coworker: bool = False
+    # Only owner/system instructions may authorize side effects. External
+    # email, webpages, files, and connector responses are untrusted data.
+    authority: str = "owner"
+    authority_source: str = "chat"
     # 每轮开始的轻量语境判断结果(内部使用,不直接展示给用户)
     intent_frame: Any = None
     # 每轮任务生命周期状态:目标/计划/执行/自检/返修/汇报
@@ -37,6 +41,7 @@ class Context:
     session: SessionAttachment = field(default_factory=SessionAttachment)
     longterm: Optional[Any] = None
     program: Optional[Any] = None
+    secret_broker: Optional[Any] = None
 
     @property
     def messages(self) -> list[Message]:

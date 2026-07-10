@@ -107,6 +107,13 @@ def _safe_ws_path(p: str) -> str | None:
     return full if not error else None
 
 
+def _current_egress(*, method: str, data_classification: str) -> tuple[bool, str]:
+    if _PAGE is None or not str(_PAGE.url).startswith(("http://", "https://")):
+        return False, "browser has no approved http destination"
+    from governance.egress import check_egress
+    return check_egress(_PAGE.url, method=method, data_classification=data_classification, destination="browser")
+
+
 class BrowserOpen:
     name = "browser.open"
     risk = Risk.READ
@@ -231,6 +238,9 @@ class BrowserClick:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         if not sel:
             return CapabilityResult(ok=False, error="缺少 selector")
+        ok_e, why = _current_egress(method="POST", data_classification="private")
+        if not ok_e:
+            return CapabilityResult(ok=False, error=why)
         try:
             await _PAGE.click(sel, timeout=8000)
             await _PAGE.wait_for_timeout(500)
@@ -268,13 +278,17 @@ class BrowserFill:
         masked = False
         if raw.startswith("secret:"):
             name = raw[len("secret:"):].strip()
+            broker = getattr(ctx, "secret_broker", None)
             vault = getattr(ctx, "vault", None)
             if vault is None:
                 return CapabilityResult(ok=False, error="未配置凭据保险库,无法解引用 secret:")
-            pw = vault.get(name)
+            pw = broker.resolve_named(name) if broker else vault.get(name)
             if pw is None:
                 return CapabilityResult(ok=False, error=f"保险库里没有「{name}」的密码,请先用 secret.save 保存")
             raw, masked = pw, True
+        ok_e, why = _current_egress(method="POST", data_classification="secret" if masked else "private")
+        if not ok_e:
+            return CapabilityResult(ok=False, error=why)
         try:
             await _PAGE.fill(sel, raw, timeout=8000)
             await _save_state()

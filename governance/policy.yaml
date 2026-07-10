@@ -10,9 +10,11 @@ shell_whitelist: []
 
 # 治理档位(保留供 Web runtime 切换;确认规则见 confirm 段,与档位无关)
 modes:
-  conservative: {}
+  conservative:
+    confirm_external_reads: true
   balanced: {}
-  aggressive: {}
+  aggressive:
+    allow_owner_task_writes: true
 
 # 硬边界:命中即拒绝(BLOCK),无论模型多想做。
 forbidden_patterns:

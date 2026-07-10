@@ -52,6 +52,13 @@ async def run(args: dict, ctx) -> CapabilityResult:
     headers = args.get("headers") or {}
     params = args.get("params") or {}
     body = args.get("json")
+    from governance.egress import check_egress, classify_data
+    ok_e, why = check_egress(
+        url, method=method,
+        data_classification=classify_data(headers, body), destination="skill-http",
+    )
+    if not ok_e:
+        return CapabilityResult(ok=False, error=why)
     try:
         timeout = float(args.get("timeout", 20))
     except (TypeError, ValueError):

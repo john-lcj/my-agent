@@ -783,6 +783,7 @@ class Agent:
                 agent=getattr(getattr(ctx, "identity", None), "agent_name", "") or "",
                 capability=call.name, args=call.args,
                 decision=decision, ok=ok, detail=detail,
+                authority=str(getattr(ctx, "authority", "owner") or "owner"),
             )
         except Exception:
             pass

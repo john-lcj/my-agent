@@ -27,8 +27,26 @@ def _host_matches(host: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def check_egress(url: str, policy: dict | None = None) -> tuple[bool, str]:
-    """返回 (允许?, 原因)。黑名单优先;设了白名单则仅白名单放行。"""
+def classify_data(*values: object) -> str:
+    """A deliberately small, conservative classification for outbound data."""
+    blob = " ".join(str(value).lower() for value in values if value is not None)
+    if any(token in blob for token in ("authorization", "api_key", "token", "secret", "password", "cookie")):
+        return "secret"
+    if blob.strip():
+        return "private"
+    return "public"
+
+
+def check_egress(
+    url: str, policy: dict | None = None, *, method: str = "GET",
+    data_classification: str = "public", destination: str = "http",
+    allow_domains: list[str] | None = None,
+) -> tuple[bool, str]:
+    """Validate domain, method, and data class before an outbound operation.
+
+    Public read-only navigation remains useful without configuration. Any write
+    or non-public payload must target an explicit allowlisted destination.
+    """
     try:
         host = urlparse(url).hostname or ""
     except Exception:
@@ -41,7 +59,15 @@ def check_egress(url: str, policy: dict | None = None) -> tuple[bool, str]:
         return False, f"域名 {host} 在出站黑名单中,已拦截"
 
     allow = _domains("AGENT_EGRESS_ALLOW", policy, "allow")
+    allow.extend(str(domain).lower() for domain in (allow_domains or []) if domain)
     if allow and not any(_host_matches(host, d) for d in allow):
         return False, f"域名 {host} 不在出站白名单内(仅允许:{', '.join(allow)})"
+
+    write_or_private = method.upper() not in ("GET", "HEAD") or data_classification != "public"
+    if write_or_private and not any(_host_matches(host, d) for d in allow):
+        return False, (
+            f"{destination} destination {host} is not explicitly approved for "
+            f"{method.upper()} {data_classification} data"
+        )
 
     return True, ""

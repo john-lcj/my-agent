@@ -59,6 +59,13 @@ class SendEmail:
                 error=f"收件人 {to} 不在外发白名单内,已拒绝。"
                       f"如确需外发,请把地址加入 EMAIL_ALLOWED_RECIPIENTS。",
             )
+        from governance.egress import check_egress
+        ok_e, why = check_egress(
+            f"https://{smtp_host}", method="POST", data_classification="secret",
+            destination="email",
+        )
+        if not ok_e:
+            return CapabilityResult(ok=False, error=why)
 
         try:
             import asyncio
@@ -86,5 +93,4 @@ def _smtp_send(host, port, user, password, to, subject, body):
     with smtplib.SMTP_SSL(host, port, context=ctx) as s:
         s.login(user, password)
         s.send_message(msg)
-
 
