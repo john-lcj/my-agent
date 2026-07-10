@@ -1,0 +1,14 @@
+{
+  "name": "google_workspace",
+  "label": "Google Workspace",
+  "base_url": "https://www.googleapis.com",
+  "auth": {"type": "bearer", "secret_ref": "google_workspace"},
+  "default_headers": {"Accept": "application/json"},
+  "actions": [
+    {"name": "gmail_list", "method": "GET", "path": "/gmail/v1/users/me/messages", "description": "List Gmail messages", "query": ["maxResults", "q"]},
+    {"name": "calendar_list", "method": "GET", "path": "/calendar/v3/calendars/primary/events", "description": "List Google Calendar events", "query": ["timeMin", "timeMax"]},
+    {"name": "drive_list", "method": "GET", "path": "/drive/v3/files", "description": "List Google Drive files", "query": ["q", "pageSize"]},
+    {"name": "gmail_draft", "method": "POST", "path": "/gmail/v1/users/me/drafts", "description": "Create a Gmail draft", "body": ["message"]},
+    {"name": "calendar_event", "method": "POST", "path": "/calendar/v3/calendars/primary/events", "description": "Create a Google Calendar event", "body": ["summary", "start", "end", "attendees"]}
+  ]
+}

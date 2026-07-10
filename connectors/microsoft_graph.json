@@ -1,0 +1,14 @@
+{
+  "name": "microsoft_graph",
+  "label": "Microsoft Graph",
+  "base_url": "https://graph.microsoft.com/v1.0",
+  "auth": {"type": "bearer", "secret_ref": "microsoft_graph"},
+  "default_headers": {"Accept": "application/json"},
+  "actions": [
+    {"name": "mail_list", "method": "GET", "path": "/me/messages", "description": "List mailbox messages", "query": ["$top", "$search"]},
+    {"name": "calendar_list", "method": "GET", "path": "/me/calendarView", "description": "List calendar events", "query": ["startDateTime", "endDateTime"]},
+    {"name": "drive_search", "method": "GET", "path": "/me/drive/root/search(q='{query}')", "description": "Search OneDrive files", "query": ["query"]},
+    {"name": "mail_draft", "method": "POST", "path": "/me/messages", "description": "Create a draft email", "body": ["subject", "body", "toRecipients"]},
+    {"name": "calendar_event", "method": "POST", "path": "/me/events", "description": "Create a calendar event", "body": ["subject", "start", "end", "attendees"]}
+  ]
+}

@@ -74,6 +74,17 @@ class _ConnectorTool(Tool):
             f"[{spec.get('label', cname)}] {action.get('description', '')} "
             f"({method} {action.get('path', '')})"
         )
+        self.security_manifest = {
+            "name": self.name,
+            "risk": self.risk,
+            "data_scope": "network",
+            "side_effect": "none" if self.risk == Risk.READ else "external",
+            "reversible": self.risk == Risk.READ,
+            "authorization": "auto-read" if self.risk == Risk.READ else "explicit-confirmation",
+            "timeout_seconds": int(spec.get("timeout", 30)),
+            "verification": "provider-receipt",
+            "source": "connector-spec",
+        }
         # schema:路径占位符必填,query/body 选填
         props: dict = {}
         required: list[str] = []

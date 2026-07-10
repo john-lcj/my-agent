@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import uuid
+import hashlib
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -110,6 +111,7 @@ class CalendarAdd(Tool):
             "duration_min": {"type": "integer", "description": "时长分钟(可选,默认 60;全天忽略)"},
             "location": {"type": "string", "description": "地点(可选)"},
             "notes": {"type": "string", "description": "备注(可选)"},
+            "idempotency_key": {"type": "string", "description": "Stable key preventing duplicate events"},
         },
         "required": ["title", "start"],
     }
@@ -131,11 +133,20 @@ class CalendarAdd(Tool):
                     return CapabilityResult(ok=False, error="end 解析失败")
             else:
                 dtend = start + timedelta(minutes=int(args.get("duration_min", 60) or 60))
+        if dtend <= start:
+            return CapabilityResult(ok=False, error="end must be later than start")
         path = _cal_path()
         new = not os.path.isfile(path)
+        stable_key = str(args.get("idempotency_key", "")).strip()
+        uid = (hashlib.sha256(stable_key.encode()).hexdigest() + "@captain.local"
+               if stable_key else uuid.uuid4().hex + "@captain.local")
+        if not new and stable_key:
+            existing = open(path, encoding="utf-8").read()
+            if f"UID:{uid}" in existing:
+                return CapabilityResult(ok=True, output=f"日历事件已存在(幂等跳过):{title}")
         lines = [
             "BEGIN:VEVENT",
-            f"UID:{uuid.uuid4().hex}@captain.local",
+            f"UID:{uid}",
             f"DTSTAMP:{datetime.now().strftime('%Y%m%dT%H%M%S')}",
             (f"DTSTART;VALUE=DATE:{_ics_dt(start, True)}" if all_day
              else f"DTSTART:{_ics_dt(start, False)}"),
