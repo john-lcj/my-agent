@@ -42,6 +42,9 @@ class Context:
     longterm: Optional[Any] = None
     program: Optional[Any] = None
     secret_broker: Optional[Any] = None
+    durable_job_id: str = ""
+    durable_job_store: Optional[Any] = None
+    cancel_check: Optional[Any] = None
 
     @property
     def messages(self) -> list[Message]:

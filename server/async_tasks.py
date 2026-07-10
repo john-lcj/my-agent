@@ -219,9 +219,30 @@ async def _daemon_worker() -> None:
         try:
             if item is None:
                 break
-            tid, text, mode, source = item
+            if isinstance(item, str):
+                job = _sa._durable_jobs.claim(item, f"daemon:{os.getpid()}", lease_seconds=120)
+                if not job:
+                    continue
+                tid = job["id"]
+                payload = job.get("payload") or {}
+                text, mode, source = payload.get("text", ""), payload.get("mode", "coworker"), payload.get("source", "api")
+            else:
+                tid, text, mode, source = item
+                job = _sa._durable_jobs.claim(tid, f"daemon:{os.getpid()}", lease_seconds=120)
             rec = _sa._daemon_results.get(tid) or {}
+            if _sa._durable_jobs.should_cancel(tid):
+                _sa._durable_jobs.cancel(tid)
+                rec["status"] = "cancelled"
+                _sa._daemon_results[tid] = rec
+                continue
+            if _sa._durable_jobs.budget_exceeded(tid):
+                _sa._durable_jobs.set_state(tid, "blocked", error="job budget exceeded")
+                rec["status"] = "blocked"
+                _sa._daemon_results[tid] = rec
+                continue
+            _sa._durable_jobs.checkpoint(tid, {"phase": "claimed", "source": source, "text": text[:500]})
             rec["status"] = "running"
+            started_at = time.time()
             try:
                 actor = Identity(subject_id=f"daemon:{source}", agent_name="main", channel=source)
                 _rmodel = None
@@ -231,6 +252,9 @@ async def _daemon_worker() -> None:
                 agent, ctx = _sa._build_scheduler_agent(actor, model=_rmodel)
                 ctx.coworker = (mode == "coworker")
                 ctx.mem_scope = f"{source}|"
+                ctx.durable_job_id = tid
+                ctx.durable_job_store = _sa._durable_jobs
+                ctx.cancel_check = lambda: _sa._durable_jobs.should_cancel(tid)
 
                 async def _deny(call, decision, reason=""):
                     return False
@@ -242,13 +266,21 @@ async def _daemon_worker() -> None:
                     outcome.finalize() if outcome is not None else TaskStatus.FAILED.value
                 )
                 rec["execution_status"] = rec["status"]
+                durable_state = "completed" if rec["status"] == TaskStatus.SUCCEEDED.value else (
+                    "blocked" if rec["status"] == TaskStatus.BLOCKED.value else "failed"
+                )
+                _sa._durable_jobs.set_state(tid, durable_state, error=rec.get("error", ""))
                 if source in ("proactive", "digest"):
+                    delivery = _sa._durable_jobs.queue_delivery(tid, "email", "owner", out or "")
+                    _sa._durable_jobs.set_delivery_state(delivery["id"], "sending")
                     try:
                         delivered = await _sa._proactive_deliver(source, out or "")
+                        _sa._durable_jobs.set_delivery_state(delivery["id"], "delivered" if delivered else "failed", error="not requested" if not delivered else "")
                         rec["delivery_status"] = (
                             TaskStatus.SUCCEEDED.value if delivered else "not_requested"
                         )
                     except Exception as delivery_error:
+                        _sa._durable_jobs.set_delivery_state(delivery["id"], "failed", error=str(delivery_error))
                         rec["delivery_status"] = TaskStatus.FAILED.value
                         rec["delivery_error"] = str(delivery_error)[:1000]
                         rec["status"] = TaskStatus.DELIVERY_FAILED.value
@@ -256,8 +288,11 @@ async def _daemon_worker() -> None:
                 rec["error"] = str(e)[:1000]
                 rec["status"] = TaskStatus.FAILED.value
                 rec["execution_status"] = TaskStatus.FAILED.value
+                _sa._durable_jobs.retry_or_dead_letter(tid, rec["error"])
             finally:
                 rec["finished"] = time.time()
+                _sa._durable_jobs.charge_budget(tid, seconds=time.time() - started_at)
+                _sa._durable_jobs.checkpoint(tid, {"phase": "finished", "status": rec.get("status", ""), "error": rec.get("error", "")})
                 _sa._daemon_results[tid] = rec
         except Exception as e:
             print(f"[daemon] worker 异常: {e}")

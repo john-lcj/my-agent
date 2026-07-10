@@ -168,6 +168,10 @@ class Agent:
         cap_fail_nudged: set[str] = set()      # 已就某能力劝过换路,避免反复刷提示
 
         while True:
+            cancel_check = getattr(ctx, "cancel_check", None)
+            if cancel_check is not None and cancel_check():
+                ctx.run_outcome.stop(TaskStatus.BLOCKED.value, "job cancellation requested")
+                return "任务已取消。"
             if self.budget.exceeded():
                 reason = self.budget.reason()
                 # 部分成果抢救:步数/预算用尽时,别只返回"已停止"把已收集的数据丢掉,

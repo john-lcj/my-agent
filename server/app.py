@@ -212,6 +212,8 @@ _channel_cfg = ChannelConfigStore(
 )
 _model_keys = ModelKeyStore(path=f"{Config.LOG_DIR}/model_keys.json")
 _task_store = TaskStore(db_path=f"{Config.LOG_DIR}/tasks.db")
+from memory.durable_job_store import DurableJobStore
+_durable_jobs = DurableJobStore(db_path=f"{Config.LOG_DIR}/durable_jobs.db")
 from memory.project_store import ProjectStore
 _project_store = ProjectStore(path=f"{Config.LOG_DIR}/projects.json")
 _scheduler_holder: list = [None]   # [Scheduler|None]，lifespan 启动后填充
@@ -450,7 +452,11 @@ _DAEMON_MAX_RESULTS = 200
 
 
 def _daemon_enqueue(text: str, source: str = "api", mode: str = "coworker") -> str:
-    tid = _uuid.uuid4().hex[:12]
+    job = _durable_jobs.create_job(
+        "daemon", {"text": text, "source": source, "mode": mode},
+        idempotency_key=f"daemon:{source}:{_uuid.uuid4().hex}",
+    )
+    tid = job["id"]
     _daemon_results[tid] = {
         "id": tid, "status": "queued", "source": source, "mode": mode,
         "text": (text or "")[:500], "result": "", "error": "",
@@ -458,7 +464,7 @@ def _daemon_enqueue(text: str, source: str = "api", mode: str = "coworker") -> s
         "execution_status": "", "delivery_status": "not_requested",
     }
     if _task_queue is not None:
-        _task_queue.put_nowait((tid, text, mode, source))
+        _task_queue.put_nowait(tid)
     if len(_daemon_results) > _DAEMON_MAX_RESULTS:
         for k in sorted(_daemon_results, key=lambda x: _daemon_results[x]["created"])[:50]:
             _daemon_results.pop(k, None)
@@ -612,7 +618,8 @@ def create_app():
                         print(f"[server] {name} 渠道启动失败: {e}")
 
                 _scheduler_holder[0] = Scheduler(
-                    _task_store, _run_scheduled_task, _deliver_result
+                    _task_store, _run_scheduled_task, _deliver_result,
+                    durable_jobs=_durable_jobs,
                 )
                 _scheduler_holder[0].start()
                 print(f"[server] 定时任务调度器已启动({len(_task_store.list())} 个任务)")
@@ -811,7 +818,7 @@ def create_app():
 
     from server.routers.wecom_webhook import register_wecom_webhook
     register_wecom_webhook(app, _ext_channels, _channel_cfg)
-    register_tasks(app, _task_store, _scheduler_holder, _daemon_enqueue, _daemon_results)
+    register_tasks(app, _task_store, _scheduler_holder, _daemon_enqueue, _daemon_results, _durable_jobs)
 
     from server.routers.secrets_api import register_secrets
     register_secrets(app, _vault)

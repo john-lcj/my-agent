@@ -15,6 +15,7 @@ import os
 import smtplib
 import ssl
 import time
+import hashlib
 from typing import Any
 
 from channels.email_mime import apply_mail_headers, make_text_part
@@ -67,13 +68,25 @@ class SendEmail:
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
 
+        job_store = getattr(ctx, "durable_job_store", None)
+        job_id = getattr(ctx, "durable_job_id", "")
+        effect_key = ""
+        if job_store and job_id:
+            effect_key = "email:" + hashlib.sha256(f"{to}|{subject}|{body}".encode()).hexdigest()
+            if not job_store.reserve_effect(job_id, effect_key, "email"):
+                return CapabilityResult(ok=True, output="邮件效果已完成或正在执行，跳过重复发送。")
+
         try:
             import asyncio
             await asyncio.get_event_loop().run_in_executor(
                 None, _smtp_send, smtp_host, smtp_port, user, password, to, subject, body
             )
+            if effect_key:
+                job_store.complete_effect(effect_key, {"destination": to})
             return CapabilityResult(ok=True, output=f"邮件已发送至 {to}")
         except Exception as e:
+            if effect_key:
+                job_store.release_effect(effect_key)
             return CapabilityResult(ok=False, error=str(e))
 
 
@@ -93,4 +106,3 @@ def _smtp_send(host, port, user, password, to, subject, body):
     with smtplib.SMTP_SSL(host, port, context=ctx) as s:
         s.login(user, password)
         s.send_message(msg)
-

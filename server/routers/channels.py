@@ -111,7 +111,7 @@ def register_channels(app, channel_cfg, ext_channels, enable_channel_fn, enable_
         return JSONResponse({"ok": ok})
 
 
-def register_tasks(app, task_store, scheduler_holder, daemon_enqueue, daemon_results) -> None:
+def register_tasks(app, task_store, scheduler_holder, daemon_enqueue, daemon_results, durable_jobs=None) -> None:
     """注册 /api/tasks 和 /api/task 端点。scheduler_holder 是 [Scheduler|None] 列表引用。"""
 
     @app.get("/api/tasks")
@@ -183,6 +183,14 @@ def register_tasks(app, task_store, scheduler_holder, daemon_enqueue, daemon_res
     @app.get("/api/task/{tid}")
     async def get_daemon_task(tid: str) -> JSONResponse:
         rec = daemon_results.get(tid)
+        if rec is None and durable_jobs is not None:
+            rec = durable_jobs.get(tid)
         if rec is None:
             return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
         return JSONResponse({"ok": True, "task": rec})
+
+    @app.post("/api/task/{tid}/cancel")
+    async def cancel_daemon_task(tid: str) -> JSONResponse:
+        if durable_jobs is None or durable_jobs.get(tid) is None:
+            return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
+        return JSONResponse({"ok": True, "task": durable_jobs.request_cancel(tid)})

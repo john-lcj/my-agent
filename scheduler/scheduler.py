@@ -40,11 +40,13 @@ class Scheduler:
         run_task: RunTaskFn,
         deliver: Optional[DeliverFn] = None,
         tick_sec: float = 5.0,
+        durable_jobs=None,
     ) -> None:
         self.store = store
         self._run_task = run_task
         self._deliver = deliver
         self.tick_sec = tick_sec
+        self.durable_jobs = durable_jobs
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._running_task_ids: set[str] = set()
@@ -99,7 +101,17 @@ class Scheduler:
         if self.is_running(task.id):
             raise TaskAlreadyRunning(f"task {task.id} is already running")
         self._running_task_ids.add(task.id)
+        durable = None
         try:
+            if self.durable_jobs is not None:
+                durable = self.durable_jobs.create_job(
+                    "scheduled", {"task_id": task.id, "name": task.name},
+                    idempotency_key=f"scheduled:{task.id}:{int(time.time())}",
+                )
+                durable = self.durable_jobs.claim(durable["id"], f"scheduler:{task.id}", lease_seconds=120)
+                if durable:
+                    self.durable_jobs.add_steps(durable["id"], [{"name": "execute"}, {"name": "deliver"}])
+                    self.durable_jobs.checkpoint(durable["id"], {"phase": "execute", "task_id": task.id})
             # 定时任务的主体:带 scheduler 角色,便于 policy 单独管控其权限。
             actor = Identity(subject_id=f"scheduler:{task.id}", agent_name="scheduler",
                              channel="scheduler", roles=("scheduler",))
@@ -132,6 +144,9 @@ class Scheduler:
                     task.last_status = TaskStatus.DELIVERY_FAILED.value
                     print(f"[scheduler] 投递失败: {e}")
             self.store.save(task)
+            if durable:
+                self.durable_jobs.checkpoint(durable["id"], {"phase": "finished", "status": task.last_status})
+                self.durable_jobs.set_state(durable["id"], "completed" if task.last_status == TaskStatus.SUCCEEDED.value else "failed", error=task.last_error)
             return task
         finally:
             self._running_task_ids.discard(task.id)
