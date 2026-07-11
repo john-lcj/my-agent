@@ -255,6 +255,14 @@ def register_ws(app, is_loopback, is_proxied) -> None:
                         pass
                     else:
                         await coord_holder[0].run(text, ctx, channel.confirm)
+                        from llm.model_registry import get_model
+                        current_mid = ws_model[0] or _sa._runtime_cfg.get_model()
+                        provider = get_model(current_mid).provider
+                        if str(current_mid).startswith("ext:"):
+                            provider = str(current_mid)[4:]
+                            if provider == "xiaomi":
+                                provider = "xiaomi_vision"
+                        _sa._model_keys.mark_verified(provider, True)
                         if _sa._pref_mining_enabled():
                             asyncio.create_task(_sa._mine_preferences(list(ctx.messages)))
                             asyncio.create_task(_sa._mine_experience(list(ctx.messages)))

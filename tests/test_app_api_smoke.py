@@ -72,6 +72,17 @@ def test_readonly_endpoints_reachable():
         r.json()   # 可解析为 JSON
 
 
+def test_model_picker_api_exposes_truthful_availability():
+    c = _client()
+    if c is None:
+        return
+    models = c.get("/api/models?all=true", headers=_H).json()["models"]
+    assert models
+    for model in models:
+        assert {"configured", "verified", "available"}.issubset(model)
+        assert model["available"] is bool(model["configured"] and model["verified"])
+
+
 def test_system_diagnostics_and_update_check(monkeypatch):
     c = _client()
     if c is None:

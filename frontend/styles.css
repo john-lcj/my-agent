@@ -201,6 +201,8 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .composer .model-picker{top:auto;bottom:calc(100% + 6px);right:0;left:auto;max-height:min(280px,40vh)}
 .model-picker.open{display:block}
 .model-picker-empty{padding:10px 12px;font-size:12px;color:var(--dim)}
+.model-picker-settings{width:100%;padding:8px 12px;text-align:left;color:var(--accent);background:transparent;font-size:12px}
+.model-picker-settings:hover{background:var(--accent-soft)}
 .model-picker-item{width:100%;text-align:left;padding:10px 12px;border-radius:var(--r-sm);font-size:13px;
   color:var(--txt);background:transparent}
 .model-picker-item:hover{background:var(--accent-soft)}
@@ -210,6 +212,13 @@ body:has(#app.sb-mobile-open) #sb-backdrop{display:block}
 .status-dot.connecting{background:var(--yellow);animation:status-pulse 1.2s ease-in-out infinite}
 .status-dot.offline{background:var(--red)}
 @keyframes status-pulse{50%{opacity:.35}}
+.artifact-action-bar{min-height:44px;padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;background:var(--panel)}
+.artifact-action-spacer{flex:1}
+.artifact-office-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;color:var(--muted);text-align:center}
+.artifact-office-state strong{color:var(--txt);font-size:15px;font-weight:600;max-width:100%;overflow-wrap:anywhere}
+.artifact-office-state span{font-size:12px}
+.mission-artifacts{font-size:12px;color:var(--dim);margin-top:6px}
+.mission-artifacts .artifact-link{display:inline;padding:0;border:0;background:transparent;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit}
 .top-status-pill{height:30px;max-width:180px;padding:0 10px;border:1px solid var(--border);
   border-radius:var(--r-pill);background:var(--panel);color:var(--muted);font-size:12px;
   display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

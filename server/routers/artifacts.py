@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 _IMAGE_RAW_EXTS = frozenset({"png", "jpg", "jpeg", "webp", "gif", "svg"})
 _IMAGE_RAW_MAX = 10 * 1024 * 1024
+_ARTIFACT_FILE_MAX = 100 * 1024 * 1024
 
 
 def register_artifacts(app, resolve_in_workspace) -> None:
@@ -17,6 +18,13 @@ def register_artifacts(app, resolve_in_workspace) -> None:
         art = os.environ.get("AGENT_ARTIFACTS_DIR", "").strip()
         art = os.path.realpath(os.path.expanduser(art)) if art else os.path.join(ws, "产物")
         return (art, True) if os.path.isdir(art) else (ws, False)
+
+    def _workspace_root() -> str:
+        return os.path.realpath(os.path.expanduser(
+            os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()))
+
+    def _workspace_rel(path: str) -> str:
+        return os.path.relpath(path, _workspace_root()).replace(os.sep, "/")
 
     @app.get("/api/artifact/raw")
     async def read_artifact_raw(path: str = ""):
@@ -30,7 +38,7 @@ def register_artifacts(app, resolve_in_workspace) -> None:
             return JSONResponse({"ok": False, "error": "非图片类型"}, status_code=400)
         if os.path.getsize(real) > _IMAGE_RAW_MAX:
             return JSONResponse({"ok": False, "error": "图片过大(>10MB)"}, status_code=400)
-        media = f"image/{'jpeg' if ext == 'jpg' else ext}"
+        media = "image/svg+xml" if ext == "svg" else f"image/{'jpeg' if ext == 'jpg' else ext}"
         return FileResponse(real, media_type=media, filename=os.path.basename(real))
 
     @app.get("/api/artifact")
@@ -38,15 +46,26 @@ def register_artifacts(app, resolve_in_workspace) -> None:
         ok, real, reason = resolve_in_workspace(path)
         if not ok:
             return JSONResponse({"ok": False, "error": reason}, status_code=400)
-        if not os.path.isfile(real) or os.path.getsize(real) > 2 * 1024 * 1024:
-            return JSONResponse({"ok": False, "error": "文件不存在或过大(>2MB)"}, status_code=400)
+        if not os.path.isfile(real):
+            return JSONResponse({"ok": False, "error": "文件不存在"}, status_code=400)
         ext = os.path.splitext(real)[1].lower().lstrip(".")
         if ext in _IMAGE_RAW_EXTS:
             return JSONResponse({"ok": True, "kind": "image", "ext": ext,
                                  "name": os.path.basename(real), "content": ""})
         kind = ("html" if ext in ("html", "htm") else
                 "markdown" if ext == "md" else
+                "pdf" if ext == "pdf" else
+                "office" if ext in ("doc", "docx", "xls", "xlsx", "ppt", "pptx") else
+                "binary" if ext in ("zip", "ipynb") else
                 "code" if ext in ("py", "js", "ts", "css", "json", "sh", "yaml", "yml") else "text")
+        if kind in {"pdf", "office", "binary"}:
+            if os.path.getsize(real) > _ARTIFACT_FILE_MAX:
+                return JSONResponse({"ok": False, "error": "文件过大(>100MB)"}, status_code=400)
+            return JSONResponse({"ok": True, "kind": kind, "ext": ext,
+                                 "name": os.path.basename(real), "size": os.path.getsize(real),
+                                 "content": ""})
+        if os.path.getsize(real) > 2 * 1024 * 1024:
+            return JSONResponse({"ok": False, "error": "文件过大(>2MB)"}, status_code=400)
         try:
             with open(real, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
@@ -54,6 +73,18 @@ def register_artifacts(app, resolve_in_workspace) -> None:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
         return JSONResponse({"ok": True, "kind": kind, "ext": ext,
                              "name": os.path.basename(real), "content": content})
+
+    @app.get("/api/artifact/file")
+    async def read_artifact_file(path: str = "", download: bool = False):
+        ok, real, reason = resolve_in_workspace(path)
+        if not ok:
+            return JSONResponse({"ok": False, "error": reason}, status_code=400)
+        if not os.path.isfile(real):
+            return JSONResponse({"ok": False, "error": "文件不存在"}, status_code=404)
+        if os.path.getsize(real) > _ARTIFACT_FILE_MAX:
+            return JSONResponse({"ok": False, "error": "文件过大(>100MB)"}, status_code=400)
+        return FileResponse(real, filename=os.path.basename(real),
+                            content_disposition_type="attachment" if download else "inline")
 
     @app.get("/api/files")
     async def list_files(dir: str = "") -> JSONResponse:
@@ -103,7 +134,7 @@ def register_artifacts(app, resolve_in_workspace) -> None:
                     st = os.stat(full)
                 except OSError:
                     continue
-                items.append({"name": name, "rel": os.path.relpath(full, base),
+                items.append({"name": name, "rel": _workspace_rel(full),
                               "ext": ext, "size": st.st_size, "mtime": st.st_mtime})
         items.sort(key=lambda x: x["mtime"], reverse=True)
         return JSONResponse({"ok": True, "root": os.path.basename(base), "dir": base,
@@ -133,10 +164,32 @@ def register_artifacts(app, resolve_in_workspace) -> None:
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
         return JSONResponse({"ok": True, "name": name, "path": dest,
-                             "rel": os.path.relpath(dest, base)})
+                             "rel": _workspace_rel(dest)})
+
+    @app.post("/api/artifact/open")
+    async def open_artifact(request: Request) -> JSONResponse:
+        import platform, subprocess
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        ok, real, reason = resolve_in_workspace(str(body.get("path") or ""))
+        if not ok or not os.path.isfile(real):
+            return JSONResponse({"ok": False, "error": reason or "文件不存在"}, status_code=400)
+        try:
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.Popen(["open", real])
+            elif system == "Windows":
+                os.startfile(real)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", real])
+            return JSONResponse({"ok": True, "path": _workspace_rel(real)})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
     @app.post("/api/artifacts/reveal")
-    async def reveal_artifacts() -> JSONResponse:
+    async def reveal_artifacts(request: Request) -> JSONResponse:
         import platform, subprocess
         ws = os.path.realpath(os.path.expanduser(
             os.environ.get("AGENT_WORKSPACE_ROOT", "").strip() or os.getcwd()))
@@ -144,14 +197,24 @@ def register_artifacts(app, resolve_in_workspace) -> None:
         art = os.path.realpath(os.path.expanduser(art)) if art else os.path.join(ws, "产物")
         os.makedirs(art, exist_ok=True)
         try:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            requested = str(body.get("path") or "").strip()
+            target = art
+            if requested:
+                ok, real, _ = resolve_in_workspace(requested)
+                if ok and os.path.exists(real):
+                    target = real
             sysname = platform.system()
             if sysname == "Darwin":
-                subprocess.Popen(["open", art])
+                subprocess.Popen(["open", "-R", target] if os.path.isfile(target) else ["open", target])
             elif sysname == "Windows":
-                subprocess.Popen(["explorer", art])
+                subprocess.Popen(["explorer", "/select,", target] if os.path.isfile(target) else ["explorer", target])
             else:
-                subprocess.Popen(["xdg-open", art])
-            return JSONResponse({"ok": True, "dir": art})
+                subprocess.Popen(["xdg-open", os.path.dirname(target) if os.path.isfile(target) else target])
+            return JSONResponse({"ok": True, "dir": art, "target": target})
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e), "dir": art})
 

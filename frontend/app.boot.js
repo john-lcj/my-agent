@@ -561,34 +561,46 @@ function attachPickWorkspaceFolder() { closeAttachMenu(); openCoworkFolderPicker
 function attachPickLocalFolder() { closeAttachMenu(); triggerFolderUpload(); }
 
 function triggerUpload() { const i = document.getElementById('file-inp'); if (i) i.click(); }
-function onFilePicked(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  if (file.size > 20 * 1024 * 1024) { alert(t('uploadTooLarge')); input.value = ''; return; }
-  const reader = new FileReader();
-  reader.onload = async () => {
-    const b64 = String(reader.result).split(',')[1] || '';
+function fileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+async function onFilePicked(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  input.disabled = true;
+  const oversized = files.filter(file => file.size > 20 * 1024 * 1024);
+  if (oversized.length) showToast(`${oversized.map(file => file.name).join('、')}: ${t('uploadTooLarge')}`, 4200);
+  const accepted = files.filter(file => file.size <= 20 * 1024 * 1024);
+  let uploaded = 0;
+  for (const file of accepted) {
     try {
+      const b64 = await fileAsBase64(file);
       const r = await fetch('/api/upload', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ name: file.name, content_b64: b64 }),
       });
       const d = await r.json();
-      if (d.ok) {
-        const path = d.path || '';
-        const ref = t('uploadedRef').replace('{path}', path);
-        const isImage = /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name || path);
-        const previewUrl = isImage ? URL.createObjectURL(file) : '';
-        _pendingAttachments.push({ path, name: file.name, ref, isImage, previewUrl });
-        renderComposerAttachments();
-        const inp = document.getElementById('chat-inp');
-        if (inp && !isImage) inp.value = ref + inp.value;
-        inp?.focus();
-      } else { alert(t('uploadFail') + (d.error || '')); }
-    } catch (e) { alert(t('uploadFail') + e); }
-    input.value = '';
-  };
-  reader.readAsDataURL(file);
+      if (!r.ok || !d.ok) throw new Error(d.error || t('uploadFail'));
+      const path = d.path || '';
+      const ref = t('uploadedRef').replace('{path}', path);
+      const isImage = /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name || path);
+      const previewUrl = isImage ? URL.createObjectURL(file) : '';
+      _pendingAttachments.push({ path, name: file.name, ref, isImage, previewUrl });
+      uploaded += 1;
+      renderComposerAttachments();
+    } catch (e) {
+      showToast(`${file.name}: ${t('uploadFail')}${String(e.message || e)}`, 4200);
+    }
+  }
+  input.value = '';
+  input.disabled = false;
+  if (uploaded) showToast(t('uploadDone').replace('{count}', String(uploaded)), 1600);
+  document.getElementById('chat-inp')?.focus();
 }
 
 /* —— 聊天内联图片(每轮回复各自显示,不串台) —— */
@@ -707,6 +719,46 @@ function embedChatImages(root) {
 }
 
 /* —— 产物内联预览 —— */
+function artifactFileUrl(path, download = false) {
+  return '/api/artifact/file?path=' + encodeURIComponent(path) + (download ? '&download=true' : '');
+}
+async function openArtifactNative(path) {
+  try {
+    const r = await fetch('/api/artifact/open', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || '打开失败');
+  } catch (e) { if (typeof toast === 'function') toast('打开失败: ' + String(e.message || e)); }
+}
+async function revealArtifact(path) {
+  try {
+    const r = await fetch('/api/artifacts/reveal', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || '定位失败');
+  } catch (e) { if (typeof toast === 'function') toast('定位失败: ' + String(e.message || e)); }
+}
+function artifactActionBar(path, {download = true, open = true} = {}) {
+  const bar = document.createElement('div');
+  bar.className = 'artifact-action-bar';
+  const spacer = document.createElement('span');
+  spacer.className = 'artifact-action-spacer';
+  bar.appendChild(spacer);
+  if (open) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn-sm'; btn.textContent = '打开';
+    btn.onclick = () => openArtifactNative(path);
+    bar.appendChild(btn);
+  }
+  const reveal = document.createElement('button');
+  reveal.type = 'button'; reveal.className = 'btn-sm'; reveal.textContent = '在文件夹中显示';
+  reveal.onclick = () => revealArtifact(path);
+  bar.appendChild(reveal);
+  if (download) {
+    const link = document.createElement('a');
+    link.className = 'btn-sm'; link.textContent = '下载'; link.href = artifactFileUrl(path, true);
+    bar.appendChild(link);
+  }
+  return bar;
+}
 async function openArtifact(path) {
   window._curArtifactPath = path;
   const ov = document.getElementById('artifact-overlay');
@@ -755,6 +807,24 @@ async function openArtifact(path) {
       ifr.style.cssText = 'width:100%;flex:1;border:0;background:#fff';
       ifr.src = url;
       body.appendChild(bar); body.appendChild(ifr);
+    } else if (d.kind === 'pdf') {
+      body.innerHTML = '';
+      body.style.cssText = 'display:flex;flex-direction:column;height:100%';
+      body.appendChild(artifactActionBar(path));
+      const ifr = document.createElement('iframe');
+      ifr.title = d.name || 'PDF';
+      ifr.style.cssText = 'width:100%;flex:1;border:0;background:#fff;min-height:480px';
+      ifr.src = artifactFileUrl(path);
+      body.appendChild(ifr);
+    } else if (d.kind === 'office' || d.kind === 'binary') {
+      body.innerHTML = '';
+      body.style.cssText = 'display:flex;flex-direction:column;height:100%';
+      body.appendChild(artifactActionBar(path));
+      const empty = document.createElement('div');
+      empty.className = 'artifact-office-state';
+      const size = d.size ? `${Math.max(1, Math.round(d.size / 1024))} KB` : '';
+      empty.innerHTML = `<strong>${escHtml(d.name || path)}</strong><span>${escHtml([String(d.ext || '').toUpperCase(), size].filter(Boolean).join(' · '))}</span>`;
+      body.appendChild(empty);
     } else if (d.kind === 'markdown') {
       body.innerHTML = '<div class="md" style="padding:18px">' + renderMD(d.content) + '</div>';
     } else {
@@ -790,7 +860,10 @@ function closeArtifactsBrowser() {
   document.getElementById('artifacts-browser-overlay')?.classList.remove('open');
 }
 
-const _DOC_ARTIFACT_EXTS = new Set(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'md']);
+const _DOC_ARTIFACT_EXTS = new Set([
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'md', 'html', 'htm',
+  'csv', 'txt', 'json', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'py', 'js', 'ipynb', 'zip',
+]);
 let _artifactsDateFilter = 'all';
 
 function _artifactExtOk(ext) {
@@ -878,15 +951,19 @@ async function loadArtifactsList(q) {
 }
 
 /* 把助理消息里的产物路径变成可点预览链接 */
-const _ARTIFACT_RE = /((?:产物\/)?[^\s"'<>]+\.(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json|png|jpe?g|webp|gif|svg))/g;
+const _ARTIFACT_EXT = '(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json|png|jpe?g|webp|gif|svg)';
+const _ARTIFACT_RE = new RegExp(`((?:产物/|uploads/)[^"'<>\\n]+?\\.${_ARTIFACT_EXT}|[^\\s"'<>]+\\.${_ARTIFACT_EXT})`, 'gi');
 function _linkifyArtifacts(root) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll('.msg-body:not(.user-body)').forEach(el => {
-    if (el.dataset.linkified) return;
-    el.dataset.linkified = '1';
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     const targets = [];
-    let n; while ((n = walker.nextNode())) { if (_ARTIFACT_RE.test(n.nodeValue)) targets.push(n); }
+    let n;
+    while ((n = walker.nextNode())) {
+      if (n.parentElement?.closest('a,code,pre')) continue;
+      _ARTIFACT_RE.lastIndex = 0;
+      if (_ARTIFACT_RE.test(n.nodeValue || '')) targets.push(n);
+    }
     targets.forEach(node => {
       const frag = document.createDocumentFragment();
       let last = 0; const s = node.nodeValue; _ARTIFACT_RE.lastIndex = 0; let m;

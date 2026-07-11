@@ -184,6 +184,8 @@ let _wsSendQueue = null;
 let _wsReconnectTimer = null;
 let _wsReady = false;
 let _wsReconnectAttempt = 0;
+let _wsReadyWaiters = [];
+let _modelSwitching = false;
 let allSessions = [];
 let historySearchQuery = '';
 /* 工作台/项目状态:必须在 init(下方 applyModeChrome / refreshWorkbenchMeta)之前声明,
@@ -253,6 +255,11 @@ let sessionId = 's-chat-pending';
 /* ══ WebSocket ═══════════════════════════════════════════════════ */
 function setWsState(state, detail = '') {
   _wsReady = state === 'ready';
+  if (_wsReady && _wsReadyWaiters.length) {
+    const waiters = _wsReadyWaiters;
+    _wsReadyWaiters = [];
+    waiters.forEach(resolve => resolve(true));
+  }
   const dot = document.getElementById('dot');
   if (dot) {
     dot.classList.toggle('on', state === 'ready');
@@ -267,6 +274,21 @@ function setWsState(state, detail = '') {
     label.hidden = false;
     label.textContent = t(state === 'connecting' ? 'connecting' : 'reconnecting');
   }
+}
+
+function waitForWsReady(timeoutMs = 10000) {
+  if (_wsReady) return Promise.resolve(true);
+  return new Promise(resolve => {
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      _wsReadyWaiters = _wsReadyWaiters.filter(item => item !== done);
+      resolve(ok);
+    };
+    _wsReadyWaiters.push(done);
+    setTimeout(() => done(false), timeoutMs);
+  });
 }
 
 function setWsConnected(on) { setWsState(on ? 'ready' : 'connecting'); }
@@ -800,7 +822,8 @@ function startEditUserMessage(el, text, meta) {
   cancel.onclick = () => wrap.remove();
   save.onclick = () => {
     const nt = ta.value.trim();
-    if (!nt || !ws || ws.readyState !== 1) return;
+    if (!nt) return;
+    if (!ws || ws.readyState !== 1 || !_wsReady) { showToast(t('sendQueued'), 1800); return; }
     const mid = meta?.msgId || el.dataset.msgId;
     wrap.remove();
     let node = el.nextSibling;
@@ -822,7 +845,7 @@ function startEditUserMessage(el, text, meta) {
 }
 
 function regenerateFromUserMsg(userMsgId) {
-  if (!ws || ws.readyState !== 1) return;
+  if (!ws || ws.readyState !== 1 || !_wsReady) { showToast(t('sendQueued'), 1800); return; }
   const area = document.getElementById('chat-messages');
   if (userMsgId != null && area) {
     const uel = area.querySelector(`.msg-user[data-msg-id="${CSS.escape(String(userMsgId))}"]`);
@@ -848,6 +871,9 @@ function regenerateFromUserMsg(userMsgId) {
 }
 
 function clearPendingAttachments() {
+  _pendingAttachments.forEach(item => {
+    if (item && item.previewUrl) try { URL.revokeObjectURL(item.previewUrl); } catch {}
+  });
   _pendingAttachments.length = 0;
   renderComposerAttachments();
 }
@@ -1963,7 +1989,10 @@ function _missionCard(m) {
   const blocked = (m.status === 'blocked' || m.status === 'waiting_user') && m.blocked_reason
     ? `<div style="font-size:12px;color:#c85a3c;margin-top:4px">⚠ ${_mEsc(m.blocked_reason)}</div>` : '';
   const arts = (m.artifacts || []).length
-    ? `<div style="font-size:12px;color:var(--dim);margin-top:4px">产物:${m.artifacts.map(_mEsc).join('、')}</div>` : '';
+    ? `<div class="mission-artifacts">产物: ${m.artifacts.map(path => {
+        const rel = normalizeArtifactRel(path, '');
+        return `<button type="button" class="artifact-link" data-path="${escAttr(rel)}" onclick="openArtifact(this.dataset.path)">${_mEsc(rel)}</button>`;
+      }).join('、')}</div>` : '';
   return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:11px;padding:1px 8px;border-radius:10px;color:#fff;background:${s.c}">${s.t}</span>
@@ -2607,7 +2636,7 @@ async function fetchConfiguredModels(selected) {
   try {
     const res = await fetch(`/api/models?current=${encodeURIComponent(cur)}`);
     const data = await res.json();
-    return (data.models || []).filter(m => m.configured !== false);
+    return (data.models || []).filter(m => m.available === true);
   } catch {
     return [];
   }
@@ -2633,10 +2662,10 @@ async function initComposerModel() {
     if (srv.model) modelId = srv.model;
   } catch { /* 离线 */ }
   const models = await fetchAllModels(modelId || 'deepseek-v4-flash');
-  const configured = models.filter(m => m.configured);
+  const configured = models.filter(m => m.available);
   let picked = modelId || 'deepseek-v4-flash';
-  if (!configured.some(m => m.id === picked)) {
-    picked = configured.length ? configured[0].id : (models[0]?.id || picked);
+  if (configured.length && !configured.some(m => m.id === picked)) {
+    picked = configured[0].id;
   }
   updateModelPill(picked, models);
   if (picked !== cfg.model) {
@@ -2718,7 +2747,8 @@ async function renderModelPicker() {
   const models = await fetchConfiguredModels(cur);
   picker.innerHTML = '';
   if (!models.length) {
-    picker.innerHTML = `<div class="model-picker-empty">${escHtml(t('noModelsConfigured'))}</div>`;
+    picker.innerHTML = `<div class="model-picker-empty">${escHtml(t('noModelsAvailable'))}</div>
+      <button type="button" class="model-picker-settings" onclick="closeModelPicker();openSettings('keys')">${escHtml(t('configureModels'))}</button>`;
     return;
   }
   const _seenP = new Set();
@@ -2734,21 +2764,51 @@ async function renderModelPicker() {
 }
 
 async function selectModel(modelId) {
+  if (_modelSwitching) return;
+  if (taskRunning) {
+    showToast(t('modelSwitchBusy'), 2200);
+    return;
+  }
   const cfg = loadConfig();
+  const previous = cfg.model || 'deepseek-v4-flash';
+  if (modelId === previous) { closeModelPicker(); return; }
+  _modelSwitching = true;
+  document.querySelectorAll('#model-picker .model-picker-item').forEach(btn => { btn.disabled = true; });
   cfg.model = modelId;
   localStorage.setItem('agent-config', JSON.stringify(cfg));
   try {
-    await fetch('/api/config', {
+    const response = await fetch('/api/config', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: modelId }),
     });
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(wsInitPayload()));
-  } catch { /* 离线 */ }
-  const models = await fetchConfiguredModels(modelId);
-  updateModelPill(modelId, models);
-  const sel = document.getElementById('cfg-model');
-  if (sel && !sel.disabled) sel.value = modelId;
-  closeModelPicker();
+    const saved = await response.json();
+    if (!response.ok || !saved.ok) throw new Error(saved.error || t('modelSwitchFailed'));
+    if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error(t('offline'));
+    _wsReady = false;
+    setWsState('connecting', t('modelSwitching'));
+    const ready = waitForWsReady(12000);
+    ws.send(JSON.stringify(wsInitPayload()));
+    if (!await ready) throw new Error(t('modelSwitchTimeout'));
+    const models = await fetchConfiguredModels(modelId);
+    updateModelPill(modelId, models);
+    const sel = document.getElementById('cfg-model');
+    if (sel && !sel.disabled) sel.value = modelId;
+    closeModelPicker();
+    showToast(t('modelSwitchDone').replace('{model}', models.find(m => m.id === modelId)?.label || modelId), 1800);
+  } catch (error) {
+    cfg.model = previous;
+    localStorage.setItem('agent-config', JSON.stringify(cfg));
+    try {
+      await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:previous})});
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(wsInitPayload()));
+    } catch {}
+    const models = await fetchConfiguredModels(previous);
+    updateModelPill(previous, models);
+    showToast(`${t('modelSwitchFailed')}: ${String(error.message || error)}`, 4200);
+  } finally {
+    _modelSwitching = false;
+    document.querySelectorAll('#model-picker .model-picker-item').forEach(btn => { btn.disabled = false; });
+  }
 }
 
 const MODEL_KEY_FIELDS = { deepseek: 'key-deepseek', openai: 'key-openai', claude: 'key-claude' };
@@ -4084,8 +4144,16 @@ function inlineMD(s) {
   t = t.replace(/`([^`]+)`/g, '<code class="md-inline">$1</code>');
   t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   t = t.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_all, label, href) => {
+    const raw = String(href || '').replace(/&amp;/g, '&').trim();
+    if (/\.(?:html?|md|xlsx?|docx?|pptx?|pdf|csv|json|png|jpe?g|webp|gif|svg)$/i.test(raw)) {
+      return `<a href="#" class="artifact-link" data-path="${escAttr(raw)}">${label}</a>`;
+    }
+    if (/^(?:https?:|mailto:)/i.test(raw)) {
+      return `<a href="${escAttr(raw)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
+    return label;
+  });
   return t;
 }
 
@@ -4525,6 +4593,13 @@ const I18N = {
     deleteFailed: '删除失败，请稍后重试',
     renameFailed: '重命名失败，请重启服务后重试',
     noModelsConfigured: '暂无已配置的模型。请在 .env 中配置 API Key 后刷新。',
+    noModelsAvailable: '没有已验证可用的模型',
+    configureModels: '配置并测试模型',
+    modelSwitchBusy: '任务执行中，完成或停止后再切换模型',
+    modelSwitching: '正在初始化新模型…',
+    modelSwitchTimeout: '新模型初始化超时',
+    modelSwitchFailed: '模型切换失败',
+    modelSwitchDone: '已切换到 {model}',
     placeholder_chat: '问我点什么,或输入 / 调用技能',
     placeholder_code: '描述代码任务或粘贴报错…',
     placeholder_coworker: '交办一件事:做网页 / 出报告 / 批量处理文件 / 登录网站取数…我来动手,右侧看进度和产物',
@@ -4715,6 +4790,7 @@ const I18N = {
     projectCreateOk: '已创建工作区「{name}」并切换过去。\n在此工作区下点「新建任务」开始聊,首条消息后会自动归到该工作区;开场也会带上工作区专属指令。',
     uploadTooLarge: '文件超过 20MB',
     uploadFail: '上传失败:',
+    uploadDone: '已添加 {count} 个附件',
     uploadedRef: '[已上传文件: {path}] ',
     greetChat: '又见面了，captain',
     greetCode: '接下来做什么，captain？',
@@ -4891,6 +4967,13 @@ const I18N = {
     deleteFailed: 'Delete failed. Please try again.',
     renameFailed: 'Rename failed. Try restarting the server.',
     noModelsConfigured: 'No configured models. Add API keys in .env and refresh.',
+    noModelsAvailable: 'No verified models are available',
+    configureModels: 'Configure and test models',
+    modelSwitchBusy: 'Wait for the current task to finish or stop it before switching models',
+    modelSwitching: 'Starting the new model…',
+    modelSwitchTimeout: 'The new model timed out during startup',
+    modelSwitchFailed: 'Model switch failed',
+    modelSwitchDone: 'Switched to {model}',
     placeholder_chat: 'Type / for skills',
     placeholder_code: 'Describe a coding task or paste an error…',
     placeholder_coworker: 'Hand me a task: build a page / write a report / batch-process files / log in & fetch data — progress on the right',
@@ -5081,6 +5164,7 @@ const I18N = {
     projectCreateOk: 'Created workspace "{name}".\nStart a new task under this workspace; the first message will attach it.',
     uploadTooLarge: 'File exceeds 20MB',
     uploadFail: 'Upload failed:',
+    uploadDone: 'Added {count} attachment(s)',
     uploadedRef: '[Uploaded: {path}] ',
     greetChat: 'Back at it, captain',
     greetCode: "What's up next, captain?",
@@ -5731,6 +5815,11 @@ function closeAllOverlays() {
   closeModelPicker();
   closeAttachMenu();
   closeShortcuts();
+  closeSuggestions();
+  closeMission();
+  closeOnboarding();
+  if (typeof closeArtifactsBrowser === 'function') closeArtifactsBrowser();
+  if (typeof closeArtifact === 'function') closeArtifact();
 }
 
 function initSidebarState() {

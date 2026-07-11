@@ -67,6 +67,7 @@ def test_save_artifact_writes_file_and_appears_in_list():
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is True
+        assert body["rel"] == "产物/写作结果.md"
         saved = os.path.join(d, "产物", "写作结果.md")
         assert os.path.isfile(saved)
         assert open(saved, encoding="utf-8").read() == "# hello"
@@ -78,6 +79,18 @@ def test_save_artifact_writes_file_and_appears_in_list():
         # 缺文件名应报错
         r3 = c.post("/api/artifacts", json={"content": "x"}, headers=h)
         assert r3.status_code == 400
+
+        office = os.path.join(d, "产物", "客户报告 2026.docx")
+        with open(office, "wb") as f:
+            f.write(b"PK\x03\x04office")
+        rel = "产物/客户报告 2026.docx"
+        meta = c.get("/api/artifact", params={"path": rel}, headers=h).json()
+        assert meta["ok"] is True and meta["kind"] == "office"
+        file_response = c.get("/api/artifact/file", params={"path": rel}, headers=h)
+        assert file_response.status_code == 200
+        assert file_response.content.startswith(b"PK")
+        listed = c.get("/api/artifacts", headers=h).json()["items"]
+        assert any(item["rel"] == rel for item in listed)
     finally:
         os.environ.pop("AGENT_WORKSPACE_ROOT", None)
         os.environ.pop("AGENT_API_TOKEN", None)

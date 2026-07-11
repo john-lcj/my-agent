@@ -14,23 +14,40 @@ def register_models(app, runtime_cfg, model_keys, longterm) -> None:
     async def list_models_api(all: bool = False, current: str = "") -> JSONResponse:
         from llm.model_registry import MODELS, is_model_configured, normalize_model_id
         cur = normalize_model_id(current) if current else None
+        key_states = model_keys.get_masked()
+
+        def _state(model_id: str, provider: str, configured: bool) -> dict:
+            key_provider = provider
+            if model_id.startswith("ext:"):
+                key_provider = model_id[4:]
+                if key_provider == "xiaomi":
+                    key_provider = "xiaomi_vision"
+            verified = bool((key_states.get(key_provider) or {}).get("verified"))
+            if provider in {"mock", "ollama"}:
+                verified = configured
+            return {"configured": configured, "verified": verified,
+                    "available": configured and verified}
+
         out = []
         seen: set[str] = set()
         for m in MODELS:
             configured = is_model_configured(m.id)
             if all or configured or (cur and m.id == cur):
                 out.append({"id": m.id, "label": m.label, "provider": m.provider,
-                             "context": m.context, "configured": configured})
+                             "context": m.context,
+                             **_state(m.id, m.provider, configured)})
                 seen.add(m.id)
         if cur and cur not in seen:
             spec = next((m for m in MODELS if m.id == cur), None)
             if spec:
+                configured = is_model_configured(spec.id)
                 out.insert(0, {"id": spec.id, "label": spec.label, "provider": spec.provider,
-                                "context": spec.context, "configured": is_model_configured(spec.id)})
+                                "context": spec.context,
+                                **_state(spec.id, spec.provider, configured)})
         from llm.model_registry import extra_models
         for em in extra_models():
             if em["id"] not in seen:
-                out.append({**em, "configured": True})
+                out.append({**em, **_state(em["id"], em["provider"], True)})
                 seen.add(em["id"])
         return JSONResponse({"models": out})
 

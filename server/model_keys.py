@@ -266,9 +266,17 @@ class ModelKeyStore:
                 cfg["key"] = ""
             cfg["verified_at"] = 0   # 换了 key,验证状态作废
         if base_url is not None and str(base_url).strip():
-            cfg["base_url"] = str(base_url).strip()
+            next_base_url = str(base_url).strip()
+            current_base_url = cfg.get("base_url") or self._meta(provider).get("default_base_url", "")
+            if cfg.get("verified_at") and current_base_url != next_base_url:
+                cfg["verified_at"] = 0
+            cfg["base_url"] = next_base_url
         if model is not None and str(model).strip():
-            cfg["model"] = str(model).strip()
+            next_model = str(model).strip()
+            current_model = cfg.get("model") or self._meta(provider).get("default_model", "")
+            if cfg.get("verified_at") and current_model != next_model:
+                cfg["verified_at"] = 0
+            cfg["model"] = next_model
         # 自定义接口记下展示名
         if label and provider not in PROVIDER_PRESETS:
             cfg["label"] = str(label).strip()
@@ -282,10 +290,14 @@ class ModelKeyStore:
             self.update(p, key=k)
 
     def mark_verified(self, provider: str, ok: bool) -> None:
-        cfg = self._data.get(provider)
-        if cfg is not None:
-            cfg["verified_at"] = time.time() if ok else 0
-            self._write()
+        provider = (provider or "").strip()
+        if not provider:
+            return
+        cfg = self._data.setdefault(
+            provider, {"key": "", "base_url": "", "model": "", "verified_at": 0}
+        )
+        cfg["verified_at"] = time.time() if ok else 0
+        self._write()
 
     def clear(self, provider: str) -> bool:
         if provider in self._data:

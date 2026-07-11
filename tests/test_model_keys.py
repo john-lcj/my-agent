@@ -87,6 +87,26 @@ def test_verified_state(tmp_path):
     assert s.get_masked()["deepseek"]["verified"] is False
 
 
+def test_verified_state_can_be_recorded_for_env_only_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-from-env")
+    s = _store(tmp_path)
+    s.mark_verified("deepseek", True)
+    state = s.get_masked()["deepseek"]
+    assert state["configured"] is True
+    assert state["verified"] is True
+
+
+def test_endpoint_or_model_change_invalidates_verification(tmp_path):
+    s = _store(tmp_path)
+    s.update("custom", key="sk-x", base_url="https://one.example/v1", model="model-a")
+    s.mark_verified("custom", True)
+    s.update("custom", base_url="https://two.example/v1")
+    assert s.get_masked()["custom"]["verified"] is False
+    s.mark_verified("custom", True)
+    s.update("custom", model="model-b")
+    assert s.get_masked()["custom"]["verified"] is False
+
+
 def test_migrate_mimo_model():
     assert migrate_mimo_model("mimo-v2-omni") == "mimo-v2.5-pro"
     assert migrate_mimo_model("mimo-v2.5-pro") == "mimo-v2.5-pro"

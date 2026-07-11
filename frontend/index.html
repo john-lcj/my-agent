@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Captain"/>
 <meta name="theme-color" content="#0d0d0d"/>
 <title>Captain</title>
-<link rel="stylesheet" href="/styles.css?v=20260711a">
+<link rel="stylesheet" href="/styles.css?v=20260711b">
 </head>
 <body>
 
@@ -159,7 +159,7 @@
                         <button type="button" class="attach-menu-item" onclick="attachPickLocalFolder()" data-i18n="coworkFolderUpload">本地上传文件夹</button>
                       </div>
                     </div>
-                    <input type="file" id="file-inp" style="display:none" onchange="onFilePicked(this)"/>
+                    <input type="file" id="file-inp" style="display:none" multiple onchange="onFilePicked(this)"/>
                     <input type="file" id="folder-inp" style="display:none" webkitdirectory multiple onchange="onFolderPicked(this)"/>
                     <button class="composer-tool" id="btn-tool-trace" type="button" onclick="toggleToolTrace(event)"
                             data-i18n-title="toolTraceTitle" aria-label="工具轨迹" title="工具轨迹">⚙</button>
@@ -985,7 +985,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<script src="/app.js?v=20260711a"></script>
+<script src="/app.js?v=20260711b"></script>
 
 <!-- ══ 任务 Mission ════════════════════════════════════════════ -->
 <div class="overlay" id="mission-overlay">
@@ -1057,6 +1057,6 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<script src="/app.boot.js?v=20260704e"></script>
+<script src="/app.boot.js?v=20260711b"></script>
 </body>
 </html>
