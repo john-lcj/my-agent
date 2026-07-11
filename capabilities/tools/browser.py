@@ -21,76 +21,98 @@ from typing import Any
 
 from core.types import CapabilityResult, Risk
 from governance.workspace import artifacts_dir, resolve_path
+from browser_runtime.kernel import BrowserContextKey
 
-_PW = None      # playwright 实例
-_BROWSER = None
-_CONTEXT = None
-_PAGE = None
-_HEADLESS_MODE = None   # 当前浏览器是无头还是有头(供登录助手切换可见窗口)
+_PW = None      # one Playwright engine; contexts remain isolated
+_SESSIONS: dict[str, dict] = {}
 
 
 def _default_headless() -> bool:
     return os.environ.get("AGENT_BROWSER_HEADLESS", "1").strip() != "0"
 
 
-def _state_file() -> str:
+def _state_file(context: BrowserContextKey) -> str:
     base = (os.environ.get("AGENT_LOG_DIR", "").strip() or "logs")
-    return os.path.join(base, "browser_state.json")
+    return os.path.join(base, "browser_contexts", f"{context.value}.json")
+
+
+def _context_key(ctx: Any, args: dict | None = None) -> BrowserContextKey:
+    args = args or {}
+    identity = getattr(ctx, "identity", None)
+    task_frame = getattr(ctx, "task_frame", None)
+    owner = str(args.get("owner_id") or getattr(identity, "subject_id", "local-user") or "local-user")
+    account = str(args.get("account_id") or getattr(ctx, "browser_account_id", "")
+                  or getattr(identity, "channel", "cli") or "default-account")
+    project = str(args.get("project_id") or getattr(ctx, "browser_project_id", "")
+                  or getattr(ctx, "session_id", "") or "default-project")
+    task = str(args.get("task_id") or getattr(ctx, "durable_job_id", "")
+               or getattr(task_frame, "task_id", "") or "interactive")
+    return BrowserContextKey(owner, account, project, task)
 
 
 def _artifacts_dir() -> str:
     return artifacts_dir()
 
 
-async def _ensure_page(headless: bool | None = None):
-    """惰性启动 Chromium + 载入已保存登录态,返回持久 page。
+async def _ensure_page(context: BrowserContextKey, headless: bool | None = None):
+    """Lazily create one isolated Playwright context for a task identity.
 
     headless=None 用默认(env AGENT_BROWSER_HEADLESS,默认无头);
     显式传 True/False 时,若与当前模式不同则**重启浏览器**切换(供登录助手开可见窗口)。
     """
-    global _PW, _BROWSER, _CONTEXT, _PAGE, _HEADLESS_MODE
+    global _PW
     want = _default_headless() if headless is None else headless
-    if _PAGE is not None and _HEADLESS_MODE == want:
-        return _PAGE
+    session = _SESSIONS.get(context.value)
+    if session and session["headless"] == want:
+        return session["page"]
     try:
         from playwright.async_api import async_playwright
     except ImportError as e:
         raise RuntimeError(
             "未安装 Playwright。请先:pip install playwright && python -m playwright install chromium"
         ) from e
-    # 模式切换:先关掉旧浏览器(登录态已落盘,不会丢)
-    if _PAGE is not None and _HEADLESS_MODE != want:
-        await _save_state()
+    # Mode changes are scoped to this context and never close another account.
+    if session:
+        await _save_state(context)
         try:
-            await _BROWSER.close()
+            await session["context"].close()
         except Exception:
             pass
-        _BROWSER = _CONTEXT = _PAGE = None
     if _PW is None:
         _PW = await async_playwright().start()
-    _BROWSER = await _PW.chromium.launch(headless=want)
-    state = _state_file()
+    browser = await _PW.chromium.launch(headless=want)
+    state = _state_file(context)
     kwargs = {"accept_downloads": True}
     if os.path.isfile(state):
         kwargs["storage_state"] = state          # 复用上次登录态
-    _CONTEXT = await _BROWSER.new_context(**kwargs)
-    _PAGE = await _CONTEXT.new_page()
-    _HEADLESS_MODE = want
-    return _PAGE
+    browser_context = await browser.new_context(**kwargs)
+    page = await browser_context.new_page()
+    _SESSIONS[context.value] = {
+        "browser": browser, "context": browser_context, "page": page,
+        "headless": want, "identity": context,
+    }
+    return page
 
 
-async def _save_state() -> None:
-    """把当前 context 的 cookie/localStorage 落盘,实现跨会话保持登录。"""
-    if _CONTEXT is None:
+async def _save_state(context: BrowserContextKey) -> None:
+    """Persist only the selected task context's cookie/localStorage."""
+    session = _SESSIONS.get(context.value)
+    if session is None:
         return
     try:
-        path = _state_file()
+        path = _state_file(context)
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        await _CONTEXT.storage_state(path=path)
+        await session["context"].storage_state(path=path)
     except Exception:
         pass
+
+
+def _page_for(ctx: Any, args: dict | None = None):
+    context = _context_key(ctx, args)
+    session = _SESSIONS.get(context.value)
+    return session["page"] if session else None
 
 
 async def _page_text(page, limit: int = 8000) -> str:
@@ -107,11 +129,11 @@ def _safe_ws_path(p: str) -> str | None:
     return full if not error else None
 
 
-def _current_egress(*, method: str, data_classification: str) -> tuple[bool, str]:
-    if _PAGE is None or not str(_PAGE.url).startswith(("http://", "https://")):
+def _current_egress(page, *, method: str, data_classification: str) -> tuple[bool, str]:
+    if page is None or not str(page.url).startswith(("http://", "https://")):
         return False, "browser has no approved http destination"
     from governance.egress import check_egress
-    return check_egress(_PAGE.url, method=method, data_classification=data_classification, destination="browser")
+    return check_egress(page.url, method=method, data_classification=data_classification, destination="browser")
 
 
 class BrowserOpen:
@@ -123,6 +145,10 @@ class BrowserOpen:
         "properties": {
             "url": {"type": "string", "description": "要打开的网址"},
             "wait_selector": {"type": "string", "description": "可选:等待此 CSS 选择器出现再取文本"},
+            "owner_id": {"type": "string", "description": "Browser context owner identifier"},
+            "account_id": {"type": "string", "description": "Browser account identifier"},
+            "project_id": {"type": "string", "description": "Browser project identifier"},
+            "task_id": {"type": "string", "description": "Browser task identifier"},
         },
         "required": ["url"],
     }
@@ -137,7 +163,8 @@ class BrowserOpen:
             if not ok_e:
                 return CapabilityResult(ok=False, error=why)
         try:
-            page = await _ensure_page()
+            context = _context_key(ctx, args)
+            page = await _ensure_page(context)
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             sel = str(args.get("wait_selector", "")).strip()
             if sel:
@@ -150,7 +177,7 @@ class BrowserOpen:
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
                     pass
-            await _save_state()
+            await _save_state(context)
             text = await _page_text(page)
             return CapabilityResult(ok=True, output=f"[{await page.title()}] {url}\n{text}")
         except Exception as e:
@@ -164,9 +191,10 @@ class BrowserText:
     schema = {"type": "object", "properties": {}}
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
-        return CapabilityResult(ok=True, output=await _page_text(_PAGE))
+        return CapabilityResult(ok=True, output=await _page_text(page))
 
 
 class BrowserWait:
@@ -183,14 +211,15 @@ class BrowserWait:
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         sel = str(args.get("selector", "")).strip()
         try:
             if sel:
-                await _PAGE.wait_for_selector(sel, timeout=int(args.get("timeout", 15000)))
+                await page.wait_for_selector(sel, timeout=int(args.get("timeout", 15000)))
                 return CapabilityResult(ok=True, output=f"元素已出现:{sel}")
-            await _PAGE.wait_for_timeout(int(args.get("ms", 1000)))
+            await page.wait_for_timeout(int(args.get("ms", 1000)))
             return CapabilityResult(ok=True, output="等待完成")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -209,14 +238,15 @@ class BrowserScreenshot:
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         name = str(args.get("name", "")).strip() or "screenshot.png"
         if not name.lower().endswith((".png", ".jpg", ".jpeg")):
             name += ".png"
         path = os.path.join(_artifacts_dir(), name)
         try:
-            await _PAGE.screenshot(path=path, full_page=bool(args.get("full_page", True)))
+            await page.screenshot(path=path, full_page=bool(args.get("full_page", True)))
             return CapabilityResult(ok=True, output=f"已截图:{path}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -234,18 +264,19 @@ class BrowserClick:
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
         sel = str(args.get("selector", "")).strip()
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         if not sel:
             return CapabilityResult(ok=False, error="缺少 selector")
-        ok_e, why = _current_egress(method="POST", data_classification="private")
+        ok_e, why = _current_egress(page, method="POST", data_classification="private")
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
         try:
-            await _PAGE.click(sel, timeout=8000)
-            await _PAGE.wait_for_timeout(500)
-            await _save_state()
-            return CapabilityResult(ok=True, output=f"已点击 {sel}。当前页:{await _PAGE.title()}")
+            await page.click(sel, timeout=8000)
+            await page.wait_for_timeout(500)
+            await _save_state(_context_key(ctx, args))
+            return CapabilityResult(ok=True, output=f"已点击 {sel}。当前页:{await page.title()}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
 
@@ -270,7 +301,8 @@ class BrowserFill:
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
         sel = str(args.get("selector", "")).strip()
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         if not sel:
             return CapabilityResult(ok=False, error="缺少 selector")
@@ -286,12 +318,12 @@ class BrowserFill:
             if pw is None:
                 return CapabilityResult(ok=False, error=f"保险库里没有「{name}」的密码,请先用 secret.save 保存")
             raw, masked = pw, True
-        ok_e, why = _current_egress(method="POST", data_classification="secret" if masked else "private")
+        ok_e, why = _current_egress(page, method="POST", data_classification="secret" if masked else "private")
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
         try:
-            await _PAGE.fill(sel, raw, timeout=8000)
-            await _save_state()
+            await page.fill(sel, raw, timeout=8000)
+            await _save_state(_context_key(ctx, args))
             if masked:
                 return CapabilityResult(ok=True, output=f"已往 {sel} 填入凭据密码(已隐藏,未显示明文)。")
             return CapabilityResult(ok=True, output=f"已往 {sel} 填入内容。")
@@ -313,7 +345,8 @@ class BrowserUpload:
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         sel = str(args.get("selector", "")).strip()
         full = _safe_ws_path(str(args.get("path", "")).strip())
@@ -322,7 +355,7 @@ class BrowserUpload:
         if not full or not os.path.isfile(full):
             return CapabilityResult(ok=False, error="文件不存在或越出工作区范围")
         try:
-            await _PAGE.set_input_files(sel, full, timeout=8000)
+            await page.set_input_files(sel, full, timeout=8000)
             return CapabilityResult(ok=True, output=f"已为 {sel} 选择上传文件:{os.path.basename(full)}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -342,14 +375,15 @@ class BrowserDownload:
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
-        if _PAGE is None:
+        page = _page_for(ctx, args)
+        if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
         sel = str(args.get("selector", "")).strip()
         if not sel:
             return CapabilityResult(ok=False, error="缺少 selector")
         try:
-            async with _PAGE.expect_download(timeout=30000) as dl_info:
-                await _PAGE.click(sel, timeout=8000)
+            async with page.expect_download(timeout=30000) as dl_info:
+                await page.click(sel, timeout=8000)
             download = await dl_info.value
             fname = str(args.get("name", "")).strip() or download.suggested_filename or "download.bin"
             safe_name = os.path.basename(fname)
@@ -397,7 +431,8 @@ class BrowserLoginAssist:
         login_markers = ["signin", "login", "passport", "/account/", "sso"]
         hint = str(args.get("success_contains", "")).strip()
         try:
-            page = await _ensure_page(headless=False)   # 强制可见窗口,让主人能操作
+            context = _context_key(ctx, args)
+            page = await _ensure_page(context, headless=False)   # visible window for human takeover
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             return CapabilityResult(ok=False, error=f"打开登录页失败:{e}")
@@ -420,12 +455,12 @@ class BrowserLoginAssist:
                 done = not any(m in low for m in login_markers)
             # 离开了登录页(被重定向到已登录页)→ 视为成功
             if done and cur != start_url:
-                await _save_state()
+                await _save_state(context)
                 return CapabilityResult(
                     ok=True,
                     output=f"检测到登录完成(当前页 {cur}),会话已保存,之后访问该站免登录。")
         # 超时:无论是否检测到,都把当前 cookie 存下(主人可能已登录但页面未跳转)
-        await _save_state()
+        await _save_state(context)
         return CapabilityResult(
             ok=False,
             output="",

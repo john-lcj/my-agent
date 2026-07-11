@@ -57,3 +57,12 @@ def test_local_fixture_declares_accessible_and_secret_fields():
     fixture = fixture_contract()
     assert fixture["required_roles"] == ["heading", "textbox", "button"]
     assert fixture["secret_fields"] == ["secret"]
+
+
+def test_playwright_context_state_paths_are_distinct(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_LOG_DIR", str(tmp_path))
+    from capabilities.tools.browser import BrowserOpen, _state_file
+    first = BrowserContextKey("owner", "account-a", "project", "task")
+    second = BrowserContextKey("owner", "account-b", "project", "task")
+    assert _state_file(first) != _state_file(second)
+    assert "account_id" in BrowserOpen.schema["properties"]
