@@ -12,6 +12,7 @@ from browser_runtime.kernel import (
     RemoteStateAssertion,
 )
 from browser_runtime.accessibility import normalize_nodes, select_unique
+from browser_runtime.policy import SitePolicy, SitePolicyStore
 
 
 def test_context_identity_is_stable_and_path_safe():
@@ -101,3 +102,12 @@ def test_preview_takeover_and_remote_verification_contracts(tmp_path):
     assert waiting["state"] == "waiting_for_owner"
     resumed = kernel.takeover(context, "", resume=True)
     assert resumed["state"] == "resumed"
+
+
+def test_unknown_site_is_read_only_and_explicit_policy_allows_scoped_write(tmp_path):
+    store = SitePolicyStore(str(tmp_path / "policies.json"))
+    assert store.allows("https://unknown.example/form", "read")[0]
+    assert not store.allows("https://unknown.example/form", "write")[0]
+    store.save(SitePolicy("allowed.example", ("read", "write"), ("public", "private"), "account-a"))
+    assert store.allows("https://allowed.example/form", "write", "private", "account-a")[0]
+    assert not store.allows("https://allowed.example/form", "write", "secret", "account-a")[0]

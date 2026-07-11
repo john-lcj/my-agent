@@ -26,11 +26,13 @@ from browser_runtime.kernel import (
     RemoteStateAssertion,
 )
 from browser_runtime.accessibility import normalize_nodes, select_unique
+from browser_runtime.policy import SitePolicyStore
 
 _PW = None      # one Playwright engine; contexts remain isolated
 _SESSIONS: dict[str, dict] = {}
 _LEASE_KERNEL: BrowserKernel | None = None
 _LEASES: dict[str, BrowserLease] = {}
+_SITE_POLICIES: SitePolicyStore | None = None
 
 
 def _default_headless() -> bool:
@@ -67,6 +69,14 @@ def _lease_kernel() -> BrowserKernel:
         _LEASE_KERNEL = BrowserKernel(os.path.join(base, "browser_runtime.db"),
                                       os.path.join(base, "browser_traces.jsonl"))
     return _LEASE_KERNEL
+
+
+def _site_policies() -> SitePolicyStore:
+    global _SITE_POLICIES
+    if _SITE_POLICIES is None:
+        base = (os.environ.get("AGENT_LOG_DIR", "").strip() or "logs")
+        _SITE_POLICIES = SitePolicyStore(os.path.join(base, "browser_site_policies.json"))
+    return _SITE_POLICIES
 
 
 async def _ensure_page(context: BrowserContextKey, headless: bool | None = None):
@@ -176,7 +186,23 @@ def _current_egress(page, *, method: str, data_classification: str) -> tuple[boo
     if page is None or not str(page.url).startswith(("http://", "https://")):
         return False, "browser has no approved http destination"
     from governance.egress import check_egress
-    return check_egress(page.url, method=method, data_classification=data_classification, destination="browser")
+    ok, why = check_egress(page.url, method=method, data_classification=data_classification, destination="browser")
+    if not ok:
+        return ok, why
+    return _site_policies().allows(page.url, "write", data_classification)
+
+
+def _append_trace(context: BrowserContextKey, operation_id: str, action: str, target: str,
+                  *, url: str = "", result: str = "", error: str = "") -> None:
+    try:
+        from browser_runtime.kernel import BrowserTrace
+        _lease_kernel().append_trace(BrowserTrace(
+            trace_id=__import__("uuid").uuid4().hex, context_key=context.value,
+            operation_id=operation_id, action=action, target=target, url=url,
+            result=result, error=error,
+        ))
+    except Exception:
+        pass
 
 
 async def _accessibility_snapshot(page) -> dict[str, Any]:
@@ -352,6 +378,7 @@ class BrowserOpen:
                     pass
             await _save_state(context)
             text = await _page_text(page)
+            _append_trace(context, context.value, "open", url, url=url, result="ok")
             return CapabilityResult(ok=True, output=f"[{await page.title()}] {url}\n{text}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -461,7 +488,9 @@ class BrowserClick:
             await _save_state(_context_key(ctx, args))
             verified, reason = await _verify_page_state(page, args)
             if not verified:
+                _append_trace(_context_key(ctx, args), _context_key(ctx, args).value, "click", "browser target", url=page.url, error=reason)
                 return CapabilityResult(ok=False, error=reason)
+            _append_trace(_context_key(ctx, args), _context_key(ctx, args).value, "click", "browser target", url=page.url, result="ok")
             return CapabilityResult(ok=True, output=f"已点击目标。当前页:{await page.title()}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -520,7 +549,9 @@ class BrowserFill:
             await _save_state(_context_key(ctx, args))
             verified, reason = await _verify_page_state(page, args)
             if not verified:
+                _append_trace(_context_key(ctx, args), _context_key(ctx, args).value, "fill", "browser target", url=page.url, error=reason)
                 return CapabilityResult(ok=False, error=reason)
+            _append_trace(_context_key(ctx, args), _context_key(ctx, args).value, "fill", "browser target", url=page.url, result="ok")
             if masked:
                 return CapabilityResult(ok=True, output=f"已往 {sel} 填入凭据密码(已隐藏,未显示明文)。")
             return CapabilityResult(ok=True, output=f"已往 {sel} 填入内容。")
