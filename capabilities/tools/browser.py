@@ -22,6 +22,7 @@ from typing import Any
 from core.types import CapabilityResult, Risk
 from governance.workspace import artifacts_dir, resolve_path
 from browser_runtime.kernel import BrowserContextKey, BrowserKernel, BrowserLease
+from browser_runtime.accessibility import normalize_nodes, select_unique
 
 _PW = None      # one Playwright engine; contexts remain isolated
 _SESSIONS: dict[str, dict] = {}
@@ -175,6 +176,76 @@ def _current_egress(page, *, method: str, data_classification: str) -> tuple[boo
     return check_egress(page.url, method=method, data_classification=data_classification, destination="browser")
 
 
+async def _accessibility_snapshot(page) -> dict[str, Any]:
+    raw = await page.locator("body").evaluate("""(body) => {
+      const nodes = [...body.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"]')];
+      const tagRole = {A:'link', BUTTON:'button', INPUT:'textbox', TEXTAREA:'textbox', SELECT:'combobox'};
+      return nodes.map((node, index) => {
+        const ref = 'e' + index;
+        node.setAttribute('data-captain-ref', ref);
+        const labelNode = node.id ? body.querySelector(`label[for="${CSS.escape(node.id)}"]`) : null;
+        const name = node.getAttribute('aria-label') || (labelNode && labelNode.innerText) ||
+          node.innerText || node.value || node.getAttribute('title') || '';
+        return {ref, role: node.getAttribute('role') || tagRole[node.tagName] || 'generic',
+          name: String(name).trim().slice(0, 300), label: labelNode ? labelNode.innerText.trim() : '',
+          value: node.type === 'password' ? '[REDACTED]' : String(node.value || '').slice(0, 300),
+          disabled: !!node.disabled || node.getAttribute('aria-disabled') === 'true',
+          checked: typeof node.checked === 'boolean' ? node.checked : null,
+          expanded: node.getAttribute('aria-expanded') === null ? null : node.getAttribute('aria-expanded') === 'true'};
+      });
+    }""")
+    return {"url": page.url, "title": await page.title(),
+            "viewport": await page.evaluate("() => ({width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio})"),
+            "nodes": [node.__dict__ for node in normalize_nodes(raw or [])]}
+
+
+async def _semantic_target(page, args: dict):
+    selector = str(args.get("selector", "")).strip()
+    ref = str(args.get("ref", "")).strip()
+    role = str(args.get("role", "")).strip()
+    name = str(args.get("name", "")).strip()
+    label = str(args.get("label", "")).strip()
+    text = str(args.get("text", "")).strip()
+    if ref:
+        locator = page.locator(f'[data-captain-ref="{ref}"]')
+    elif label:
+        locator = page.get_by_label(label, exact=True)
+    elif role:
+        locator = page.get_by_role(role, name=name or None, exact=True)
+    elif text:
+        locator = page.get_by_text(text, exact=True)
+    elif selector:
+        locator = page.locator(selector)
+    else:
+        raise ValueError("provide an accessibility ref, role/name, label, text, or CSS selector")
+    count = await locator.count()
+    if count != 1:
+        raise ValueError(f"browser target must resolve to exactly one element; got {count}")
+    if await locator.is_disabled():
+        raise ValueError("browser target is disabled")
+    return locator
+
+
+class BrowserAccessibility:
+    name = "browser.accessibility"
+    risk = Risk.READ
+    description = "Return accessible roles, names, labels, states, masked values, URL, title, and viewport for the current page."
+    schema = {"type": "object", "properties": {
+        "owner_id": {"type": "string"}, "account_id": {"type": "string"},
+        "project_id": {"type": "string"}, "task_id": {"type": "string"},
+    }}
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        page = _page_for(ctx, args)
+        if page is None:
+            return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
+        try:
+            import json
+            return CapabilityResult(ok=True, output=json.dumps(await _accessibility_snapshot(page), ensure_ascii=False))
+        except Exception as exc:
+            return CapabilityResult(ok=False, error=str(exc))
+
+
 class BrowserOpen:
     name = "browser.open"
     risk = Risk.READ
@@ -286,7 +357,8 @@ class BrowserScreenshot:
         path = os.path.join(_artifacts_dir(), name)
         try:
             await page.screenshot(path=path, full_page=bool(args.get("full_page", True)))
-            return CapabilityResult(ok=True, output=f"已截图:{path}")
+            meta = await _accessibility_snapshot(page)
+            return CapabilityResult(ok=True, output=f"已截图:{path} | url={meta['url']} | viewport={meta['viewport']}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
 
@@ -297,8 +369,13 @@ class BrowserClick:
     description = "点击当前页面上匹配 CSS 选择器的元素(可能触发提交/跳转)。"
     schema = {
         "type": "object",
-        "properties": {"selector": {"type": "string", "description": "CSS 选择器"}},
-        "required": ["selector"],
+        "properties": {
+            "selector": {"type": "string", "description": "CSS selector fallback"},
+            "ref": {"type": "string", "description": "Reference from browser.accessibility"},
+            "role": {"type": "string", "description": "Accessible role"},
+            "name": {"type": "string", "description": "Accessible name"},
+            "text": {"type": "string", "description": "Exact visible text"},
+        },
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -306,16 +383,17 @@ class BrowserClick:
         page = _page_for(ctx, args)
         if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
-        if not sel:
-            return CapabilityResult(ok=False, error="缺少 selector")
+        if not any(str(args.get(key, "")).strip() for key in ("selector", "ref", "role", "name", "text")):
+            return CapabilityResult(ok=False, error="missing browser target")
         ok_e, why = _current_egress(page, method="POST", data_classification="private")
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
         try:
-            await page.click(sel, timeout=8000)
+            target = await _semantic_target(page, args)
+            await target.click(timeout=8000)
             await page.wait_for_timeout(500)
             await _save_state(_context_key(ctx, args))
-            return CapabilityResult(ok=True, output=f"已点击 {sel}。当前页:{await page.title()}")
+            return CapabilityResult(ok=True, output=f"已点击目标。当前页:{await page.title()}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
 
@@ -331,11 +409,15 @@ class BrowserFill:
     schema = {
         "type": "object",
         "properties": {
-            "selector": {"type": "string", "description": "输入框 CSS 选择器"},
+            "selector": {"type": "string", "description": "CSS selector fallback"},
+            "ref": {"type": "string", "description": "Reference from browser.accessibility"},
+            "role": {"type": "string", "description": "Accessible role"},
+            "name": {"type": "string", "description": "Accessible name"},
+            "label": {"type": "string", "description": "Associated form label"},
             "text": {"type": "string",
                      "description": "要填的内容;填密码用 secret:<凭据名> 引用保险库,绝不要写明文密码"},
         },
-        "required": ["selector", "text"],
+        "required": ["text"],
     }
 
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
@@ -343,8 +425,8 @@ class BrowserFill:
         page = _page_for(ctx, args)
         if page is None:
             return CapabilityResult(ok=False, error="还没有打开页面,先用 browser.open")
-        if not sel:
-            return CapabilityResult(ok=False, error="缺少 selector")
+        if not any(str(args.get(key, "")).strip() for key in ("selector", "ref", "role", "name", "label")):
+            return CapabilityResult(ok=False, error="missing browser target")
         raw = str(args.get("text", ""))
         masked = False
         if raw.startswith("secret:"):
@@ -361,7 +443,8 @@ class BrowserFill:
         if not ok_e:
             return CapabilityResult(ok=False, error=why)
         try:
-            await page.fill(sel, raw, timeout=8000)
+            target = await _semantic_target(page, args)
+            await target.fill(raw, timeout=8000)
             await _save_state(_context_key(ctx, args))
             if masked:
                 return CapabilityResult(ok=True, output=f"已往 {sel} 填入凭据密码(已隐藏,未显示明文)。")

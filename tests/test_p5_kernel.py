@@ -10,6 +10,7 @@ from browser_runtime.kernel import (
     BrowserTrace,
     RemoteStateAssertion,
 )
+from browser_runtime.accessibility import normalize_nodes, select_unique
 
 
 def test_context_identity_is_stable_and_path_safe():
@@ -76,3 +77,14 @@ def test_playwright_context_state_paths_are_distinct(tmp_path, monkeypatch):
     second = BrowserContextKey("owner", "account-b", "project", "task")
     assert _state_file(first) != _state_file(second)
     assert "account_id" in BrowserOpen.schema["properties"]
+
+
+def test_accessibility_target_selection_is_strict_and_masks_disabled_targets():
+    nodes = normalize_nodes([
+        {"ref": "e1", "role": "button", "name": "Save"},
+        {"ref": "e2", "role": "textbox", "name": "Secret", "label": "Secret", "value": "[REDACTED]"},
+    ])
+    assert select_unique(nodes, role="button", name="Save").ref == "e1"
+    assert select_unique(nodes, label="Secret").ref == "e2"
+    with pytest.raises(ValueError):
+        select_unique(nodes, role="button", name="Missing")
