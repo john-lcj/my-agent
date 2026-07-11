@@ -1,6 +1,7 @@
 """Browser automation safety contracts and persistence."""
 
 from browser_runtime.kernel import (
+    BrowserActionPreview,
     BrowserContextKey,
     BrowserKernel,
     BrowserLease,
@@ -10,6 +11,6 @@ from browser_runtime.kernel import (
 )
 
 __all__ = [
-    "BrowserContextKey", "BrowserKernel", "BrowserLease", "BrowserOperation",
+    "BrowserActionPreview", "BrowserContextKey", "BrowserKernel", "BrowserLease", "BrowserOperation",
     "BrowserTrace", "RemoteStateAssertion",
 ]

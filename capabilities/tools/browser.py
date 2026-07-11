@@ -21,7 +21,10 @@ from typing import Any
 
 from core.types import CapabilityResult, Risk
 from governance.workspace import artifacts_dir, resolve_path
-from browser_runtime.kernel import BrowserContextKey, BrowserKernel, BrowserLease
+from browser_runtime.kernel import (
+    BrowserActionPreview, BrowserContextKey, BrowserKernel, BrowserLease,
+    RemoteStateAssertion,
+)
 from browser_runtime.accessibility import normalize_nodes, select_unique
 
 _PW = None      # one Playwright engine; contexts remain isolated
@@ -226,6 +229,66 @@ async def _semantic_target(page, args: dict):
     return locator
 
 
+async def _verify_page_state(page, args: dict) -> tuple[bool, str]:
+    expected_url = str(args.get("expected_url", "")).strip()
+    required = args.get("expected_text", ())
+    forbidden = args.get("forbidden_text", ())
+    if isinstance(required, str):
+        required = (required,) if required else ()
+    if isinstance(forbidden, str):
+        forbidden = (forbidden,) if forbidden else ()
+    if not expected_url and not required and not forbidden:
+        return True, "remote state verification not requested"
+    return RemoteStateAssertion("browser action", expected_url=expected_url,
+                                required_text=tuple(required), forbidden_text=tuple(forbidden)).verify(
+                                    url=page.url, text=await _page_text(page))
+
+
+class BrowserPreview:
+    name = "browser.preview"
+    risk = Risk.READ
+    description = "Render the exact target, account, fields, files, and irreversible consequence before a browser write."
+    schema = {"type": "object", "properties": {
+        "action": {"type": "string"}, "target": {"type": "string"},
+        "account_id": {"type": "string"}, "fields": {"type": "object"},
+        "files": {"type": "array", "items": {"type": "string"}},
+        "consequence": {"type": "string"}, "irreversible": {"type": "boolean"},
+    }, "required": ["action", "target"]}
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        import json
+        preview = BrowserActionPreview(
+            action=str(args.get("action", "")), target=str(args.get("target", "")),
+            account_id=str(args.get("account_id", "") or getattr(getattr(ctx, "identity", None), "subject_id", "")),
+            fields=dict(args.get("fields") or {}), files=tuple(str(x) for x in (args.get("files") or [])),
+            consequence=str(args.get("consequence", "")), irreversible=bool(args.get("irreversible", False)),
+        )
+        if not preview.action or not preview.target:
+            return CapabilityResult(ok=False, error="preview requires action and target")
+        return CapabilityResult(ok=True, output=json.dumps(preview.render(), ensure_ascii=False))
+
+
+class BrowserTakeover:
+    name = "browser.takeover"
+    risk = Risk.WRITE
+    description = "Pause a browser task for owner takeover during CAPTCHA, MFA, payment, or ambiguous interaction, then resume it."
+    schema = {"type": "object", "properties": {
+        "action": {"type": "string", "enum": ["request", "resume"]},
+        "reason": {"type": "string"}, "owner_id": {"type": "string"},
+        "account_id": {"type": "string"}, "project_id": {"type": "string"}, "task_id": {"type": "string"},
+    }, "required": ["action"]}
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        import json
+        context = _context_key(ctx, args)
+        try:
+            state = _lease_kernel().takeover(context, str(args.get("reason", "owner takeover")),
+                                             resume=str(args.get("action")) == "resume")
+            return CapabilityResult(ok=True, output=json.dumps(state, ensure_ascii=False))
+        except Exception as exc:
+            return CapabilityResult(ok=False, error=str(exc))
+
+
 class BrowserAccessibility:
     name = "browser.accessibility"
     risk = Risk.READ
@@ -375,6 +438,9 @@ class BrowserClick:
             "role": {"type": "string", "description": "Accessible role"},
             "name": {"type": "string", "description": "Accessible name"},
             "text": {"type": "string", "description": "Exact visible text"},
+            "expected_url": {"type": "string", "description": "Expected URL after the action"},
+            "expected_text": {"type": "string", "description": "Text required after the action"},
+            "forbidden_text": {"type": "string", "description": "Text that must not appear after the action"},
         },
     }
 
@@ -393,6 +459,9 @@ class BrowserClick:
             await target.click(timeout=8000)
             await page.wait_for_timeout(500)
             await _save_state(_context_key(ctx, args))
+            verified, reason = await _verify_page_state(page, args)
+            if not verified:
+                return CapabilityResult(ok=False, error=reason)
             return CapabilityResult(ok=True, output=f"已点击目标。当前页:{await page.title()}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
@@ -414,6 +483,9 @@ class BrowserFill:
             "role": {"type": "string", "description": "Accessible role"},
             "name": {"type": "string", "description": "Accessible name"},
             "label": {"type": "string", "description": "Associated form label"},
+            "expected_url": {"type": "string", "description": "Expected URL after the action"},
+            "expected_text": {"type": "string", "description": "Text required after the action"},
+            "forbidden_text": {"type": "string", "description": "Text that must not appear after the action"},
             "text": {"type": "string",
                      "description": "要填的内容;填密码用 secret:<凭据名> 引用保险库,绝不要写明文密码"},
         },
@@ -446,6 +518,9 @@ class BrowserFill:
             target = await _semantic_target(page, args)
             await target.fill(raw, timeout=8000)
             await _save_state(_context_key(ctx, args))
+            verified, reason = await _verify_page_state(page, args)
+            if not verified:
+                return CapabilityResult(ok=False, error=reason)
             if masked:
                 return CapabilityResult(ok=True, output=f"已往 {sel} 填入凭据密码(已隐藏,未显示明文)。")
             return CapabilityResult(ok=True, output=f"已往 {sel} 填入内容。")
@@ -492,6 +567,7 @@ class BrowserDownload:
         "properties": {
             "selector": {"type": "string", "description": "点击后触发下载的元素 CSS 选择器"},
             "name": {"type": "string", "description": "另存文件名(可选,默认用网站建议名)"},
+            "expected_sha256": {"type": "string", "description": "Expected SHA-256 of the downloaded artifact"},
         },
         "required": ["selector"],
     }
@@ -514,6 +590,12 @@ class BrowserDownload:
                 return CapabilityResult(ok=False, error=error)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             await download.save_as(path)
+            expected = str(args.get("expected_sha256", "")).strip()
+            if expected:
+                import hashlib
+                digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+                if digest != expected:
+                    return CapabilityResult(ok=False, error="downloaded file hash does not match expected remote state")
             return CapabilityResult(ok=True, output=f"已下载到:{path}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))

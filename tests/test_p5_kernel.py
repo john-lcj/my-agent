@@ -4,6 +4,7 @@ import pytest
 
 from browser_runtime.fixtures import fixture_contract
 from browser_runtime.kernel import (
+    BrowserActionPreview,
     BrowserContextKey,
     BrowserKernel,
     BrowserOperation,
@@ -88,3 +89,15 @@ def test_accessibility_target_selection_is_strict_and_masks_disabled_targets():
     assert select_unique(nodes, label="Secret").ref == "e2"
     with pytest.raises(ValueError):
         select_unique(nodes, role="button", name="Missing")
+
+
+def test_preview_takeover_and_remote_verification_contracts(tmp_path):
+    kernel = BrowserKernel(str(tmp_path / "browser.db"), str(tmp_path / "trace.jsonl"))
+    context = BrowserContextKey("owner", "account", "project", "takeover")
+    preview = BrowserActionPreview("payment", "checkout", "account", {"amount": "10"},
+                                   consequence="charge account", irreversible=True)
+    assert preview.render()["fields"] == {"amount": "10"}
+    waiting = kernel.takeover(context, "MFA required")
+    assert waiting["state"] == "waiting_for_owner"
+    resumed = kernel.takeover(context, "", resume=True)
+    assert resumed["state"] == "resumed"

@@ -79,6 +79,20 @@ class RemoteStateAssertion:
         return True, "remote state verified"
 
 
+@dataclass(frozen=True)
+class BrowserActionPreview:
+    action: str
+    target: str
+    account_id: str
+    fields: dict[str, Any] = field(default_factory=dict)
+    files: tuple[str, ...] = ()
+    consequence: str = ""
+    irreversible: bool = False
+
+    def render(self) -> dict[str, Any]:
+        return _redact(asdict(self))
+
+
 @dataclass
 class BrowserTrace:
     trace_id: str
@@ -131,6 +145,10 @@ class BrowserKernel:
             context_key TEXT PRIMARY KEY, lease_id TEXT NOT NULL,
             owner_pid INTEGER NOT NULL, expires_at REAL NOT NULL
         )""")
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS browser_takeovers (
+            context_key TEXT PRIMARY KEY, state TEXT NOT NULL, reason TEXT NOT NULL,
+            resume_token TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL
+        )""")
         self._conn.commit()
         self.trace_path = trace_path or os.path.join(os.path.dirname(db_path), "browser_traces.jsonl")
 
@@ -165,6 +183,22 @@ class BrowserKernel:
                                  (lease.context_key, lease.lease_id))
         self._conn.commit()
         return bool(cur.rowcount)
+
+    def takeover(self, context: BrowserContextKey, reason: str, resume: bool = False) -> dict[str, Any]:
+        now = time.time()
+        current = self._conn.execute("SELECT * FROM browser_takeovers WHERE context_key=?", (context.value,)).fetchone()
+        if resume:
+            if not current:
+                raise RuntimeError("no browser takeover is waiting for this context")
+            self._conn.execute("UPDATE browser_takeovers SET state='resumed',updated_at=? WHERE context_key=?",
+                               (now, context.value))
+            self._conn.commit()
+            return {"state": "resumed", "context_key": context.value, "resume_token": current["resume_token"]}
+        token = uuid.uuid4().hex
+        self._conn.execute("INSERT OR REPLACE INTO browser_takeovers VALUES(?,?,?,?,?,?)",
+                           (context.value, "waiting_for_owner", reason, token, now, now))
+        self._conn.commit()
+        return {"state": "waiting_for_owner", "context_key": context.value, "resume_token": token, "reason": reason}
 
     def execute(self, context: BrowserContextKey, operation: BrowserOperation,
                 handler: Callable[[], Any]) -> dict[str, Any]:

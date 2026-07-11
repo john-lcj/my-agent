@@ -41,7 +41,7 @@ _BUILTIN_NAMES = frozenset({
     "schedule.update", "schedule.run", "plan.update", "browser.open",
     "browser.text", "browser.click", "browser.fill", "browser.wait",
     "browser.screenshot", "browser.upload", "browser.download",
-    "browser.login_assist", "browser.close", "browser.accessibility", "vision.see", "secret.save", "secret.list", "secret.issue_handle",
+    "browser.login_assist", "browser.close", "browser.accessibility", "browser.preview", "browser.takeover", "vision.see", "secret.save", "secret.list", "secret.issue_handle",
     "wechat.format", "skill.scaffold", "image.ocr", "image.generate",
     "monitor.create", "monitor.list", "monitor.delete", "goal.set", "goal.list",
     "goal.remove", "channel.status", "channel.configure", "model_key.save",
