@@ -13,6 +13,7 @@ from browser_runtime.kernel import (
 )
 from browser_runtime.accessibility import normalize_nodes, select_unique
 from browser_runtime.policy import SitePolicy, SitePolicyStore
+from browser_runtime.benchmark import benchmark_cases, benchmark_summary
 
 
 def test_context_identity_is_stable_and_path_safe():
@@ -111,3 +112,11 @@ def test_unknown_site_is_read_only_and_explicit_policy_allows_scoped_write(tmp_p
     store.save(SitePolicy("allowed.example", ("read", "write"), ("public", "private"), "account-a"))
     assert store.allows("https://allowed.example/form", "write", "private", "account-a")[0]
     assert not store.allows("https://allowed.example/form", "write", "secret", "account-a")[0]
+
+
+def test_browser_benchmark_catalog_has_50_cases_and_high_impact_markers():
+    cases = benchmark_cases()
+    summary = benchmark_summary(cases)
+    assert summary["total"] == 50
+    assert len(summary["categories"]) == 10
+    assert summary["high_impact"] == 5
