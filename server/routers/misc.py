@@ -20,12 +20,26 @@ def register_misc(app) -> None:
         import server.app as _sa
         partnership = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
         from core.proactive_partnership import value_metrics
+        missions = [
+            {
+                "id": mission.get("id", ""),
+                "goal": str(mission.get("goal", ""))[:300],
+                "status": mission.get("status", ""),
+                "deadline": mission.get("deadline", ""),
+                "blocked_reason": str(mission.get("blocked_reason", ""))[:300],
+                "task_count": len(mission.get("tasks") or []),
+                "updated_at": mission.get("updated_at", 0),
+            }
+            for mission in _sa._mission_store.list()
+        ]
         return JSONResponse({
             "settings": partnership.settings(),
             "relationship": partnership.profile(),
             "goals": GoalsStore(path=f"{Config.LOG_DIR}/goals.json").graph(),
             "monitors": MonitorStore(path=f"{Config.LOG_DIR}/monitors.json").list(),
-            "missions": _sa._mission_store.list(),
+            # Mission results and user-supplied context may contain sensitive
+            # material; trust status needs operational state, not raw content.
+            "missions": missions,
             "commitments": partnership.commitments(),
             "pending_suggestions": SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json").pending(),
             "value_metrics": value_metrics(partnership),
