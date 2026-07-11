@@ -10,6 +10,25 @@ from config import Config
 
 def register_misc(app) -> None:
 
+    @app.get("/api/improvements")
+    async def list_improvements() -> JSONResponse:
+        from core.improvement_governance import ImprovementStore
+        return JSONResponse({"proposals": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.json").list()})
+
+    @app.post("/api/improvements")
+    async def create_improvement(request: Request) -> JSONResponse:
+        from core.improvement_governance import ImprovementStore, propose
+        body = await request.json()
+        try:
+            proposal = propose(
+                title=str(body.get("title", "")), root_cause=str(body.get("root_cause", "")),
+                expected_benefit=str(body.get("expected_benefit", "")), affected_paths=list(body.get("affected_paths") or []),
+                risks=list(body.get("risks") or []), tests=list(body.get("tests") or []), rollback=str(body.get("rollback", "")),
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, "proposal": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.json").add(proposal)})
+
     @app.get("/api/trust")
     async def trust_dashboard() -> JSONResponse:
         """Inspectable, redacted view of P7 autonomy state."""
