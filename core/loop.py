@@ -29,8 +29,11 @@ from core.types import (
 from governance.budget import BudgetGovernor
 from core.intent_router import classify_intent, intent_prompt_block
 from core.task_lifecycle import (
+    cognitive_runtime_block,
     create_task_frame,
     lifecycle_prompt_block,
+    ready_execution_step,
+    record_capability_result,
     role_report_prompt,
     update_plan as lifecycle_update_plan,
 )
@@ -85,6 +88,7 @@ class Agent:
         self._cap_fail_nudge_at = int(_os.environ.get("AGENT_CAP_FAIL_NUDGE_AT", "2"))
         self._cap_fail_stop_at = int(_os.environ.get("AGENT_CAP_FAIL_STOP_AT", "4"))
         self._delivery_nudged = False
+        self._role_llms: dict[str, object] = {}
 
     async def run(
         self,
@@ -204,6 +208,8 @@ class Agent:
                 if chunk:
                     emit(EventType.ASSISTANT_TOKEN, {"token": chunk})
 
+            self._refresh_cognitive_context(ctx)
+            active_llm = self._select_cognitive_llm(ctx)
             # 计 input token:每轮都把全部历史 + 能力清单发给模型,input 才是成本大头。
             # 不计会让 token/金额统计严重偏低,max_cost_usd 刹车随之失真。
             self._charge_input(ctx)
@@ -211,7 +217,7 @@ class Agent:
             try:
                 import time as _t
                 _mt0 = _t.time()
-                step = await self.llm.next_step(
+                step = await active_llm.next_step(
                     ctx.llm_view(),
                     self.registry.specs_for(getattr(self, "_current_user_text", "")),
                     emit_token=emit_token,
@@ -350,6 +356,25 @@ class Agent:
                 reasoning_content=step.reasoning_content,
             )
 
+            # P6 executor gate: real capability invocations may only advance
+            # the next dependency-ready cognitive step. plan.update itself is
+            # declarative and is intentionally excluded.
+            cognitive_step_id = ""
+            task_frame = getattr(ctx, "task_frame", None)
+            if call.name != "plan.update" and task_frame is not None:
+                cognitive_step = ready_execution_step(task_frame)
+                state = getattr(task_frame, "cognitive_state", None)
+                if state is not None and state.plan.steps:
+                    if cognitive_step is None:
+                        note = ("[P6 execution gate] No dependency-ready plan step remains. "
+                                "Update the plan with a bounded repair or report the verified result.")
+                        ctx.run_outcome.action_blocked(note)
+                        emit(EventType.CAPABILITY_RESULT, {"ok": False, "error": note, "name": call.name})
+                        ctx.add_tool_result(note, call.call_id, name=call.name)
+                        ctx.add_system(note)
+                        continue
+                    cognitive_step_id = cognitive_step.step_id
+
             # 治理:统一收口审查(硬边界 / 软边界)。用 review_detailed 拿到
             # "为什么"和"哪条规则",既回传给模型,也落 trace 供后续统计迭代。
             review = self.policy.review_detailed(call, ctx.identity, ctx)
@@ -465,6 +490,18 @@ class Agent:
                         "" if result.ok else (result.error or "")[:200])
             body = result.output if result.ok else f"[失败] {result.error}"
             ctx.add_tool_result(body, call.call_id, name=call.name)
+            if cognitive_step_id and task_frame is not None:
+                try:
+                    record_capability_result(
+                        task_frame,
+                        cognitive_step_id,
+                        succeeded=result.ok,
+                        evidence=(result.output if result.ok else (result.error or call.name)),
+                    )
+                except Exception:
+                    # A state-recording failure must not make an already-run
+                    # capability look successful to the next model turn.
+                    ctx.add_system("[P6 execution gate] Capability completed but its durable plan transition could not be recorded. Stop and verify state.")
 
             # ── 防 thrash:同一能力反复失败(换参数也算)→ 多半不可用,劝换路/强制收尾 ──
             if result.ok:
@@ -498,6 +535,43 @@ class Agent:
                         f"[能力失败提醒]「{call.name}」已失败 {_fc} 次(最近原因:{(result.error or '')[:120]})。"
                         "这往往意味着它当前不可用或缺配置(如缺 key/权限)。别再换着参数反复试同一能力——"
                         "要么换一个完全不同的工具/方案,要么如实说明缺口、给出替代后收尾。")
+
+    def _refresh_cognitive_context(self, ctx: Context) -> None:
+        """Expose only the current P6 package, without persisting a message per step."""
+        task = getattr(ctx, "task_frame", None)
+        if task is None:
+            return
+        block = cognitive_runtime_block(task)
+        if not block:
+            return
+        from core.types import Message, Role
+        ctx.messages = [
+            message for message in ctx.messages
+            if not (message.role == Role.SYSTEM and message.content.startswith("[P6 runtime state"))
+        ]
+        # This message is intentionally ephemeral: a fresh package replaces it
+        # on every decision, rather than bloating persisted conversation history.
+        ctx.messages.append(Message(role=Role.SYSTEM, content=block))
+
+    def _select_cognitive_llm(self, ctx: Context):
+        """Route planning and verification to configured stronger role models.
+
+        Each role model is built through the normal factory, so its configured
+        fallback chain preserves the same tool-call conversation contract.
+        """
+        task = getattr(ctx, "task_frame", None)
+        state = getattr(task, "cognitive_state", None)
+        route = state.routes[-1] if state is not None and state.routes else None
+        if route is None or route.preferred_tier != "strong":
+            return self.llm
+        role_name = "planner" if route.role.value == "planner" else "judge"
+        if role_name not in self._role_llms:
+            try:
+                from llm.factory import build_role_llm
+                self._role_llms[role_name] = build_role_llm(role_name)
+            except Exception:
+                self._role_llms[role_name] = None
+        return self._role_llms.get(role_name) or self.llm
 
     def _referenced_files(self, text: str) -> list:
         """从回复里抽出引用的文件,返回 [(原始写法, 存在的绝对路径 或 None)]。"""

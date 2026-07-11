@@ -149,3 +149,62 @@ def test_task_lifecycle_carries_p6_cognitive_state_from_plan_update():
     assert plan.steps[0].evidence_required == ["pytest", "tests pass"]
     assert plan.steps[0].risks == ["regression"]
     assert plan.steps[0].mutable_resources == ["core/cognitive_architecture.py"]
+
+
+def test_p6_loop_records_real_capability_transitions_in_dependency_order():
+    import asyncio
+
+    from capabilities.tools.plan import PlanUpdate
+    from core.bus import EventBus
+    from core.context import Context
+    from core.loop import Agent
+    from core.types import CapabilityCall, CapabilityResult, Decision, GovReview, Risk, Step
+
+    class LLM:
+        name = "routine"
+
+        def __init__(self):
+            self.steps = [
+                Step(call=CapabilityCall(name="plan.update", args={"steps": [
+                    {"id": "s1", "text": "inspect", "status": "todo"},
+                    {"id": "s2", "text": "change", "status": "todo", "dependencies": ["s1"]},
+                ]})),
+                Step(call=CapabilityCall(name="noop", args={})),
+                Step(call=CapabilityCall(name="noop", args={})),
+                Step(text="done"),
+            ]
+
+        async def next_step(self, messages, specs, emit_token=None):
+            return self.steps.pop(0)
+
+    class Registry:
+        def __init__(self):
+            self.plan = PlanUpdate()
+            self.calls = 0
+
+        def specs_for(self, text):
+            return []
+
+        def get(self, name):
+            if name == "plan.update":
+                return self.plan
+            return type("Capability", (), {"risk": Risk.READ})()
+
+        async def invoke(self, name, args, ctx):
+            if name == "plan.update":
+                return await self.plan.invoke(args, ctx)
+            self.calls += 1
+            return CapabilityResult(ok=True, output=f"evidence-{self.calls}")
+
+    class Policy:
+        def review_detailed(self, call, identity, ctx):
+            return GovReview(Decision.ALLOW, reason="ok", rule="test")
+
+    registry = Registry()
+    ctx = Context()
+    result = asyncio.run(Agent(LLM(), registry, Policy(), EventBus()).run(
+        "完成两个步骤并验证", ctx, lambda *args, **kwargs: asyncio.sleep(0, result=True),
+    ))
+    assert result == "done"
+    assert registry.calls == 2
+    assert [t.step_id for t in ctx.task_frame.cognitive_state.transitions] == ["s1", "s2"]

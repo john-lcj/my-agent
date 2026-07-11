@@ -10,11 +10,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.cognitive_architecture import (
+    CognitiveRole,
     CognitiveState,
     VerificationFinding,
     build_structured_objective,
+    build_context_package,
+    counterexample_check,
+    next_ready_step,
     plan_from_steps,
+    record_execution_result,
     repair_steps_from_findings,
+    route_model,
+    stopping_policy,
 )
 from core.intent_router import IntentFrame, ROLE_BEHAVIORS
 
@@ -155,7 +162,7 @@ def update_plan(task: TaskFrame, steps: list[dict[str, Any]]) -> None:
     if task.cognitive_state:
         task.cognitive_state.plan = plan_from_steps(task.cognitive_state.objective, [
             {
-                "id": f"s{i + 1}",
+                "id": s.get("id") or s.get("step_id") or f"s{i + 1}",
                 "text": s.get("text") or s.get("task") or s.get("step") or "",
                 "status": "pending" if (s.get("status") or "") in {"todo", "doing", "running"} else s.get("status"),
                 "dependencies": s.get("dependencies") or [],
@@ -171,6 +178,102 @@ def update_plan(task: TaskFrame, steps: list[dict[str, Any]]) -> None:
         task.phase = PHASE_CHECK
     elif steps:
         task.phase = PHASE_PLAN
+
+
+def cognitive_runtime_block(task: TaskFrame) -> str:
+    """Build the compact, task-specific P6 context injected each model turn."""
+    state = task.cognitive_state
+    if state is None:
+        return ""
+    role_by_phase = {
+        PHASE_PLAN: CognitiveRole.PLANNER,
+        PHASE_CHECK: CognitiveRole.VERIFIER,
+        PHASE_REPAIR: CognitiveRole.REPAIRER,
+    }
+    role = role_by_phase.get(task.phase, CognitiveRole.EXECUTOR)
+    decision = route_model(role, task.task_kind, high_stakes=task.role == "security")
+    if not state.routes or state.routes[-1] != decision:
+        state.routes.append(decision)
+    package = build_context_package(state)
+    return (
+        "[P6 runtime state - follow this as a hard execution contract]\n"
+        f"role={role.value}; model_tier={decision.preferred_tier}; fallback={','.join(decision.fallback_tiers)}\n"
+        f"objective={package.objective}\n"
+        f"constraints={list(package.constraints)}\n"
+        f"ready_steps={list(package.ready_steps)}\n"
+        f"required_evidence={list(package.evidence)}\n"
+        f"risks={list(package.risks)}\n"
+        f"uncertainty={list(package.uncertainty)}\n"
+        "Only advance a ready plan step. Report uncertainty instead of inventing facts."
+    )
+
+
+def ready_execution_step(task: TaskFrame):
+    state = task.cognitive_state
+    if state is None or not state.plan.steps:
+        return None
+    return next_ready_step(state)
+
+
+def record_capability_result(task: TaskFrame, step_id: str, *, succeeded: bool, evidence: str) -> None:
+    state = task.cognitive_state
+    if state is None:
+        return
+    record_execution_result(state, step_id, succeeded=succeeded, evidence=evidence)
+    for raw, step in zip(task.plan_steps, state.plan.steps):
+        if step.step_id == step_id:
+            raw["status"] = "done" if succeeded else "failed"
+            break
+
+
+def _append_repairs_to_plan(task: TaskFrame) -> None:
+    """Make verifier-created repairs executable in the same durable plan."""
+    state = task.cognitive_state
+    if state is None:
+        return
+    known = {str(step.get("text") or "") for step in task.plan_steps}
+    for repair in state.repairs:
+        if repair.title in known:
+            continue
+        task.plan_steps.append({
+            "id": f"repair-{len(task.plan_steps) + 1}",
+            "text": repair.title,
+            "status": "todo",
+            "check": "Verifier finding is resolved and independently rechecked",
+            "evidence_required": [repair.source_finding],
+            "risks": ["repeat verification failure"],
+        })
+        known.add(repair.title)
+    if known:
+        update_plan(task, task.plan_steps)
+
+
+def p6_final_gate(task: TaskFrame, final_text: str) -> str:
+    """Enforce counterexample and bounded-stopping policy before reporting."""
+    state = task.cognitive_state
+    if state is None:
+        return ""
+    if task.role == "security":
+        text = (final_text or "").lower()
+        alternatives = ["present"] if ("alternative" in text or "另一种" in text or "替代" in text) else []
+        failures = ["present"] if ("failure" in text or "失败" in text or "风险" in text) else []
+        check = counterexample_check(
+            consequential=True,
+            alternatives=alternatives,
+            failure_cases=failures,
+        )
+        state.counterexamples.append(check)
+        if check.required:
+            return "[P6 counterexample check] Consequential conclusions must state an alternative explanation and a failure case before reporting."
+    decision = stopping_policy(
+        authority_missing=not bool(state.objective.authority),
+        evidence_sufficient=bool(state.findings) or not task.verification_items,
+        attempts=task.repair_count,
+        max_attempts=task.max_repairs,
+    )
+    if decision.reason.value == "missing_authority":
+        return "[P6 stopping policy] Missing authority for the next action; report the blocker instead of continuing."
+    return ""
 
 
 def unfinished_steps(task: TaskFrame) -> list[str]:
@@ -217,6 +320,7 @@ def final_gate(task: TaskFrame, final_text: str) -> str:
                 ]
                 task.cognitive_state.findings.extend(findings)
                 task.cognitive_state.repairs.extend(repair_steps_from_findings(findings, max_attempts=task.max_repairs))
+                _append_repairs_to_plan(task)
             fails = [f"{v.kind}:{v.target}" for v in items if v.status != "pass"]
             return "[生命周期自检] 验证未通过:" + "、".join(fails[:5]) + "。请补验证后再汇报。"
         ev_gate = gate_evidence_in_reply(final_text, items)
@@ -232,6 +336,11 @@ def final_gate(task: TaskFrame, final_text: str) -> str:
             return u_gate
     except Exception:
         pass
+    p6_gate = p6_final_gate(task, final_text)
+    if p6_gate and task.repair_count <= task.max_repairs:
+        task.phase = PHASE_CHECK
+        task.repair_count += 1
+        return p6_gate
     task.phase = PHASE_REPORT
     task.final_summary = final_text or ""
     return ""

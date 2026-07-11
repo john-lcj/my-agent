@@ -161,6 +161,8 @@ class CognitiveState:
     findings: list[VerificationFinding] = field(default_factory=list)
     repairs: list[RepairStep] = field(default_factory=list)
     uncertainty: list[ObjectiveFact] = field(default_factory=list)
+    routes: list[ModelRoutingDecision] = field(default_factory=list)
+    counterexamples: list[CounterexampleCheck] = field(default_factory=list)
 
 
 def build_structured_objective(
@@ -233,6 +235,41 @@ def execute_ready_step(plan: CognitivePlan, step_id: str, evidence: str) -> Exec
         step.status = "done"
         return ExecutionTransition(step_id, previous, "done", evidence[:500])
     raise KeyError(step_id)
+
+
+def next_ready_step(state: CognitiveState) -> CognitivePlanStep | None:
+    """Return the only step an executor may advance next.
+
+    The runtime calls this before a capability invocation, then records a
+    durable transition only after the capability has returned.
+    """
+    ready = state.plan.ready_steps()
+    return ready[0] if ready else None
+
+
+def record_execution_result(
+    state: CognitiveState,
+    step_id: str,
+    *,
+    succeeded: bool,
+    evidence: str,
+) -> ExecutionTransition:
+    """Persist a capability outcome against a ready cognitive-plan step."""
+    if succeeded:
+        transition = execute_ready_step(state.plan, step_id, evidence)
+    else:
+        for step in state.plan.steps:
+            if step.step_id == step_id:
+                if not step.ready(state.plan.completed_step_ids()):
+                    raise RuntimeError(f"Step {step_id} is not ready")
+                previous = step.status
+                step.status = "failed"
+                transition = ExecutionTransition(step_id, previous, "failed", evidence[:500])
+                break
+        else:
+            raise KeyError(step_id)
+    state.transitions.append(transition)
+    return transition
 
 
 def verification_pass_rate(findings: list[VerificationFinding]) -> float:

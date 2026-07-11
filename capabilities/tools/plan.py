@@ -35,6 +35,10 @@ def normalize_steps(raw: Any) -> list[dict]:
         if status not in _STATUSES:
             status = "todo"
         row = {"text": text[:120], "status": status}
+        if isinstance(item, dict):
+            step_id = str(item.get("id") or item.get("step_id") or "").strip()
+            if step_id:
+                row["id"] = step_id[:80]
         if check:
             row["check"] = check[:160]
         if isinstance(dependencies, list):
