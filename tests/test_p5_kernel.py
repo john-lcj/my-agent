@@ -33,6 +33,16 @@ def test_browser_kernel_leases_and_idempotent_operations(tmp_path):
     assert kernel.release(lease)
 
 
+def test_browser_lease_can_be_renewed_and_stale_lease_reclaimed(tmp_path):
+    kernel = BrowserKernel(str(tmp_path / "browser.db"), str(tmp_path / "trace.jsonl"))
+    context = BrowserContextKey("owner", "account", "project", "lease")
+    lease = kernel.acquire(context, ttl_seconds=1)
+    assert kernel.renew(lease, ttl_seconds=10)
+    assert kernel.release(lease)
+    reclaimed = kernel.acquire(context, ttl_seconds=10)
+    assert reclaimed.lease_id != lease.lease_id
+
+
 def test_trace_redacts_secret_and_preserves_hash_chain(tmp_path):
     kernel = BrowserKernel(str(tmp_path / "browser.db"), str(tmp_path / "trace.jsonl"))
     first = BrowserTrace("t1", "ctx", "op", "fill", "fixture",

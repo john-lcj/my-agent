@@ -136,14 +136,29 @@ class BrowserKernel:
 
     def acquire(self, context: BrowserContextKey, ttl_seconds: float = 60.0) -> BrowserLease:
         now = time.time()
-        current = self._conn.execute("SELECT * FROM browser_leases WHERE context_key=?", (context.value,)).fetchone()
-        if current and current["expires_at"] > now:
-            raise RuntimeError("browser context is already leased by another task")
-        lease = BrowserLease(context.value, uuid.uuid4().hex, os.getpid(), now + ttl_seconds)
-        self._conn.execute("INSERT OR REPLACE INTO browser_leases VALUES(?,?,?,?)",
-                           (lease.context_key, lease.lease_id, lease.owner_pid, lease.expires_at))
-        self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            current = self._conn.execute("SELECT * FROM browser_leases WHERE context_key=?", (context.value,)).fetchone()
+            if current and current["expires_at"] > now:
+                raise RuntimeError("browser context is already leased by another task")
+            lease = BrowserLease(context.value, uuid.uuid4().hex, os.getpid(), now + ttl_seconds)
+            self._conn.execute("INSERT OR REPLACE INTO browser_leases VALUES(?,?,?,?)",
+                               (lease.context_key, lease.lease_id, lease.owner_pid, lease.expires_at))
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
         return lease
+
+    def renew(self, lease: BrowserLease, ttl_seconds: float = 60.0) -> bool:
+        cur = self._conn.execute(
+            "UPDATE browser_leases SET expires_at=? WHERE context_key=? AND lease_id=?",
+            (time.time() + ttl_seconds, lease.context_key, lease.lease_id),
+        )
+        self._conn.commit()
+        if cur.rowcount:
+            lease.expires_at = time.time() + ttl_seconds
+        return bool(cur.rowcount)
 
     def release(self, lease: BrowserLease) -> bool:
         cur = self._conn.execute("DELETE FROM browser_leases WHERE context_key=? AND lease_id=?",

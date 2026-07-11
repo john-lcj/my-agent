@@ -70,7 +70,7 @@ def build_registry(
     from capabilities.tools.browser import (
         BrowserOpen, BrowserText, BrowserClick, BrowserFill,
         BrowserWait, BrowserScreenshot, BrowserUpload, BrowserDownload,
-        BrowserLoginAssist,
+        BrowserLoginAssist, BrowserClose,
     )
     from capabilities.tools.vision import VisionSee
     from capabilities.tools.http_request import HttpRequest
@@ -95,7 +95,7 @@ def build_registry(
             PlanUpdate(),
             BrowserOpen(), BrowserText(), BrowserClick(), BrowserFill(),
             BrowserWait(), BrowserScreenshot(), BrowserUpload(), BrowserDownload(),
-            BrowserLoginAssist(),
+            BrowserLoginAssist(), BrowserClose(),
             VisionSee(), HttpRequest(),
             SecretSave(), SecretList(), SecretIssueHandle(), WechatFormat(), SkillScaffold(),
             ImageOCR(), ImageGenerate(),

@@ -21,10 +21,12 @@ from typing import Any
 
 from core.types import CapabilityResult, Risk
 from governance.workspace import artifacts_dir, resolve_path
-from browser_runtime.kernel import BrowserContextKey
+from browser_runtime.kernel import BrowserContextKey, BrowserKernel, BrowserLease
 
 _PW = None      # one Playwright engine; contexts remain isolated
 _SESSIONS: dict[str, dict] = {}
+_LEASE_KERNEL: BrowserKernel | None = None
+_LEASES: dict[str, BrowserLease] = {}
 
 
 def _default_headless() -> bool:
@@ -54,6 +56,15 @@ def _artifacts_dir() -> str:
     return artifacts_dir()
 
 
+def _lease_kernel() -> BrowserKernel:
+    global _LEASE_KERNEL
+    if _LEASE_KERNEL is None:
+        base = (os.environ.get("AGENT_LOG_DIR", "").strip() or "logs")
+        _LEASE_KERNEL = BrowserKernel(os.path.join(base, "browser_runtime.db"),
+                                      os.path.join(base, "browser_traces.jsonl"))
+    return _LEASE_KERNEL
+
+
 async def _ensure_page(context: BrowserContextKey, headless: bool | None = None):
     """Lazily create one isolated Playwright context for a task identity.
 
@@ -64,6 +75,8 @@ async def _ensure_page(context: BrowserContextKey, headless: bool | None = None)
     want = _default_headless() if headless is None else headless
     session = _SESSIONS.get(context.value)
     if session and session["headless"] == want:
+        if not _lease_kernel().renew(_LEASES[context.value]):
+            raise RuntimeError("browser context lease was lost; reopen the context")
         return session["page"]
     try:
         from playwright.async_api import async_playwright
@@ -78,9 +91,16 @@ async def _ensure_page(context: BrowserContextKey, headless: bool | None = None)
             await session["context"].close()
         except Exception:
             pass
+    lease = _LEASE_KERNEL and _LEASES.get(context.value)
+    if lease is None:
+        lease = _lease_kernel().acquire(context)
     if _PW is None:
         _PW = await async_playwright().start()
-    browser = await _PW.chromium.launch(headless=want)
+    try:
+        browser = await _PW.chromium.launch(headless=want)
+    except Exception:
+        _lease_kernel().release(lease)
+        raise
     state = _state_file(context)
     kwargs = {"accept_downloads": True}
     if os.path.isfile(state):
@@ -91,6 +111,7 @@ async def _ensure_page(context: BrowserContextKey, headless: bool | None = None)
         "browser": browser, "context": browser_context, "page": page,
         "headless": want, "identity": context,
     }
+    _LEASES[context.value] = lease
     return page
 
 
@@ -100,6 +121,9 @@ async def _save_state(context: BrowserContextKey) -> None:
     if session is None:
         return
     try:
+        lease = _LEASES.get(context.value)
+        if lease is not None and not _lease_kernel().renew(lease):
+            return
         path = _state_file(context)
         parent = os.path.dirname(path)
         if parent:
@@ -107,6 +131,21 @@ async def _save_state(context: BrowserContextKey) -> None:
         await session["context"].storage_state(path=path)
     except Exception:
         pass
+
+
+async def _close_context(context: BrowserContextKey) -> bool:
+    session = _SESSIONS.get(context.value)
+    lease = _LEASES.get(context.value)
+    if session:
+        await _save_state(context)
+        try:
+            await session["context"].close()
+            await session["browser"].close()
+        except Exception:
+            pass
+    _SESSIONS.pop(context.value, None)
+    _LEASES.pop(context.value, None)
+    return bool(lease and _lease_kernel().release(lease))
 
 
 def _page_for(ctx: Any, args: dict | None = None):
@@ -395,6 +434,31 @@ class BrowserDownload:
             return CapabilityResult(ok=True, output=f"已下载到:{path}")
         except Exception as e:
             return CapabilityResult(ok=False, error=str(e))
+
+
+class BrowserClose:
+    name = "browser.close"
+    risk = Risk.WRITE
+    description = "Close the current isolated browser context and release its cross-process lease."
+    schema = {
+        "type": "object",
+        "properties": {
+            "owner_id": {"type": "string", "description": "Browser context owner identifier"},
+            "account_id": {"type": "string", "description": "Browser account identifier"},
+            "project_id": {"type": "string", "description": "Browser project identifier"},
+            "task_id": {"type": "string", "description": "Browser task identifier"},
+        },
+    }
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        context = _context_key(ctx, args)
+        try:
+            released = await _close_context(context)
+            return CapabilityResult(ok=True, output=(
+                f"Browser context closed and lease released: {context.value[:12]}"
+                if released else "Browser context was already closed"))
+        except Exception as exc:
+            return CapabilityResult(ok=False, error=str(exc))
 
 
 class BrowserLoginAssist:
