@@ -13,7 +13,7 @@ def register_misc(app) -> None:
     @app.get("/api/improvements")
     async def list_improvements() -> JSONResponse:
         from core.improvement_governance import ImprovementStore
-        return JSONResponse({"proposals": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.json").list()})
+        return JSONResponse({"proposals": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.jsonl").list()})
 
     @app.post("/api/improvements")
     async def create_improvement(request: Request) -> JSONResponse:
@@ -27,7 +27,51 @@ def register_misc(app) -> None:
             )
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-        return JSONResponse({"ok": True, "proposal": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.json").add(proposal)})
+        return JSONResponse({"ok": True, "proposal": ImprovementStore(path=f"{Config.LOG_DIR}/improvements.jsonl").add(proposal)})
+
+    @app.post("/api/improvements/{proposal_id}/approve")
+    async def approve_improvement(proposal_id: str, request: Request) -> JSONResponse:
+        from core.improvement_governance import ImprovementStore
+        body = await request.json()
+        public_key = os.environ.get("CAPTAIN_RELEASE_PUBLIC_KEY", "").strip()
+        if not public_key:
+            return JSONResponse({"ok": False, "error": "release authority public key is not configured"}, status_code=503)
+        try:
+            proposal = ImprovementStore(path=f"{Config.LOG_DIR}/improvements.jsonl").approve(
+                proposal_id, public_key, str(body.get("signature", "")),
+            )
+        except (KeyError, PermissionError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+        return JSONResponse({"ok": True, "proposal": proposal})
+
+    @app.post("/api/improvements/{proposal_id}/review")
+    async def review_improvement(proposal_id: str, request: Request) -> JSONResponse:
+        from core.improvement_governance import ImprovementStore
+        body = await request.json()
+        public_key = os.environ.get("CAPTAIN_REVIEW_PUBLIC_KEY", "").strip()
+        if not public_key:
+            return JSONResponse({"ok": False, "error": "independent reviewer public key is not configured"}, status_code=503)
+        try:
+            proposal = ImprovementStore(path=f"{Config.LOG_DIR}/improvements.jsonl").record_review(
+                proposal_id, str(body.get("evidence_hash", "")), public_key, str(body.get("signature", "")),
+            )
+        except (KeyError, PermissionError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+        return JSONResponse({"ok": True, "proposal": proposal})
+
+    @app.post("/api/improvements/{proposal_id}/release-approve")
+    async def approve_improvement_release(proposal_id: str, request: Request) -> JSONResponse:
+        from core.improvement_governance import ImprovementStore
+        body = await request.json(); public_key = os.environ.get("CAPTAIN_RELEASE_PUBLIC_KEY", "").strip()
+        if not public_key:
+            return JSONResponse({"ok": False, "error": "release authority public key is not configured"}, status_code=503)
+        try:
+            proposal = ImprovementStore(path=f"{Config.LOG_DIR}/improvements.jsonl").approve_release(
+                proposal_id, str(body.get("evidence_hash", "")), public_key, str(body.get("signature", "")),
+            )
+        except (KeyError, PermissionError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+        return JSONResponse({"ok": True, "proposal": proposal})
 
     @app.get("/api/trust")
     async def trust_dashboard() -> JSONResponse:
