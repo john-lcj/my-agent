@@ -81,6 +81,9 @@ def test_model_picker_api_exposes_truthful_availability():
     for model in models:
         assert {"configured", "verified", "available"}.issubset(model)
         assert model["available"] is bool(model["configured"] and model["verified"])
+    ollama = next((model for model in models if model["id"] == "ollama-local"), None)
+    if ollama and not ollama["verified"]:
+        assert ollama["available"] is False
 
 
 def test_system_diagnostics_and_update_check(monkeypatch):

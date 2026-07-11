@@ -1,6 +1,8 @@
 """模型、运行时配置、API key 管理端点 (从 app.py 抽出，行为不变)。"""
 from __future__ import annotations
 import os
+import socket
+from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -16,6 +18,18 @@ def register_models(app, runtime_cfg, model_keys, longterm) -> None:
         cur = normalize_model_id(current) if current else None
         key_states = model_keys.get_masked()
 
+        def _ollama_reachable() -> bool:
+            target = urlparse(Config.OLLAMA_BASE_URL or "http://127.0.0.1:11434")
+            host = target.hostname or "127.0.0.1"
+            port = target.port or (443 if target.scheme == "https" else 80)
+            try:
+                with socket.create_connection((host, port), timeout=0.15):
+                    return True
+            except OSError:
+                return False
+
+        ollama_ready = _ollama_reachable()
+
         def _state(model_id: str, provider: str, configured: bool) -> dict:
             key_provider = provider
             if model_id.startswith("ext:"):
@@ -23,8 +37,10 @@ def register_models(app, runtime_cfg, model_keys, longterm) -> None:
                 if key_provider == "xiaomi":
                     key_provider = "xiaomi_vision"
             verified = bool((key_states.get(key_provider) or {}).get("verified"))
-            if provider in {"mock", "ollama"}:
+            if provider == "mock":
                 verified = configured
+            elif provider == "ollama":
+                verified = configured and ollama_ready
             return {"configured": configured, "verified": verified,
                     "available": configured and verified}
 
