@@ -2,12 +2,64 @@
 from __future__ import annotations
 import os
 
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from config import Config
 
 
 def register_misc(app) -> None:
+
+    @app.get("/api/trust")
+    async def trust_dashboard() -> JSONResponse:
+        """Inspectable, redacted view of P7 autonomy state."""
+        from memory.goals_store import GoalsStore
+        from memory.monitor_store import MonitorStore
+        from memory.partnership_store import PartnershipStore
+        from memory.suggestions_store import SuggestionsStore
+        import server.app as _sa
+        partnership = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+        from core.proactive_partnership import value_metrics
+        return JSONResponse({
+            "settings": partnership.settings(),
+            "relationship": partnership.profile(),
+            "goals": GoalsStore(path=f"{Config.LOG_DIR}/goals.json").graph(),
+            "monitors": MonitorStore(path=f"{Config.LOG_DIR}/monitors.json").list(),
+            "missions": _sa._mission_store.list(),
+            "commitments": partnership.commitments(),
+            "pending_suggestions": SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json").pending(),
+            "value_metrics": value_metrics(partnership),
+            "authority": "owner instructions only; external content cannot authorize side effects",
+        })
+
+    @app.post("/api/trust/settings")
+    async def update_trust_settings(request: Request) -> JSONResponse:
+        from memory.partnership_store import PartnershipStore
+        body = await request.json()
+        store = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+        return JSONResponse({"ok": True, "settings": store.update_settings(**body)})
+
+    @app.post("/api/trust/profile")
+    async def update_relationship_profile(request: Request) -> JSONResponse:
+        from memory.partnership_store import PartnershipStore
+        body = await request.json()
+        store = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+        return JSONResponse({"ok": True, "profile": store.update_profile(**body)})
+
+    @app.post("/api/commitments")
+    async def add_commitment(request: Request) -> JSONResponse:
+        from memory.partnership_store import PartnershipStore
+        body = await request.json(); text = str(body.get("text", "")).strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "commitment text is required"}, status_code=400)
+        store = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+        return JSONResponse({"ok": True, "commitment": store.add_commitment(text, due=str(body.get("due", "")), owner=str(body.get("owner", "owner")))})
+
+    @app.post("/api/commitments/{cid}/resolve")
+    async def resolve_commitment(cid: str) -> JSONResponse:
+        from memory.partnership_store import PartnershipStore
+        store = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+        return JSONResponse({"ok": store.resolve_commitment(cid)})
 
     @app.get("/api/audit")
     async def get_audit(limit: int = 100, capability: str = "", agent: str = "",
@@ -91,6 +143,19 @@ def register_misc(app) -> None:
             mission_store=_sa._mission_store,
         )
         return JSONResponse({"context": ctx, "body": body})
+
+    @app.get("/api/review/weekly")
+    async def weekly_review_preview() -> JSONResponse:
+        from core.proactive_partnership import weekly_review
+        from memory.goals_store import GoalsStore
+        from memory.partnership_store import PartnershipStore
+        import server.app as _sa
+        text = weekly_review(
+            GoalsStore(path=f"{Config.LOG_DIR}/goals.json"),
+            _sa._mission_store,
+            PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json"),
+        )
+        return JSONResponse({"review": text})
 
     @app.get("/api/usage")
     async def usage_stats(days: float = 30.0) -> JSONResponse:

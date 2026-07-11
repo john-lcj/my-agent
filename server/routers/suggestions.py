@@ -30,9 +30,21 @@ def register_suggestions(app, enqueue: Callable[..., str]) -> None:
         tid = ""
         if rec.get("action"):   # 有可执行指令 → 进后台任务队列去做
             tid = enqueue(rec["action"], source="suggestion", mode="coworker")
+        try:
+            from memory.partnership_store import PartnershipStore
+            PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json").record("suggestion_accepted", rec.get("text", ""), task_id=tid)
+        except Exception:
+            pass
         return JSONResponse({"ok": True, "task_id": tid})
 
     @app.post("/api/suggestions/{sid}/dismiss")
     async def dismiss_suggestion(sid: str) -> JSONResponse:
-        ok = _store().set_status(sid, "dismissed") is not None
+        rec = _store().set_status(sid, "dismissed")
+        ok = rec is not None
+        if rec:
+            try:
+                from memory.partnership_store import PartnershipStore
+                PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json").record("suggestion_rejected", rec.get("text", ""))
+            except Exception:
+                pass
         return JSONResponse({"ok": ok})

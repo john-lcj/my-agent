@@ -540,6 +540,20 @@ async def _proactive_patrol() -> None:
     while True:
         await asyncio.sleep(interval)
         try:
+            # P7 opportunities are proposals first. They never create a mission
+            # or external effect until the owner accepts the stored suggestion.
+            from core.proactive_partnership import detect_opportunities
+            from memory.goals_store import GoalsStore
+            from memory.partnership_store import PartnershipStore
+            from memory.suggestions_store import SuggestionsStore
+            opportunities = detect_opportunities(
+                GoalsStore(path=f"{Config.LOG_DIR}/goals.json"),
+                _mission_store,
+                PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json"),
+            )
+            suggestions = SuggestionsStore(path=f"{Config.LOG_DIR}/suggestions.json")
+            for opportunity in opportunities:
+                suggestions.add(opportunity["text"], kind="plan", action=opportunity["action"])
             _daemon_enqueue(_PATROL_PROMPT.format(context=_proactive_context()),
                             source="proactive", mode="coworker")
         except Exception as e:

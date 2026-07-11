@@ -10,6 +10,7 @@ import json
 import os
 import time
 import uuid
+import re
 
 _KINDS = ("plan", "resume", "retro", "skill", "idea")  # 规划/续做/复盘/固化技能/点子
 
@@ -36,12 +37,21 @@ class SuggestionsStore:
             json.dump(rows, f, ensure_ascii=False, indent=2)
         os.replace(tmp, self.path)
 
-    def add(self, text: str, kind: str = "idea", action: str = "") -> dict:
+    @staticmethod
+    def _signature(text: str, action: str = "") -> str:
+        return re.sub(r"\s+", "", (text + "|" + action).lower())[:500]
+
+    def add(self, text: str, kind: str = "idea", action: str = "", *, expires_in_days: float = 14) -> dict:
         text = (text or "").strip()
         rows = self._read()
-        # 去重:相同建议文本且还 pending 的不重复发
+        signature = self._signature(text, action)
+        now = time.time()
+        # Deduplicate equivalent pending suggestions and expire stale ones.
         for r in rows:
-            if r.get("text") == text and r.get("status") == "pending":
+            if r.get("status") == "pending" and r.get("expires_at", now + 1) <= now:
+                r["status"] = "expired"
+            if (r.get("text") == text or r.get("signature") == signature) and r.get("status") == "pending":
+                self._write(rows)
                 return r
         rec = {
             "id": uuid.uuid4().hex[:10],
@@ -49,7 +59,9 @@ class SuggestionsStore:
             "text": text,
             "action": (action or "").strip(),   # 接受后要执行的指令(空=纯告知)
             "status": "pending",
-            "created": time.time(),
+            "created": now,
+            "expires_at": now + max(1, expires_in_days) * 86400,
+            "signature": signature,
         }
         rows.insert(0, rec)
         self._write(rows[:200])
@@ -60,7 +72,13 @@ class SuggestionsStore:
         return [r for r in rows if not status or r.get("status") == status]
 
     def pending(self) -> list[dict]:
-        return self.list("pending")
+        rows = self._read(); now = time.time(); changed = False
+        for row in rows:
+            if row.get("status") == "pending" and row.get("expires_at", now + 1) <= now:
+                row["status"] = "expired"; changed = True
+        if changed:
+            self._write(rows)
+        return [row for row in rows if row.get("status") == "pending"]
 
     def set_status(self, sid: str, status: str) -> dict | None:
         rows = self._read()

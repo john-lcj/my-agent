@@ -347,11 +347,27 @@ async def _handle_monitor_change(m: dict, prev: str, new_hash: str) -> None:
     diff = f"指纹 {prev[:12]}… → {new_hash[:12]}…" if prev else "首次采样"
     summary = f"监控「{name}」源 {source} 内容变化（{diff}）"
 
-    if attention == "low":
+    from core.attention_policy import AttentionAction, decide_attention
+    from memory.partnership_store import PartnershipStore
+    partnership = PartnershipStore(path=f"{Config.LOG_DIR}/partnership.json")
+    settings = partnership.settings()
+    decision = decide_attention(
+        urgency=attention,
+        impact="high" if attention == "urgent" else "low",
+        authority_granted=True,
+        interruption_count=int(settings.get("interruption_count", 0)),
+        interruption_budget=int(settings.get("interruption_budget", 3)),
+    )
+    partnership.record("monitor_change", summary, attention=decision.action.value)
+    if not settings.get("enabled", True) or decision.action == AttentionAction.STOP:
+        print(f"[monitor] stopped: {summary}")
+        return
+
+    if decision.action == AttentionAction.SILENT:
         print(f"[monitor] low: {summary}")
         return
 
-    if attention == "normal":
+    if decision.action == AttentionAction.IN_APP:
         enqueue_monitor_digest(
             Config.LOG_DIR, name, source,
             f"{summary}。待分析 action: {action[:200]}",
@@ -370,6 +386,7 @@ async def _handle_monitor_change(m: dict, prev: str, new_hash: str) -> None:
         mid = mrec["id"]
         print(f"[monitor] urgent → mission {mid}: {name}")
         await _sa._run_mission_and_deliver(mid)
+        partnership.update_settings(interruption_count=int(settings.get("interruption_count", 0)) + 1)
     except Exception as e:
         print(f"[monitor] mission 创建失败: {e}")
 
