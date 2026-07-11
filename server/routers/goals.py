@@ -20,14 +20,37 @@ def register_goals(app) -> None:
     async def list_goals() -> JSONResponse:
         return JSONResponse({"goals": _store().list()})
 
+    @app.get("/api/goals/graph")
+    async def goal_graph() -> JSONResponse:
+        return JSONResponse(_store().graph())
+
     @app.post("/api/goals")
     async def add_goal(request: Request) -> JSONResponse:
         b = await request.json()
         text = str(b.get("text", "")).strip()
         if not text:
             return JSONResponse({"ok": False, "error": "缺少 text"}, status_code=400)
-        rec = _store().add(text, str(b.get("kind", "goal")))
+        rec = _store().add(
+            text,
+            str(b.get("kind", "goal")),
+            owner=str(b.get("owner", "owner")),
+            deadline=str(b.get("deadline", "")),
+            status=str(b.get("status", "active")),
+        )
         return JSONResponse({"ok": True, "goal": rec})
+
+    @app.post("/api/goals/link")
+    async def link_goals(request: Request) -> JSONResponse:
+        b = await request.json()
+        try:
+            edge = _store().link(
+                str(b.get("source", "")).strip(),
+                str(b.get("target", "")).strip(),
+                str(b.get("relation", "contains")).strip(),
+            )
+        except (KeyError, ValueError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return JSONResponse({"ok": True, "edge": edge})
 
     @app.delete("/api/goals/{gid}")
     async def delete_goal(gid: str) -> JSONResponse:
