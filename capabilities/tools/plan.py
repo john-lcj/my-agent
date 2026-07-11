@@ -19,10 +19,15 @@ def normalize_steps(raw: Any) -> list[dict]:
     for item in (raw or []):
         if isinstance(item, str):
             text, status, check = item.strip(), "todo", ""
+            dependencies, evidence_required, risks, mutable_resources = [], [], [], []
         elif isinstance(item, dict):
             text = str(item.get("text") or item.get("task") or item.get("step") or "").strip()
             status = str(item.get("status") or "todo").strip().lower()
             check = str(item.get("check") or item.get("criteria") or item.get("verify") or "").strip()
+            dependencies = item.get("dependencies") or []
+            evidence_required = item.get("evidence_required") or []
+            risks = item.get("risks") or []
+            mutable_resources = item.get("mutable_resources") or []
         else:
             continue
         if not text:
@@ -32,6 +37,26 @@ def normalize_steps(raw: Any) -> list[dict]:
         row = {"text": text[:120], "status": status}
         if check:
             row["check"] = check[:160]
+        if isinstance(dependencies, list):
+            cleaned = [str(dep).strip()[:80] for dep in dependencies if str(dep).strip()]
+            if cleaned:
+                row["dependencies"] = cleaned
+        if isinstance(evidence_required, list):
+            cleaned = [
+                str(item).strip()[:120] for item in evidence_required if str(item).strip()
+            ]
+            if cleaned:
+                row["evidence_required"] = cleaned
+        if isinstance(risks, list):
+            cleaned = [str(risk).strip()[:120] for risk in risks if str(risk).strip()]
+            if cleaned:
+                row["risks"] = cleaned
+        if isinstance(mutable_resources, list):
+            cleaned = [
+                str(resource).strip()[:120] for resource in mutable_resources if str(resource).strip()
+            ]
+            if cleaned:
+                row["mutable_resources"] = cleaned
         steps.append(row)
     return steps
 
@@ -53,6 +78,26 @@ class PlanUpdate:
                         "text": {"type": "string", "description": "这一步要做什么"},
                         "status": {"type": "string", "enum": ["todo", "doing", "done", "failed"]},
                         "check": {"type": "string", "description": "这一步怎么判断完成(可选,建议复杂任务填写)"},
+                        "dependencies": {
+                            "type": "array",
+                            "description": "必须先完成的步骤 id 或名称",
+                            "items": {"type": "string"},
+                        },
+                        "evidence_required": {
+                            "type": "array",
+                            "description": "完成这一步必须留下的证据",
+                            "items": {"type": "string"},
+                        },
+                        "risks": {
+                            "type": "array",
+                            "description": "这一步的主要风险或失败模式",
+                            "items": {"type": "string"},
+                        },
+                        "mutable_resources": {
+                            "type": "array",
+                            "description": "会被这一步修改的文件、账号、服务或远端状态",
+                            "items": {"type": "string"},
+                        },
                     },
                     "required": ["text"],
                 },

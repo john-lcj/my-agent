@@ -9,6 +9,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.cognitive_architecture import (
+    CognitiveState,
+    VerificationFinding,
+    build_structured_objective,
+    plan_from_steps,
+    repair_steps_from_findings,
+)
 from core.intent_router import IntentFrame, ROLE_BEHAVIORS
 
 
@@ -39,6 +46,7 @@ class TaskFrame:
     artifacts: list[str] = field(default_factory=list)
     verifications: list[str] = field(default_factory=list)
     verification_items: list = field(default_factory=list)  # core.verification.Verification
+    cognitive_state: CognitiveState | None = None
     repair_count: int = 0
     max_repairs: int = 2
     final_summary: str = ""
@@ -113,6 +121,14 @@ def create_task_frame(user_text: str, intent: IntentFrame) -> TaskFrame:
         apply_workflow_verifications(task, text)
     except Exception:
         pass
+    structured = build_structured_objective(
+        task.objective,
+        constraints=[],
+        assumptions=task.assumptions,
+        authority=["current user request"],
+        acceptance_criteria=task.acceptance_criteria,
+    )
+    task.cognitive_state = CognitiveState(structured, plan_from_steps(structured, []))
     return task
 
 
@@ -124,6 +140,8 @@ def lifecycle_prompt_block(task: TaskFrame) -> str:
         f"- 目标:{task.objective}\n"
         f"- 当前阶段:{task.phase}\n"
         f"- 角色:{task.role}\n"
+        "- 结构化目标字段:结果、约束、假设、权限、期限、验收标准必须贯穿全程。\n"
+        "- P6 角色边界:规划者给依赖和证据要求;执行者只做 ready 步骤;验证者独立查输出和远端状态;失败进入有界返修。\n"
         "- 合理假设:\n"
         f"{assumptions or '  · 暂无'}\n"
         "- 完成标准:\n"
@@ -134,6 +152,19 @@ def lifecycle_prompt_block(task: TaskFrame) -> str:
 
 def update_plan(task: TaskFrame, steps: list[dict[str, Any]]) -> None:
     task.plan_steps = [dict(s) for s in steps]
+    if task.cognitive_state:
+        task.cognitive_state.plan = plan_from_steps(task.cognitive_state.objective, [
+            {
+                "id": f"s{i + 1}",
+                "text": s.get("text") or s.get("task") or s.get("step") or "",
+                "status": "pending" if (s.get("status") or "") in {"todo", "doing", "running"} else s.get("status"),
+                "dependencies": s.get("dependencies") or [],
+                "evidence_required": (s.get("evidence_required") or []) + ([s.get("check")] if s.get("check") else []),
+                "risks": (s.get("risks") or []) + ([s.get("risk")] if s.get("risk") else []),
+                "mutable_resources": s.get("mutable_resources") or [],
+            }
+            for i, s in enumerate(task.plan_steps)
+        ])
     if any((s.get("status") or "") in {"doing", "running"} for s in steps):
         task.phase = PHASE_EXECUTE
     elif steps and all((s.get("status") or "") == "done" for s in steps):
@@ -175,6 +206,17 @@ def final_gate(task: TaskFrame, final_text: str) -> str:
         if items and not ok and task.repair_count <= task.max_repairs:
             task.phase = PHASE_CHECK
             task.repair_count += 1
+            if task.cognitive_state:
+                findings = [
+                    VerificationFinding(
+                        target=getattr(v, "target", ""),
+                        passed=getattr(v, "status", "") == "pass",
+                        evidence=getattr(v, "evidence", "") or getattr(v, "reason", ""),
+                    )
+                    for v in items
+                ]
+                task.cognitive_state.findings.extend(findings)
+                task.cognitive_state.repairs.extend(repair_steps_from_findings(findings, max_attempts=task.max_repairs))
             fails = [f"{v.kind}:{v.target}" for v in items if v.status != "pass"]
             return "[生命周期自检] 验证未通过:" + "、".join(fails[:5]) + "。请补验证后再汇报。"
         ev_gate = gate_evidence_in_reply(final_text, items)
@@ -207,4 +249,3 @@ def role_report_prompt(task: TaskFrame) -> str:
         f"{criteria}\n"
         "最终回复只面向用户交付结论,不要展示内部阶段名或本提示。"
     )
-
