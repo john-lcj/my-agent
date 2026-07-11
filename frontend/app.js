@@ -182,6 +182,8 @@ let lastUserPrompt = '';
 let _lastCapCall = null;
 let _wsSendQueue = null;
 let _wsReconnectTimer = null;
+let _wsReady = false;
+let _wsReconnectAttempt = 0;
 let allSessions = [];
 let historySearchQuery = '';
 /* 工作台/项目状态:必须在 init(下方 applyModeChrome / refreshWorkbenchMeta)之前声明,
@@ -249,16 +251,33 @@ function sessionIcon(id, kind) {
 let sessionId = 's-chat-pending';
 
 /* ══ WebSocket ═══════════════════════════════════════════════════ */
-function setWsConnected(on) {
+function setWsState(state, detail = '') {
+  _wsReady = state === 'ready';
   const dot = document.getElementById('dot');
-  if (dot) dot.classList.toggle('on', !!on);
+  if (dot) {
+    dot.classList.toggle('on', state === 'ready');
+    dot.classList.toggle('connecting', state === 'connecting');
+    dot.classList.toggle('offline', state === 'offline' || state === 'error');
+    dot.title = detail || t(state === 'ready' ? 'connected' : state === 'connecting' ? 'connecting' : 'offline');
+  }
   const wrap = document.getElementById('chat-status-bar');
   const label = document.getElementById('ctx-connecting-label');
-  if (!on && wrap && label) {
+  if (state !== 'ready' && wrap && label) {
     wrap.classList.add('is-connecting');
     label.hidden = false;
-    label.textContent = t('connecting');
+    label.textContent = t(state === 'connecting' ? 'connecting' : 'reconnecting');
   }
+}
+
+function setWsConnected(on) { setWsState(on ? 'ready' : 'connecting'); }
+
+function flushWsSendQueue(sock) {
+  if (!_wsReady || ws !== sock || sock.readyState !== WebSocket.OPEN || !_wsSendQueue) return;
+  const q = _wsSendQueue;
+  const inp = document.getElementById('chat-inp');
+  if (inp) inp.value = q;
+  _wsSendQueue = null;
+  sendMsg();
 }
 
 function reconnectWebSocket() {
@@ -284,31 +303,34 @@ function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const sock = new WebSocket(`${proto}//${location.host}/ws`);
   ws = sock;
-  setWsConnected(false);
+  setWsState('connecting');
   sock.onopen = () => {
     if (ws !== sock) return;
-    setWsConnected(true);
+    setWsState('connecting');
     sendWsInit(sock);
-    if (_wsSendQueue) {
-      const q = _wsSendQueue;
-      setTimeout(() => {
-        if (ws !== sock || sock.readyState !== WebSocket.OPEN) return;
-        const inp = document.getElementById('chat-inp');
-        if (inp && q) inp.value = q;
-        _wsSendQueue = null;
-        sendMsg();
-      }, 120);
-    }
   };
-  sock.onclose = () => {
+  sock.onclose = (event) => {
     if (ws !== sock) return;
-    setWsConnected(false);
+    _wsReady = false;
+    setWsState('offline', event.reason || t('offline'));
+    removeThinking();
+    setTaskRunning(false);
     clearTimeout(_wsReconnectTimer);
-    _wsReconnectTimer = setTimeout(connect, 1500);
+    const delay = Math.min(15000, 800 * (2 ** Math.min(_wsReconnectAttempt, 4)));
+    _wsReconnectAttempt += 1;
+    _wsReconnectTimer = setTimeout(connect, delay);
   };
-  sock.onerror = () => { if (ws === sock) setWsConnected(false); };
+  sock.onerror = () => { if (ws === sock) setWsState('offline'); };
   sock.onmessage = e => {
-    try { handle(JSON.parse(e.data)); } catch (err) { console.error('ws message', err); }
+    try {
+      const event = JSON.parse(e.data);
+      if (event.type === 'connection_ready') {
+        _wsReconnectAttempt = 0;
+        setWsState('ready');
+        flushWsSendQueue(sock);
+      }
+      handle(event);
+    } catch (err) { console.error('ws message', err); }
   };
 }
 
@@ -338,11 +360,14 @@ function handle(ev) {
 
   // ── 历史恢复 ──
   if (etype === 'history') {
-    if (streamingMsgEl && p.session_id && p.session_id === sessionId) {
+    if (_wsReady && streamingMsgEl && p.session_id && p.session_id === sessionId) {
       return;
     }
     if (p.session_id) sessionId = p.session_id;
     renderRestored(p.messages || []);
+    _wsReconnectAttempt = 0;
+    setWsState('ready');
+    if (ws) flushWsSendQueue(ws);
     if (_sessionInitResolve && p.session_id === _sessionInitExpected) {
       const done = _sessionInitResolve;
       _sessionInitResolve = null;
@@ -350,6 +375,14 @@ function handle(ev) {
     }
     refreshSessions();
     syncChatTopbarTitle();
+    return;
+  }
+
+  if (etype === 'connection_ready') return;
+  if (etype === 'connection_error') {
+    const message = p.detail || p.message || t('offline');
+    setWsState('error', message);
+    showToast(`${t('connectionFailed')}: ${message}`, 5000);
     return;
   }
 
@@ -604,7 +637,7 @@ function wsInitPayload() {
 function requestSessionInit() {
   const expected = sessionId;
   _sessionInitExpected = expected;
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !_wsReady) {
     return Promise.resolve();
   }
   return new Promise((resolve) => {
@@ -645,7 +678,7 @@ function sendMsg() {
   const attachRefs = _pendingAttachments.map(a => a.ref).filter(Boolean);
   if (attachRefs.length) text = attachRefs.join('\n') + (text ? '\n' + text : '');
   if (!text) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !_wsReady) {
     _wsSendQueue = text;
     if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) connect();
     const now = Date.now();
@@ -4478,6 +4511,10 @@ const I18N = {
     footCustomize: '自定义',
     footSettings: '设置',
     connecting: '连接中…',
+    connected: '已连接',
+    reconnecting: '连接已中断，正在重连…',
+    offline: '连接已中断',
+    connectionFailed: 'Captain 启动失败',
     wsNotConnected: '未连接到 Captain，请稍候或刷新页面',
     sendQueued: '正在重连，连上后自动发送',
     ctxLabel: '上下文',
@@ -4840,6 +4877,10 @@ const I18N = {
     footCustomize: 'Customize',
     footSettings: 'Settings',
     connecting: 'Connecting…',
+    connected: 'Connected',
+    reconnecting: 'Connection lost. Reconnecting…',
+    offline: 'Connection lost',
+    connectionFailed: 'Captain failed to start',
     wsNotConnected: 'Not connected to Captain — wait or refresh',
     sendQueued: 'Reconnecting. Your message will send automatically.',
     ctxLabel: 'Context',

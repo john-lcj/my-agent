@@ -54,6 +54,7 @@ def test_runtime_staging_is_code_only(tmp_path):
     stage(ROOT, destination, preserve_state=False)
     assert (destination / "server/app.py").is_file()
     assert (destination / "frontend/app.js").is_file()
+    assert (destination / "browser_runtime/kernel.py").is_file()
     assert not (destination / "desktop").exists()
     assert not list(destination.rglob("*.md"))
     stamp = build_bundle_stamp(

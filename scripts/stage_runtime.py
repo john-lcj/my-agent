@@ -10,6 +10,7 @@ from pathlib import Path
 
 RUNTIME_DIRS = (
     "agents",
+    "browser_runtime",
     "capabilities",
     "channels",
     "connectors",

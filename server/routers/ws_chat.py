@@ -5,6 +5,7 @@
 from __future__ import annotations
 import asyncio
 import hmac
+import logging
 import os
 import time
 from typing import List, Optional
@@ -15,6 +16,9 @@ from channels.web import WebChannel
 from core.types import CapabilityCall, Event, EventType, Role
 from core.status_bar import emit_status_event
 from server.events import to_wire
+
+
+logger = logging.getLogger(__name__)
 
 
 def register_ws(app, is_loopback, is_proxied) -> None:
@@ -65,7 +69,20 @@ def register_ws(app, is_loopback, is_proxied) -> None:
             ws_model[0] = mid
             return b.agent, b.ctx, b.rollback
 
-        agent, ctx, rollback = _rebuild_stack(ws_model[0])
+        try:
+            agent, ctx, rollback = _rebuild_stack(ws_model[0])
+        except Exception as exc:
+            logger.exception("WebSocket runtime initialization failed")
+            await ws.send_json({
+                "type": "connection_error",
+                "payload": {
+                    "message": "Captain runtime failed to initialize.",
+                    "detail": str(exc)[:300],
+                    "retryable": False,
+                },
+            })
+            await ws.close(code=1011, reason="runtime initialization failed")
+            return
         coordinator = coord_holder[0]
         session_started_at = time.time()
         header_msgs = list(ctx.messages)
@@ -110,6 +127,8 @@ def register_ws(app, is_loopback, is_proxied) -> None:
                                 "payload": {"session_id": session_id,
                                             "messages": serialize_history()}})
             _push_status()
+            await ws.send_json({"type": "connection_ready",
+                                "payload": {"session_id": session_id}})
 
         async def send_history_peek(session_id: str) -> None:
             await ws.send_json({"type": "history",
@@ -330,7 +349,19 @@ def register_ws(app, is_loopback, is_proxied) -> None:
                     if task_running:
                         await send_history_peek(new_sid)
                     else:
-                        agent, ctx, rollback = _rebuild_stack(ws_model[0])
+                        try:
+                            agent, ctx, rollback = _rebuild_stack(ws_model[0])
+                        except Exception as exc:
+                            logger.exception("WebSocket session initialization failed")
+                            await ws.send_json({
+                                "type": "connection_error",
+                                "payload": {
+                                    "message": "Captain could not start this session.",
+                                    "detail": str(exc)[:300],
+                                    "retryable": True,
+                                },
+                            })
+                            continue
                         coordinator = coord_holder[0]
                         header_msgs = list(ctx.messages)
                         ctx.task_auto_approve = False

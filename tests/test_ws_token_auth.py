@@ -30,3 +30,7 @@ def test_remote_websocket_accepts_first_frame_auth(monkeypatch):
         ws.send_json({"type": "init", "session_id": "s-ws-auth-test", "model": "mock", "mode": "chat"})
         msg = ws.receive_json()
         assert msg["type"] == "history"
+        followups = [ws.receive_json(), ws.receive_json()]
+        assert {item["type"] for item in followups} == {"status_bar", "connection_ready"}
+        ready = next(item for item in followups if item["type"] == "connection_ready")
+        assert ready["payload"]["session_id"] == "s-ws-auth-test"

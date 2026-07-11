@@ -17,7 +17,7 @@ RUNTIME_SCHEMA_VERSION = 1
 VERSION_CONTRACT_VERSION = 1
 TRUSTED_BUNDLE_VALUES = {"platform-signed", "tauri-signed"}
 RUNTIME_DIRS = {
-    "agents", "capabilities", "channels", "connectors", "core", "frontend",
+    "agents", "browser_runtime", "capabilities", "channels", "connectors", "core", "frontend",
     "governance", "license_client", "llm", "memory", "observability",
     "scheduler", "server", "skills",
 }

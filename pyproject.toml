@@ -51,6 +51,7 @@ myagent-web = "server.app:run"
 py-modules = ["main", "config"]
 packages = [
     "agents",
+    "browser_runtime",
     "capabilities",
     "capabilities.tools",
     "channels",
