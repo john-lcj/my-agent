@@ -210,6 +210,20 @@ fn stamp_is_trusted(stamp: &HashMap<String, String>) -> bool {
         && stamp_integrity_valid(stamp)
 }
 
+fn platform_signed_updates_allowed(resource_dir: &Path) -> bool {
+    [
+        resource_dir.join("resources").join("app"),
+        resource_dir.join("app"),
+    ]
+    .into_iter()
+    .any(|root| {
+        let stamp = parse_bundle_stamp(&root);
+        stamp.get("trust").map(String::as_str) == Some("platform-signed")
+            && stamp.get("stamp_schema").map(String::as_str) == Some("1")
+            && stamp_integrity_valid(&stamp)
+    })
+}
+
 fn support_needs_bundle_refresh(support_root: &Path, resource_root: &Path) -> bool {
     let resource = parse_bundle_stamp(resource_root);
     if !has_server(support_root) {
@@ -916,6 +930,15 @@ fn set_backend_state(app: &tauri::App, child: Option<Child>, owns: bool) -> Resu
 }
 
 async fn run_updater_check(app: tauri::AppHandle) {
+    let stable_identity = app
+        .path_resolver()
+        .resource_dir()
+        .map(|path| platform_signed_updates_allowed(&path))
+        .unwrap_or(false);
+    if !stable_identity {
+        eprintln!("Captain desktop update skipped: this build has no stable platform signing identity");
+        return;
+    }
     match app.updater().check().await {
         Ok(resp) if resp.is_update_available() => {
             let _ = resp.download_and_install().await;
@@ -1130,6 +1153,20 @@ mod tests {
         content.push_str("\nversion=9.9.9\n");
         fs::write(resource.join(".captain_bundle_stamp"), content).unwrap();
         assert!(!support_needs_bundle_refresh(&support, &resource));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn desktop_updates_require_platform_signed_identity() {
+        let root = temp_root("platform-update-identity");
+        let app = root.join("resources").join("app");
+        fs::create_dir_all(&app).unwrap();
+        write_runtime(&app, "1.0.0", "20260712000000", "development");
+        assert!(!platform_signed_updates_allowed(&root));
+        write_runtime(&app, "1.0.0", "20260712000000", "tauri-signed");
+        assert!(!platform_signed_updates_allowed(&root));
+        write_runtime(&app, "1.0.0", "20260712000000", "platform-signed");
+        assert!(platform_signed_updates_allowed(&root));
         let _ = fs::remove_dir_all(root);
     }
 }
