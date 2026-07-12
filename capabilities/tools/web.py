@@ -12,6 +12,7 @@ import json
 import os
 import re
 import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -282,7 +283,32 @@ def _coerce_host_to_ip(host: str) -> str:
     return host
 
 
-def _ip_blocked_reason(ip_str: str) -> Optional[str]:
+# 198.18.0.0/15 是基准测试保留段,Shadowrocket/Clash 等代理的 Fake-IP DNS
+# 会把公网域名解析进该段,由本机隧道转发到真实目标。
+_FAKEIP_NET = ipaddress.ip_network("198.18.0.0/15")
+_fakeip_probe: tuple[float, bool] = (0.0, False)
+
+
+def _fakeip_dns_active() -> bool:
+    """公网域名被解析进 198.18.0.0/15 时,判定本机处于 Fake-IP DNS 环境。
+    此时该段是代理隧道的占位地址,放行不构成 SSRF;结果缓存 60 秒。"""
+    global _fakeip_probe
+    now = time.time()
+    if now - _fakeip_probe[0] < 60:
+        return _fakeip_probe[1]
+    active = False
+    try:
+        for info in socket.getaddrinfo("example.com", None, socket.AF_INET):
+            if ipaddress.ip_address(info[4][0]) in _FAKEIP_NET:
+                active = True
+                break
+    except OSError:
+        pass
+    _fakeip_probe = (now, active)
+    return active
+
+
+def _ip_blocked_reason(ip_str: str, *, allow_proxy_fakeip: bool = False) -> Optional[str]:
     """判断一个 IP 是否落在禁止网段(环回/私网/链路本地/保留/多播等)。"""
     try:
         ip = ipaddress.ip_address(ip_str.split("%")[0])  # 去掉 IPv6 zone id
@@ -290,6 +316,8 @@ def _ip_blocked_reason(ip_str: str) -> Optional[str]:
         return "无法识别的 IP 地址"
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped  # ::ffff:127.0.0.1 这类映射地址按其 IPv4 判定
+    if allow_proxy_fakeip and ip.version == 4 and ip in _FAKEIP_NET and _fakeip_dns_active():
+        return None
     if (ip.is_private or ip.is_loopback or ip.is_link_local
             or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
         return f"禁止访问内网/保留地址({ip})"
@@ -320,10 +348,12 @@ def _url_allowed(url: str) -> Optional[str]:
 
     host = _coerce_host_to_ip(host)
     # 若已是 IP 字面量,直接判网段;否则解析所有 A/AAAA 记录,任一落入禁段即拒绝。
+    host_is_literal = True
     try:
         ipaddress.ip_address(host)
         candidates = [host]
     except ValueError:
+        host_is_literal = False
         try:
             candidates = [info[4][0] for info in socket.getaddrinfo(host, None)]
         except Exception:
@@ -331,7 +361,7 @@ def _url_allowed(url: str) -> Optional[str]:
         if not candidates:
             return "无法解析主机名"
     for ip in candidates:
-        reason = _ip_blocked_reason(ip)
+        reason = _ip_blocked_reason(ip, allow_proxy_fakeip=not host_is_literal)
         if reason:
             return reason
     return None

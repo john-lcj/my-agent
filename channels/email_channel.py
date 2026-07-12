@@ -26,11 +26,15 @@ import os
 import re
 import smtplib
 import ssl
+import tempfile
+import threading
 import time
 import uuid
+from email.utils import make_msgid
 from email.mime.text import MIMEText
 
 from channels.email_mime import apply_mail_headers, make_text_part
+from channels.mail_transport import create_mail_connection
 from typing import Optional
 
 from core.types import CapabilityCall, Decision, Event, EventType, Identity
@@ -80,6 +84,26 @@ def _imap_part_str(item) -> str:
     return str(item or "")
 
 
+class _ResilientIMAP4SSL(imaplib.IMAP4_SSL):
+    def _create_socket(self, timeout):
+        sock = create_mail_connection(self.host, self.port, timeout)
+        return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _ResilientSMTPSSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host, port, timeout):
+        sock = create_mail_connection(host, port, timeout)
+        return self.context.wrap_socket(sock, server_hostname=self._host)
+
+
+def _transient_smtp_error(exc: Exception) -> bool:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return False
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return 400 <= int(exc.smtp_code) < 500
+    return isinstance(exc, (OSError, ssl.SSLError, smtplib.SMTPException))
+
+
 class EmailChannel:
     name = "email"
 
@@ -123,6 +147,9 @@ class EmailChannel:
         self._outbound_tasks: set[asyncio.Task] = set()
         self._reply_sent: bool = False
         self._inflight_keys: set[str] = set()
+        self._outbox_lock = threading.Lock()
+        self._poll_failures = 0
+        self._last_poll_error_at = 0.0
 
     def _mail_key(self, uid: str, msg_id: str) -> str:
         mid = (msg_id or "").strip()
@@ -170,11 +197,86 @@ class EmailChannel:
         """处理失败时释放去重锁,下轮轮询可重试。"""
         self._release_queue_key(self._current_uid, self._current_msg_id)
 
-    async def flush_outbound(self) -> None:
+    async def flush_outbound(self) -> bool:
         """等待 emit 触发的 SMTP 回信完成。"""
         pending = list(self._outbound_tasks)
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            results = await asyncio.gather(*pending, return_exceptions=True)
+            return all(result is True for result in results)
+        return True
+
+    def _outbox_path(self) -> str:
+        root = os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd()
+        return os.path.join(root, "logs", "email_outbox.json")
+
+    def _read_outbox_unlocked(self) -> list[dict]:
+        try:
+            with open(self._outbox_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def _write_outbox_unlocked(self, entries: list[dict]) -> None:
+        path = self._outbox_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix="email-outbox-", suffix=".json", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(entries[-200:], handle, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def _queue_outbound(self, delivery_id: str, to: str, subject: str, body: str,
+                        attachments: list[str], error: Exception) -> None:
+        with self._outbox_lock:
+            entries = self._read_outbox_unlocked()
+            if any(item.get("id") == delivery_id for item in entries):
+                return
+            entries.append({
+                "id": delivery_id,
+                "to": to,
+                "subject": subject,
+                "body": body,
+                "attachments": attachments,
+                "attempts": 0,
+                "next_attempt_at": time.time() + 30,
+                "last_error": str(error)[:500],
+            })
+            self._write_outbox_unlocked(entries)
+
+    def _flush_outbox_sync(self) -> None:
+        with self._outbox_lock:
+            entries = self._read_outbox_unlocked()
+            if not entries:
+                return
+            now = time.time()
+            remaining: list[dict] = []
+            for item in entries:
+                if float(item.get("next_attempt_at") or 0) > now:
+                    remaining.append(item)
+                    continue
+                try:
+                    self._send_sync(
+                        str(item.get("to") or ""),
+                        str(item.get("subject") or ""),
+                        str(item.get("body") or ""),
+                        list(item.get("attachments") or []),
+                        delivery_id=str(item.get("id") or uuid.uuid4().hex),
+                    )
+                    print(f"[email] 已补发队列邮件 → {item.get('to', '')}")
+                except Exception as exc:
+                    attempts = int(item.get("attempts") or 0) + 1
+                    item["attempts"] = attempts
+                    item["last_error"] = str(exc)[:500]
+                    item["next_attempt_at"] = now + min(3600, 30 * (2 ** min(attempts, 7)))
+                    remaining.append(item)
+            self._write_outbox_unlocked(remaining)
 
     def _save_processed_id(self, msg_id: str) -> None:
         mid = (msg_id or "").strip()
@@ -253,11 +355,14 @@ class EmailChannel:
             f"  回复 'N {confirm_id}' 拒绝\n\n"
             f"  ⚠️ 60 秒内未回复将自动拒绝。"
         )
-        await self._send_email(
+        sent = await self._send_email(
             self._current_sender,
             f"[Agent 确认请求 {confirm_id}]",
             body,
         )
+        if not sent:
+            self._pending_confirm.pop(confirm_id, None)
+            return False
         try:
             return await asyncio.wait_for(future, timeout=60.0)
         except asyncio.TimeoutError:
@@ -303,15 +408,23 @@ class EmailChannel:
         except Exception as e:
             print(f"[email] 启动补捞异常: {e}")
         while True:
+            delay = self.poll_sec
             try:
+                await loop.run_in_executor(None, self._flush_outbox_sync)
                 await loop.run_in_executor(None, self._fetch_new)
+                self._poll_failures = 0
             except Exception as e:
-                print(f"[email] 轮询异常: {e}")
-            await asyncio.sleep(self.poll_sec)
+                self._poll_failures += 1
+                delay = min(900.0, max(5.0, self.poll_sec) * (2 ** min(self._poll_failures - 1, 5)))
+                now = time.time()
+                if self._poll_failures == 1 or now - self._last_poll_error_at >= 300:
+                    print(f"[email] 轮询异常(第{self._poll_failures}次, {delay:.0f}秒后重试): {e}")
+                    self._last_poll_error_at = now
+            await asyncio.sleep(delay)
 
     def _mark_seen_sync(self, uid: str) -> None:
         ctx = ssl.create_default_context()
-        with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx) as imap:
+        with _ResilientIMAP4SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
             imap.login(self.user, self.password)
             imap.select("INBOX")
             imap.store(uid, "+FLAGS", "\\Seen")
@@ -324,7 +437,7 @@ class EmailChannel:
         if not allowed:
             return
         ctx = ssl.create_default_context()
-        with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx) as imap:
+        with _ResilientIMAP4SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
             imap.login(self.user, self.password)
             imap.select("INBOX")
             for addr in sorted(allowed):
@@ -354,7 +467,7 @@ class EmailChannel:
     def _fetch_new(self) -> None:
         """同步 IMAP 拉取 UNSEEN 邮件(在 executor 线程里运行)。"""
         ctx = ssl.create_default_context()
-        with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx) as imap:
+        with _ResilientIMAP4SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
             imap.login(self.user, self.password)
             imap.select("INBOX")
             _, msg_ids = imap.search(None, "UNSEEN")
@@ -427,17 +540,24 @@ class EmailChannel:
             imap.logout()
 
     async def _send_email(self, to: str, subject: str, body: str,
-                          attachments: list[str] | None = None) -> None:
-        # 永不让发信异常冒泡(否则 asyncio 报 "Task exception was never retrieved" 刷屏)
+                          attachments: list[str] | None = None) -> bool:
+        files = list(attachments or [])
+        delivery_id = uuid.uuid4().hex
         try:
             await asyncio.get_event_loop().run_in_executor(
-                None, self._send_sync, to, subject, body, attachments or []
+                None, self._send_sync, to, subject, body, files, delivery_id
             )
+            return True
         except Exception as e:
-            print(f"[email] 回信失败(已忽略,不重试):{e}")
+            if _transient_smtp_error(e):
+                self._queue_outbound(delivery_id, to, subject, body, files, e)
+                print(f"[email] 发送暂时失败,已进入可靠队列: {e}")
+            else:
+                print(f"[email] 发送失败(配置或认证错误,未重试): {e}")
+            return False
 
     def _send_sync(self, to: str, subject: str, body: str,
-                   attachments: list[str] | None = None) -> None:
+                   attachments: list[str] | None = None, delivery_id: str = "") -> None:
         attachments = [p for p in (attachments or []) if os.path.isfile(p)][:5]
         if attachments:
             from email.mime.multipart import MIMEMultipart
@@ -460,19 +580,24 @@ class EmailChannel:
         apply_mail_headers(msg, from_addr=self.user, to_addr=to, subject=subject)
         # 自动回信打标记:收信端见到此头就跳过,避免"自己回信→自己又读到→再回"的死循环。
         msg["X-Agent-Autoreply"] = "1"
+        stable_id = delivery_id or uuid.uuid4().hex
+        domain = self.user.rsplit("@", 1)[-1] if "@" in self.user else "captain.local"
+        msg["Message-ID"] = make_msgid(idstring=stable_id, domain=domain)
+        msg["X-Captain-Delivery-ID"] = stable_id
         ctx = ssl.create_default_context()
-        # QQ SMTP 偶发断连(尤其被限流后),重试一次;仍失败则抛给上层安静记录。
         last_err: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(3):
             try:
-                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
+                with _ResilientSMTPSSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
                     smtp.login(self.user, self.password)
                     smtp.send_message(msg)
                 print(f"[email] 已回信 → {to}:{subject[:40]}")
                 return
             except Exception as e:
                 last_err = e
-                time.sleep(2)
+                if not _transient_smtp_error(e) or attempt == 2:
+                    break
+                time.sleep(1.5 * (2 ** attempt))
         if last_err:
             raise last_err
 
@@ -505,7 +630,7 @@ class EmailChannel:
         result["smtp_target"] = f"{self.smtp_host}:{self.smtp_port}"
         ctx = ssl.create_default_context()
         try:
-            with imaplib.IMAP4_SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
+            with _ResilientIMAP4SSL(self.imap_host, self.imap_port, ssl_context=ctx, timeout=20) as imap:
                 imap.login(self.user, self.password)
                 imap.select("INBOX")
                 imap.logout()
@@ -521,7 +646,7 @@ class EmailChannel:
                 result["error"] = f"IMAP 失败 ({result['imap_target']}): {e}"
             return result
         try:
-            with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
+            with _ResilientSMTPSSL(self.smtp_host, self.smtp_port, context=ctx, timeout=20) as smtp:
                 smtp.login(self.user, self.password)
             result["smtp"] = True
         except Exception as e:

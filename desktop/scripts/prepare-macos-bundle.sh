@@ -108,6 +108,8 @@ install_python_dependencies() {
   "$PY_RUNTIME/bin/python3" -m ensurepip --upgrade
   "$PY_RUNTIME/bin/python3" -m pip install -U pip
   "$PY_RUNTIME/bin/python3" -m pip install --no-warn-script-location "$RESOURCE_APP[all]"
+  PLAYWRIGHT_BROWSERS_PATH="$RESOURCE_APP/runtime/ms-playwright" \
+    "$PY_RUNTIME/bin/python3" -m playwright install chromium
   "$PY_RUNTIME/bin/python3" -c "import fastapi, uvicorn, server.app; print('embedded backend import ok')"
   find "$PY_RUNTIME/lib/python3.12/site-packages" \
     \( -type d -name tests -o -type d -name test -o -type d -name __pycache__ \) \

@@ -332,7 +332,9 @@ async def _deliver_result(channel: str, to: str, subject: str, body: str) -> Non
         raise RuntimeError(f"delivery channel is not enabled: {channel}")
     if channel == "email":
         target = to or ch.user
-        await ch._send_email(target, subject, body, attachments=_extract_artifacts(body))
+        sent = await ch._send_email(target, subject, body, attachments=_extract_artifacts(body))
+        if not sent:
+            raise RuntimeError("email delivery was queued for retry or rejected by the mail server")
     elif channel == "wecom":
         target = (to or "").strip()
         if not target:

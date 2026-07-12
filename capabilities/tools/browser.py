@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from core.types import CapabilityResult, Risk
@@ -37,6 +38,16 @@ _SITE_POLICIES: SitePolicyStore | None = None
 
 def _default_headless() -> bool:
     return os.environ.get("AGENT_BROWSER_HEADLESS", "1").strip() != "0"
+
+
+def _configure_bundled_browser_path() -> None:
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip():
+        return
+    executable = os.path.realpath(sys.executable)
+    runtime = os.path.dirname(os.path.dirname(os.path.dirname(executable)))
+    candidate = os.path.join(runtime, "ms-playwright")
+    if os.path.isdir(candidate):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = candidate
 
 
 def _state_file(context: BrowserContextKey) -> str:
@@ -86,6 +97,7 @@ async def _ensure_page(context: BrowserContextKey, headless: bool | None = None)
     显式传 True/False 时,若与当前模式不同则**重启浏览器**切换(供登录助手开可见窗口)。
     """
     global _PW
+    _configure_bundled_browser_path()
     want = _default_headless() if headless is None else headless
     session = _SESSIONS.get(context.value)
     if session and session["headless"] == want:
