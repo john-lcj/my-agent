@@ -1,50 +1,83 @@
-"""电脑 GUI 控制 —— macOS 原生实现(screencapture + osascript),零额外依赖。
-
-安全设计:
-- 风险固定为 DESTRUCTIVE,每次调用都会过治理层确认。
-- 每个动作执行前后自动截图存证(存入 logs/gui_trace/),可供审计/回放。
-- 高危动作(type/key)要求调用者在 intent 里说明原因。
-
-支持的 action:
-  screenshot  截取当前屏幕,存入 logs/gui_trace/ 并返回路径。
-  click       在指定坐标点击(需 x, y)。
-  move        移动鼠标到指定坐标(不点击)。
-  type        在当前焦点处键入文本(需 text)。
-  key         发送一个按键组合,如 "command+c"(需 key)。
-  open_app    通过 osascript 打开一个应用(需 app_name)。
-"""
+"""macOS computer observation and GUI control with audited screenshots."""
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from typing import Any
 
+from config import Config
+from core.computer_access import computer_permission_status
 from core.types import CapabilityResult, Risk
 
-_TRACE_DIR = os.path.join("logs", "gui_trace")
+_TRACE_DIR = os.path.join(Config.LOG_DIR, "gui_trace")
 
 
-class GUIControl:
-    name = "gui.control"
-    risk = Risk.DESTRUCTIVE
+class GUIObserve:
+    name = "gui.observe"
+    risk = Risk.READ
     description = (
-        "控制电脑图形界面:截图/移动鼠标/点击/键入/发送按键/打开应用。"
-        "每个动作前后自动截图留证。高危能力,默认需确认。"
+        "Observe the local Mac before acting: check Accessibility and Screen Recording permissions, "
+        "capture the screen, identify the frontmost application, or list its windows."
     )
     schema = {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["screenshot", "click", "move", "type", "key", "open_app"],
+                "enum": ["status", "screenshot", "frontmost", "windows"],
+                "description": "Observation to perform",
+            }
+        },
+        "required": ["action"],
+    }
+
+    async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
+        action = str(args.get("action", "")).strip()
+        try:
+            if action == "status":
+                return CapabilityResult(ok=True, output=json.dumps(computer_permission_status(), ensure_ascii=False))
+            if action == "screenshot":
+                path = _trace_path("screenshot")
+                await _screenshot(path)
+                return CapabilityResult(ok=True, output=f"screenshot:{path}")
+            if action == "frontmost":
+                output = await _osascript(
+                    'tell application "System Events" to get name of first application process whose frontmost is true'
+                )
+                return CapabilityResult(ok=True, output=output)
+            if action == "windows":
+                output = await _osascript(
+                    'tell application "System Events" to tell first application process whose frontmost is true '
+                    'to get name of every window'
+                )
+                return CapabilityResult(ok=True, output=output or "(no windows)")
+            return CapabilityResult(ok=False, error=f"unsupported observation action: {action}")
+        except Exception as exc:
+            return CapabilityResult(ok=False, error=str(exc))
+
+
+class GUIControl:
+    name = "gui.control"
+    risk = Risk.DESTRUCTIVE
+    description = (
+        "Control the local Mac after observing it: click coordinates or a named UI element, type text, "
+        "send a keyboard shortcut, or activate an application. Actions are captured before and after."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["click", "double_click", "click_named", "type", "key", "open_app"],
                 "description": "GUI action to execute",
             },
-            "x": {"type": "number", "description": "Screen X coordinate for click/move"},
-            "y": {"type": "number", "description": "Screen Y coordinate for click/move"},
-            "text": {"type": "string", "description": "Text to type"},
-            "key": {"type": "string", "description": "Key combination, for example 'command+c'"},
-            "app_name": {"type": "string", "description": "Application name for open_app"},
+            "x": {"type": "number", "description": "Screen X coordinate"},
+            "y": {"type": "number", "description": "Screen Y coordinate"},
+            "text": {"type": "string", "description": "Text to type or UI element name"},
+            "key": {"type": "string", "description": "Shortcut, for example command+c or enter"},
+            "app_name": {"type": "string", "description": "Application name"},
         },
         "required": ["action"],
     }
@@ -52,94 +85,151 @@ class GUIControl:
     async def invoke(self, args: dict, ctx: Any) -> CapabilityResult:
         action = str(args.get("action", "")).strip()
         os.makedirs(_TRACE_DIR, exist_ok=True)
-        ts = int(time.time() * 1000)
-
-        # 动作前截图(screenshot 动作本身跳过前截图)
-        if action != "screenshot":
-            before = os.path.join(_TRACE_DIR, f"{ts}_before_{action}.png")
-            await _screenshot(before)
-
+        before = _trace_path(f"before_{action}")
+        after = _trace_path(f"after_{action}")
         try:
-            if action == "screenshot":
-                path = os.path.join(_TRACE_DIR, f"{ts}_screenshot.png")
-                await _screenshot(path)
-                return CapabilityResult(ok=True, output=f"截图已保存:{path}")
-
-            elif action == "click":
-                x, y = int(args.get("x", 0)), int(args.get("y", 0))
-                await _osascript(f'tell application "System Events" to click at {{{x}, {y}}}')
-
-            elif action == "move":
-                x, y = int(args.get("x", 0)), int(args.get("y", 0))
-                await _osascript(
-                    f'tell application "System Events" '
-                    f'to set the position of the mouse to {{{x}, {y}}}'
+            status = computer_permission_status()
+            if not status.get("accessibility"):
+                return CapabilityResult(
+                    ok=False,
+                    error="macOS Accessibility permission is not enabled for Captain; open Settings > Privacy & Security > Accessibility",
                 )
-
+            if not status.get("screen_recording"):
+                return CapabilityResult(
+                    ok=False,
+                    error="macOS Screen Recording permission is not enabled for Captain; open Settings > Privacy & Security > Screen Recording",
+                )
+            await _screenshot(before)
+            if action in {"click", "double_click"}:
+                x, y = int(args.get("x", 0)), int(args.get("y", 0))
+                count = 2 if action == "double_click" else 1
+                for _ in range(count):
+                    await _osascript(f'tell application "System Events" to click at {{{x}, {y}}}')
+                    if count > 1:
+                        await asyncio.sleep(0.08)
+            elif action == "click_named":
+                target = str(args.get("text", "")).strip()
+                if not target:
+                    return CapabilityResult(ok=False, error="click_named requires text")
+                await _click_named(target)
             elif action == "type":
-                text = str(args.get("text", ""))
-                escaped = text.replace('"', '\\"')
-                await _osascript(
-                    f'tell application "System Events" to keystroke "{escaped}"'
-                )
-
+                await _paste_text(str(args.get("text", "")))
             elif action == "key":
-                combo = str(args.get("key", ""))
-                parts = [p.strip() for p in combo.split("+")]
-                key = parts[-1]
-                mods = [_MOD_MAP.get(m, m) for m in parts[:-1]]
-                mod_str = (", ".join(f"{{{m}}}" for m in mods)) if mods else ""
-                using_clause = f" using {{{', '.join(f'{m} down' for m in mods)}}}" if mods else ""
-                await _osascript(
-                    f'tell application "System Events" to keystroke "{key}"{using_clause}'
-                )
-
+                await _send_key(str(args.get("key", "")))
             elif action == "open_app":
-                app = str(args.get("app_name", ""))
-                await _osascript(f'tell application "{app}" to activate')
-
+                app = str(args.get("app_name", "")).strip()
+                if not app:
+                    return CapabilityResult(ok=False, error="open_app requires app_name")
+                proc = await asyncio.create_subprocess_exec(
+                    "open", "-a", app,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, err = await asyncio.wait_for(proc.communicate(), timeout=15)
+                if proc.returncode != 0:
+                    raise RuntimeError(err.decode("utf-8", "replace").strip() or "application could not be opened")
             else:
-                return CapabilityResult(ok=False, error=f"不支持的 action: {action}")
+                return CapabilityResult(ok=False, error=f"unsupported control action: {action}")
+            await asyncio.sleep(0.25)
+            await _screenshot(after)
+            return CapabilityResult(
+                ok=True,
+                output=json.dumps({"action": action, "before": before, "after": after}, ensure_ascii=False),
+            )
+        except Exception as exc:
+            return CapabilityResult(ok=False, error=str(exc))
 
-        except Exception as e:
-            return CapabilityResult(ok=False, error=str(e))
 
-        # 动作后截图
-        after = os.path.join(_TRACE_DIR, f"{ts}_after_{action}.png")
-        await _screenshot(after)
-
-        return CapabilityResult(ok=True, output=f"动作 [{action}] 已执行,截图存证:{after}")
-
-
-# ── 辅助 ──────────────────────────────────────────────────────────────────────
-
-_MOD_MAP = {
-    "command": "command key",
-    "cmd": "command key",
-    "shift": "shift key",
-    "option": "option key",
-    "alt": "option key",
-    "ctrl": "control key",
-    "control": "control key",
-}
+def _trace_path(label: str) -> str:
+    os.makedirs(_TRACE_DIR, exist_ok=True)
+    return os.path.abspath(os.path.join(_TRACE_DIR, f"{int(time.time() * 1000)}_{label}.png"))
 
 
 async def _screenshot(path: str) -> None:
-    """用系统 screencapture 截图(无需任何第三方库)。"""
     proc = await asyncio.create_subprocess_exec(
         "screencapture", "-x", "-t", "png", path,
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    await asyncio.wait_for(proc.communicate(), timeout=10)
-
-
-async def _osascript(script: str) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        "osascript", "-e", script,
-        stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, err = await asyncio.wait_for(proc.communicate(), timeout=15)
+    _, err = await asyncio.wait_for(proc.communicate(), timeout=10)
+    if proc.returncode != 0 or not os.path.isfile(path) or os.path.getsize(path) == 0:
+        try:
+            if os.path.exists(path):
+                os.unlink(path)
+        except OSError:
+            pass
+        detail = err.decode("utf-8", "replace").strip()
+        raise RuntimeError(detail or "screen capture failed; grant Screen Recording permission to Captain")
+
+
+async def _osascript(script: str) -> str:
+    return await _osascript_args(script, [])
+
+
+async def _osascript_args(script: str, args: list[str]) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        "osascript", "-e", script, "--", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await asyncio.wait_for(proc.communicate(), timeout=15)
     if proc.returncode != 0:
-        raise RuntimeError(err.decode("utf-8", "replace").strip())
+        raise RuntimeError(err.decode("utf-8", "replace").strip() or "AppleScript failed")
+    return out.decode("utf-8", "replace").strip()
+
+
+async def _paste_text(text: str) -> None:
+    script = """on run argv
+set previousClipboard to the clipboard
+set the clipboard to (item 1 of argv)
+tell application "System Events" to keystroke "v" using {command down}
+delay 0.15
+set the clipboard to previousClipboard
+end run"""
+    await _osascript_args(script, [text])
+
+
+async def _send_key(combo: str) -> None:
+    parts = [part.strip().lower() for part in combo.split("+") if part.strip()]
+    if not parts:
+        raise ValueError("key is required")
+    key = parts[-1]
+    modifier_map = {
+        "command": "command down", "cmd": "command down", "shift": "shift down",
+        "option": "option down", "alt": "option down", "ctrl": "control down", "control": "control down",
+    }
+    modifiers = [modifier_map[part] for part in parts[:-1] if part in modifier_map]
+    using = f" using {{{', '.join(modifiers)}}}" if modifiers else ""
+    key_codes = {"enter": 36, "return": 36, "tab": 48, "escape": 53, "esc": 53,
+                 "delete": 51, "backspace": 51, "left": 123, "right": 124,
+                 "down": 125, "up": 126, "space": 49}
+    if key in key_codes:
+        script = f'tell application "System Events" to key code {key_codes[key]}{using}'
+    else:
+        script = f'on run argv\n tell application "System Events" to keystroke (item 1 of argv){using}\nend run'
+    await _osascript_args(script, [] if key in key_codes else [key])
+
+
+async def _click_named(target: str) -> None:
+    script = """on run argv
+set targetName to item 1 of argv
+tell application "System Events"
+  set frontProcess to first application process whose frontmost is true
+  tell frontProcess
+    if (count of windows) is 0 then error "frontmost application has no window"
+    set candidates to entire contents of front window
+    repeat with candidate in candidates
+      try
+        set candidateName to name of candidate as text
+        set candidateDescription to description of candidate as text
+        if candidateName is targetName or candidateDescription is targetName then
+          perform action "AXPress" of candidate
+          return
+        end if
+      end try
+    end repeat
+  end tell
+end tell
+error "UI element not found: " & targetName
+end run"""
+    await _osascript_args(script, [target])

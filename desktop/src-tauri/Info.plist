@@ -4,5 +4,9 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Captain 需要访问麦克风以进行语音输入与连续对话。</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Captain 需要控制本机应用以完成你明确交办的电脑操作。</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Captain 需要查看屏幕，才能在操作前识别界面并在操作后验证结果。</string>
 </dict>
 </plist>

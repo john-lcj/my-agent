@@ -57,7 +57,7 @@ def test_vision_unconfigured():
 def test_new_caps_registered():
     from core.bootstrap import build_registry
     names = {s.get("name") for s in build_registry("interactive").specs()}
-    for n in ("fs.search", "browser.open", "browser.click", "browser.fill", "vision.see"):
+    for n in ("fs.search", "browser.open", "browser.click", "browser.fill", "vision.see", "gui.observe", "gui.control"):
         assert n in names, f"{n} 未注册"
 
 

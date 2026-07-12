@@ -201,6 +201,8 @@ except Exception as _ve:
     _vault = None
     print(f"[server] 凭据保险库初始化失败: {_ve}")
 _runtime_cfg = RuntimeConfigStore(path=f"{Config.LOG_DIR}/runtime.json")
+from core.computer_access import apply_computer_access_mode
+apply_computer_access_mode(_runtime_cfg.get_computer_access_mode())
 if not os.environ.get("VISION_MODEL", "").strip():
     _vm = (_runtime_cfg.load().get("vision_model") or "").strip()
     if _vm:
@@ -852,7 +854,7 @@ def create_app():
     from server.routers.system import register_system
     register_system(app, _task_store, _template_store, _vault, _ext_channels,
                     _scheduler_holder, _daemon_results, _START_TS,
-                    _runtime_leader_state)
+                    _runtime_leader_state, _runtime_cfg)
 
     from server.routers.backup import register_backup
     register_backup(app)

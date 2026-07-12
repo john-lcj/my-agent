@@ -48,7 +48,7 @@ _BUILTIN_NAMES = frozenset({
     "model_key.list", "model_key.clear", "suggest.add", "suggest.list",
     "notify.email",
     "git.read", "git.commit", "calendar.add", "calendar.list", "calendar.remove",
-    "gui.control", "github.me", "github.list_repos", "github.get_repo",
+    "gui.observe", "gui.control", "github.me", "github.list_repos", "github.get_repo",
     "github.list_issues", "github.create_issue", "skill.claude_design",
     "skill.csv_stats", "skill.date_calc", "skill.design_taste_frontend",
     "skill.docx_writer", "skill.file_append", "skill.file_edit",
@@ -77,6 +77,8 @@ def _builtin_manifest(cap: Any) -> CapabilityManifest | None:
         data_scope = "workspace"
     elif name.startswith("browser."):
         data_scope = "browser-session"
+    elif name.startswith("gui."):
+        data_scope = "local-computer"
     elif name.startswith(("memory.", "program.", "secret.", "model_key.", "schedule.", "monitor.", "goal.", "suggest.")):
         data_scope = "agent-state"
     elif name.startswith(("web.", "exa.", "http.", "github.")):

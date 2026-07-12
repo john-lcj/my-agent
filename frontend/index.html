@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Captain"/>
 <meta name="theme-color" content="#0d0d0d"/>
 <title>Captain</title>
-<link rel="stylesheet" href="/styles.css?v=20260711b">
+<link rel="stylesheet" href="/styles.css?v=20260712a">
 </head>
 <body>
 
@@ -503,6 +503,36 @@
             </select>
             <div class="field-hint" style="margin-top:6px">建议客户默认使用“平衡”；涉及敏感数据或生产文件时使用“保守”。</div>
           </div>
+          <div class="field-group computer-access-card">
+            <div class="field-label">电脑访问</div>
+            <div class="computer-access-modes" role="group" aria-label="电脑访问范围">
+              <button type="button" data-computer-mode="workspace" onclick="setComputerAccessMode('workspace')">
+                工作区访问
+              </button>
+              <button type="button" data-computer-mode="full" onclick="setComputerAccessMode('full')">
+                完全电脑访问
+              </button>
+            </div>
+            <div class="field-hint" id="computer-access-root">正在检查访问范围…</div>
+            <div class="computer-permissions">
+              <div class="computer-permission-row">
+                <span>辅助功能</span><span class="computer-permission-state" id="computer-accessibility-state">检查中</span>
+                <button type="button" class="btn-sm" onclick="openComputerPrivacySettings('accessibility')">打开设置</button>
+              </div>
+              <div class="computer-permission-row">
+                <span>屏幕录制</span><span class="computer-permission-state" id="computer-screen-state">检查中</span>
+                <button type="button" class="btn-sm" onclick="openComputerPrivacySettings('screen_recording')">打开设置</button>
+              </div>
+              <div class="computer-permission-row full-disk-row" id="computer-full-disk-row" hidden>
+                <span>完全磁盘访问</span><span class="computer-permission-state">按需开启</span>
+                <button type="button" class="btn-sm" onclick="openComputerPrivacySettings('full_disk')">打开设置</button>
+              </div>
+            </div>
+            <div class="computer-access-actions">
+              <button type="button" class="btn-sm" onclick="loadComputerAccessStatus(true)">重新检测</button>
+              <span id="computer-access-message" aria-live="polite"></span>
+            </div>
+          </div>
           <div class="security-help-card" id="security-help-card">
             <div class="security-help-title">安全边界设置</div>
             <div class="security-help-desc">
@@ -985,7 +1015,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<script src="/app.js?v=20260711b"></script>
+<script src="/app.js?v=20260712a"></script>
 
 <!-- ══ 任务 Mission ════════════════════════════════════════════ -->
 <div class="overlay" id="mission-overlay">

@@ -108,8 +108,8 @@ def build_registry(
             GitRead(), GitCommit(),
             CalendarAdd(), CalendarList(), CalendarRemove()]
     if profile in _gui_capable_profiles():
-        from capabilities.gui import GUIControl
-        caps.append(GUIControl())
+        from capabilities.gui import GUIControl, GUIObserve
+        caps.extend([GUIObserve(), GUIControl()])
     if profile == "external":
         from capabilities.tools.notify import SendEmail
         caps.append(SendEmail())

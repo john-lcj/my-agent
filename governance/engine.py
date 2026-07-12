@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -169,6 +170,8 @@ class DeclarativePolicy:
 
     def _workspace_review(self, call: CapabilityCall):
         """fs.* 的 path 若落在工作区根之外:strict→BLOCK,否则→ASK。未配置则不干预。"""
+        if os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1":
+            return None
         if not self._ws_root:
             return None
         if not call.name.startswith("fs."):
@@ -296,6 +299,19 @@ class DeclarativePolicy:
         ws = self._workspace_review(call)
         if ws is not None:
             return ws
+
+        # Full computer access is an explicit local owner opt-in. It removes
+        # repeated GUI confirmations, while all hard blocks above still apply.
+        if (
+            call.name.startswith("gui.")
+            and authority == "owner"
+            and os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1"
+        ):
+            return GovReview(
+                Decision.ALLOW,
+                reason="full computer access was explicitly enabled by the local owner.",
+                rule="computer-access:full-owner",
+            )
 
         # P1-04: raw command strings are no longer an agent execution surface.
         # The residual runner accepts only an administrator-configured command_id

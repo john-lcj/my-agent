@@ -1829,7 +1829,7 @@ function switchSettingsTab(tab, el) {
   updateSettingsFooter(tab);
   if (tab === 'tasks') refreshTasks();
   if (tab === 'setup') loadSetupStatus();
-  if (tab === 'security') loadSetupStatus();
+  if (tab === 'security') { loadSetupStatus(); loadComputerAccessStatus(); }
   if (tab === 'governance') { loadGovStats(); loadAuditLog(); loadGovPolicy(); }
   if (tab === 'memory') loadMemoryAll();
   if (tab === 'usage') loadUsageStats();
@@ -3312,7 +3312,7 @@ async function loadSetupStatus() {
       return await r.json();
     } catch { return fallback; }
   };
-  const [cfg, modelsData, keysData, stats, lic, profileData, channelsData] = await Promise.all([
+  const [cfg, modelsData, keysData, stats, lic, profileData, channelsData, computerData] = await Promise.all([
     safeJson('/api/config', {}),
     safeJson('/api/models?all=true', { models: [] }),
     safeJson('/api/keys', { keys: {} }),
@@ -3320,6 +3320,7 @@ async function loadSetupStatus() {
     safeJson('/api/license/status', {}),
     safeJson('/api/profile', { profile: {} }),
     safeJson('/api/channels', { enabled: {}, config: {} }),
+    safeJson('/api/system/computer-access', { mode: 'workspace', permissions: {}, ready: false }),
   ]);
   const models = modelsData.models || [];
   const keys = keysData.keys || {};
@@ -3371,6 +3372,17 @@ async function loadSetupStatus() {
       stateText: security.workspace_root && security.auth_secret ? '稳妥' : '可加固',
       body: `${security.workspace_root ? '工作区已限制' : '未设置 AGENT_WORKSPACE_ROOT'}；${security.auth_secret ? 'AUTH_SECRET 已设置' : 'AUTH_SECRET 建议随机化'}。`,
       action: '安全设置',
+      tab: 'security',
+    },
+    {
+      key: 'computer',
+      title: '电脑控制',
+      state: computerData.ready ? 'ok' : 'warn',
+      stateText: computerData.ready ? '已就绪' : '需授权',
+      body: computerData.ready
+        ? `macOS 控制权限已就绪；当前为${computerData.mode === 'full' ? '完全电脑访问' : '工作区访问'}。`
+        : '需要在 macOS 隐私与安全中允许 Captain 使用辅助功能和屏幕录制。',
+      action: '电脑访问设置',
       tab: 'security',
     },
     {
@@ -3499,6 +3511,7 @@ async function loadSettingsUI() {
   await loadModelOptions(cfg.model || 'deepseek-v4-flash');
   await loadModelKeys();
   loadAccessTokenField();
+  loadComputerAccessStatus();
   document.getElementById('cfg-governance-mode').value = cfg.governanceMode || 'balanced';
   document.getElementById('cfg-max-cost').value = cfg.maxCost ?? '';
   // 0 / 空 = 无限制(显示为空,placeholder 提示); 非 0 显示具体数字
@@ -3542,6 +3555,84 @@ async function loadSettingsUI() {
   } catch { /* 离线 */ }
   loadSetupStatus();
 }
+
+async function loadComputerAccessStatus(showResult = false) {
+  const message = document.getElementById('computer-access-message');
+  try {
+    const response = await fetch('/api/system/computer-access', {cache:'no-store'});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || '状态读取失败');
+    document.querySelectorAll('[data-computer-mode]').forEach(button => {
+      button.classList.toggle('active', button.dataset.computerMode === data.mode);
+    });
+    const root = document.getElementById('computer-access-root');
+    if (root) root.textContent = data.mode === 'full'
+      ? 'Captain 可访问整台电脑；系统隐私目录仍受 macOS 权限控制。'
+      : `Captain 的文件访问限制在：${data.workspace_root || '-'}`;
+    const accessibility = document.getElementById('computer-accessibility-state');
+    const screen = document.getElementById('computer-screen-state');
+    const setPermission = (element, enabled) => {
+      if (!element) return;
+      element.textContent = enabled ? '已允许' : '未允许';
+      element.classList.toggle('ok', !!enabled);
+    };
+    setPermission(accessibility, data.permissions?.accessibility);
+    setPermission(screen, data.permissions?.screen_recording);
+    const diskRow = document.getElementById('computer-full-disk-row');
+    if (diskRow) diskRow.hidden = data.mode !== 'full';
+    if (message) message.textContent = data.ready ? '电脑控制已就绪' : '请开启缺少的 macOS 权限，然后重新检测';
+    if (showResult) showToast(data.ready ? '电脑控制已就绪' : '仍有系统权限未开启', 2600);
+    return data;
+  } catch (error) {
+    if (message) message.textContent = `检测失败：${String(error.message || error)}`;
+    return null;
+  }
+}
+
+async function setComputerAccessMode(mode) {
+  if (!['workspace', 'full'].includes(mode)) return;
+  if (mode === 'full') {
+    const accepted = window.confirm(
+      '完全电脑访问会允许 Captain 读取和修改工作区之外的本机文件，并自动执行桌面操作。\n\n' +
+      '敏感凭据、支付、磁盘格式化和不可逆强制删除仍会被拦截。确认开启吗？'
+    );
+    if (!accepted) return;
+  }
+  const message = document.getElementById('computer-access-message');
+  if (message) message.textContent = '正在切换访问范围…';
+  try {
+    const response = await fetch('/api/system/computer-access', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode, confirmation: mode === 'full' ? 'FULL COMPUTER ACCESS' : ''}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || '切换失败');
+    reconnectWebSocket();
+    await loadComputerAccessStatus();
+    await loadSetupStatus();
+    showToast(mode === 'full' ? '完全电脑访问已开启' : '已恢复工作区访问', 2400);
+  } catch (error) {
+    if (message) message.textContent = `切换失败：${String(error.message || error)}`;
+    showToast(`切换失败：${String(error.message || error)}`, 3600);
+  }
+}
+
+async function openComputerPrivacySettings(kind) {
+  try {
+    const response = await fetch('/api/system/computer-access/open-settings', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({kind}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || '无法打开系统设置');
+    showToast('已打开系统设置；授权后请重新启动 Captain', 3600);
+  } catch (error) {
+    showToast(`无法打开系统设置：${String(error.message || error)}`, 3600);
+  }
+}
+
+window.loadComputerAccessStatus = loadComputerAccessStatus;
+window.setComputerAccessMode = setComputerAccessMode;
+window.openComputerPrivacySettings = openComputerPrivacySettings;
 
 const EMAIL_SERVER_HINTS = {
   'qq.com': { imap: 'imap.qq.com', smtp: 'smtp.qq.com', imap_port: '993', smtp_port: '465' },

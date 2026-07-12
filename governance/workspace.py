@@ -29,6 +29,10 @@ def resolve_path(raw_path: str, *, default: str = "", require_exists: bool = Fal
     if not os.path.isabs(candidate):
         candidate = os.path.join(root, candidate)
     resolved = os.path.realpath(candidate)
+    if os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1":
+        if require_exists and not os.path.exists(resolved):
+            return "", "path does not exist"
+        return resolved, ""
     if resolved != root and not resolved.startswith(root + os.sep):
         return "", "path is outside the authorized workspace"
     if require_exists and not os.path.exists(resolved):

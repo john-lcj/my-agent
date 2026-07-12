@@ -66,6 +66,7 @@ def test_readonly_endpoints_reachable():
                  "/api/monitors", "/api/suggestions", "/api/stats", "/api/usage",
                  "/api/governance/stats", "/api/audit", "/api/keys", "/api/channels",
                  "/api/briefing/preview",
+                 "/api/system/computer-access",
                  "/api/sessions", "/api/projects", "/api/tasks", "/api/memory/preferences"]:
         r = c.get(path, headers=_H)
         assert r.status_code == 200, f"{path} → {r.status_code}"

@@ -158,7 +158,7 @@ def _write_redacted_member(z: zipfile.ZipFile, source: str, arcname: str,
 
 def register_system(app, task_store, template_store, vault, ext_channels,
                     scheduler_holder, daemon_results, start_ts,
-                    leader_state=None) -> None:
+                    leader_state=None, runtime_cfg=None) -> None:
     """scheduler_holder = [Scheduler|None]；start_ts = 进程启动时刻（float）。"""
 
     @app.get("/api/stats")
@@ -190,6 +190,9 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             ),
             "web_host": os.environ.get("AGENT_WEB_HOST", "127.0.0.1"),
             "web_port": os.environ.get("AGENT_WEB_PORT", "8000"),
+            "computer_access_mode": (
+                runtime_cfg.get_computer_access_mode() if runtime_cfg else "workspace"
+            ),
         }
         return JSONResponse({
             "uptime_sec":       round(_time.time() - start_ts, 1),
@@ -208,6 +211,62 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "leader": dict(leader_state or {}),
             "security":         security,
         })
+
+    @app.get("/api/system/computer-access")
+    async def computer_access_status() -> JSONResponse:
+        from core.computer_access import computer_permission_status, full_computer_access_enabled
+
+        permissions = computer_permission_status()
+        return JSONResponse({
+            "ok": True,
+            "mode": runtime_cfg.get_computer_access_mode() if runtime_cfg else "workspace",
+            "full_access_active": full_computer_access_enabled(),
+            "workspace_root": os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(),
+            "permissions": permissions,
+            "ready": bool(permissions.get("accessibility") and permissions.get("screen_recording")),
+        })
+
+    @app.post("/api/system/computer-access")
+    async def set_computer_access(request: Request) -> JSONResponse:
+        from core.computer_access import FULL_ACCESS, apply_computer_access_mode, normalize_access_mode
+
+        client = request.client.host if request.client else ""
+        if client not in {"127.0.0.1", "::1"} or os.environ.get("CAPTAIN_DESKTOP", "") != "1":
+            return JSONResponse(
+                {"ok": False, "error": "computer access mode can only be changed locally in Captain.app"},
+                status_code=403,
+            )
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        mode = normalize_access_mode(body.get("mode"))
+        if mode == FULL_ACCESS and body.get("confirmation") != "FULL COMPUTER ACCESS":
+            return JSONResponse({"ok": False, "error": "explicit confirmation is required"}, status_code=400)
+        if runtime_cfg is None:
+            return JSONResponse({"ok": False, "error": "runtime configuration is unavailable"}, status_code=503)
+        runtime_cfg.save({"computer_access_mode": mode})
+        apply_computer_access_mode(mode)
+        return JSONResponse({
+            "ok": True,
+            "mode": mode,
+            "full_access_active": mode == FULL_ACCESS,
+            "workspace_root": os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(),
+        })
+
+    @app.post("/api/system/computer-access/open-settings")
+    async def open_computer_privacy_settings(request: Request) -> JSONResponse:
+        from core.computer_access import open_macos_privacy_settings
+
+        client = request.client.host if request.client else ""
+        if client not in {"127.0.0.1", "::1"} or os.environ.get("CAPTAIN_DESKTOP", "") != "1":
+            return JSONResponse({"ok": False, "error": "local Captain.app only"}, status_code=403)
+        try:
+            body = await request.json()
+            open_macos_privacy_settings(str(body.get("kind") or ""))
+            return JSONResponse({"ok": True})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
     @app.post("/api/system/security/access-token")
     async def set_access_token(request: Request) -> JSONResponse:

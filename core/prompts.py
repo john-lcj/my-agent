@@ -146,6 +146,14 @@ def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
             "- 你是单个 agent 顺序执行——不要假设有别的 agent 并行替你干;一件件做完、一项项勾掉。\n"
             "- 简单的一两步小任务不必列清单,直接做。"
         )
+    if any(c.get("name", "").startswith("gui.") for c in capability_specs):
+        lines.append(
+            "【本机电脑操作】\n"
+            "- 需要操作桌面应用时,先用 gui.observe(status) 检查 macOS 权限;缺权限就明确告诉主人需要开启哪一项。\n"
+            "- 每一步遵循观察→行动→验证:先 gui.observe(screenshot/frontmost/windows),再 gui.control,随后重新截图确认结果。\n"
+            "- 优先用 click_named 和明确的应用/窗口信息;只有看过最新截图后才使用坐标点击,不要凭空猜坐标。\n"
+            "- 浏览器网页优先使用 browser.* 的语义控件;只有系统应用或 browser.* 无法覆盖时才用 gui.*。"
+        )
     # 若具备记忆能力,提示模型主动使用,把"记住你"变成可执行行为。
     has_memory = any(c.get("name", "").startswith("memory.") for c in capability_specs)
     if has_memory:

@@ -63,6 +63,11 @@ class RuntimeConfigStore:
     def get_governance_mode(self, fallback: str | None = None) -> str:
         return self.load().get("governance_mode") or fallback or Config.GOVERNANCE_MODE
 
+    def get_computer_access_mode(self) -> str:
+        from core.computer_access import normalize_access_mode
+
+        return normalize_access_mode(self.load().get("computer_access_mode"))
+
     def get_max_steps(self) -> int:
         """返回最大步数;0 表示无限制。未设置则用 Config.MAX_STEPS。"""
         raw = self.load().get("max_steps")
