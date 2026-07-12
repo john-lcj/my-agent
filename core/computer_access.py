@@ -1,10 +1,10 @@
 """Runtime computer access mode and macOS permission diagnostics."""
 from __future__ import annotations
 
+import ctypes
 import os
 import platform
 import subprocess
-import tempfile
 
 
 WORKSPACE_ACCESS = "workspace"
@@ -33,6 +33,32 @@ def full_computer_access_enabled() -> bool:
     return os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1"
 
 
+def _macos_accessibility_trusted() -> bool:
+    try:
+        framework = ctypes.CDLL(
+            "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+        )
+        check = framework.AXIsProcessTrusted
+        check.argtypes = []
+        check.restype = ctypes.c_bool
+        return bool(check())
+    except (AttributeError, OSError):
+        return False
+
+
+def _macos_screen_capture_trusted() -> bool:
+    try:
+        framework = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        check = framework.CGPreflightScreenCaptureAccess
+        check.argtypes = []
+        check.restype = ctypes.c_bool
+        return bool(check())
+    except (AttributeError, OSError):
+        return False
+
+
 def computer_permission_status() -> dict:
     status = {
         "platform": platform.system().lower(),
@@ -42,34 +68,10 @@ def computer_permission_status() -> dict:
     }
     if platform.system() != "Darwin":
         return status
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", 'tell application "System Events" to get UI elements enabled'],
-            capture_output=True, text=True, timeout=5,
-        )
-        status["accessibility"] = result.returncode == 0 and result.stdout.strip().lower() == "true"
-    except (OSError, subprocess.SubprocessError):
-        pass
-    path = ""
-    try:
-        fd, path = tempfile.mkstemp(prefix="captain-screen-check-", suffix=".png")
-        os.close(fd)
-        os.unlink(path)
-        result = subprocess.run(
-            ["screencapture", "-x", "-t", "png", path],
-            capture_output=True, text=True, timeout=8,
-        )
-        status["screen_recording"] = (
-            result.returncode == 0 and os.path.isfile(path) and os.path.getsize(path) > 0
-        )
-    except (OSError, subprocess.SubprocessError):
-        pass
-    finally:
-        if path and os.path.exists(path):
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+    # These preflight APIs are read-only. Unlike screencapture, osascript, or
+    # CGRequestScreenCaptureAccess, they never display an authorization prompt.
+    status["accessibility"] = _macos_accessibility_trusted()
+    status["screen_recording"] = _macos_screen_capture_trusted()
     return status
 
 
@@ -79,7 +81,11 @@ def open_macos_privacy_settings(kind: str) -> None:
         "screen_recording": "Privacy_ScreenCapture",
         "full_disk": "Privacy_AllFiles",
     }
-    page = pages.get(str(kind or "").strip())
+    kind = str(kind or "").strip()
+    page = pages.get(kind)
     if platform.system() != "Darwin" or not page:
         raise ValueError("unsupported macOS privacy settings page")
-    subprocess.Popen(["open", f"x-apple.systempreferences:com.apple.preference.security?{page}"])
+    # Opening Settings is the only behavior here. Never attempt a protected
+    # operation in the background because macOS may repeatedly prompt for it.
+    modern = f"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?{page}"
+    subprocess.Popen(["open", modern])

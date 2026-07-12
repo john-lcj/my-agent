@@ -3580,8 +3580,10 @@ async function loadComputerAccessStatus(showResult = false) {
     setPermission(screen, data.permissions?.screen_recording);
     const diskRow = document.getElementById('computer-full-disk-row');
     if (diskRow) diskRow.hidden = data.mode !== 'full';
-    if (message) message.textContent = data.ready ? '电脑控制已就绪' : '请开启缺少的 macOS 权限，然后重新检测';
-    if (showResult) showToast(data.ready ? '电脑控制已就绪' : '仍有系统权限未开启', 2600);
+    if (message) message.textContent = data.ready
+      ? '电脑控制已就绪'
+      : '请在系统设置里允许「Captain」，授权后完全退出并重新打开 App，再点重新检测';
+    if (showResult) showToast(data.ready ? '电脑控制已就绪' : '仍有系统权限未开启；授权后需重启 Captain', 3200);
     return data;
   } catch (error) {
     if (message) message.textContent = `检测失败：${String(error.message || error)}`;
@@ -3624,7 +3626,7 @@ async function openComputerPrivacySettings(kind) {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || '无法打开系统设置');
-    showToast('已打开系统设置；授权后请重新启动 Captain', 3600);
+    showToast('已打开系统设置。若列表没有 Captain，点「+」添加 /Applications/Captain.app；打开开关后请完全退出并重开', 5200);
   } catch (error) {
     showToast(`无法打开系统设置：${String(error.message || error)}`, 3600);
   }

@@ -70,6 +70,41 @@ def test_screenshot_failure_is_not_reported_as_success(tmp_path, monkeypatch):
         asyncio.run(_screenshot(str(tmp_path / "screen.png")))
 
 
+def test_permission_status_uses_non_prompting_preflight(monkeypatch):
+    import core.computer_access as access
+
+    monkeypatch.setattr(access.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(access, "_macos_accessibility_trusted", lambda: True)
+    monkeypatch.setattr(access, "_macos_screen_capture_trusted", lambda: False)
+    monkeypatch.setattr(
+        access.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("protected command executed")),
+    )
+    assert access.computer_permission_status() == {
+        "platform": "darwin",
+        "supported": True,
+        "accessibility": True,
+        "screen_recording": False,
+    }
+
+
+def test_open_settings_does_not_trigger_protected_operation(monkeypatch):
+    import core.computer_access as access
+
+    calls = []
+    monkeypatch.setattr(access.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(access.subprocess, "Popen", lambda argv: calls.append(argv))
+    monkeypatch.setattr(
+        access.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("protected command executed")),
+    )
+    access.open_macos_privacy_settings("screen_recording")
+    assert len(calls) == 1
+    assert calls[0][0] == "open"
+
+
 def test_local_desktop_can_toggle_full_access_with_explicit_confirmation(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import server.app as appmod
