@@ -608,13 +608,32 @@ fn candidate_python_paths(root: &Path) -> Vec<PathBuf> {
     candidates
 }
 
-fn resolve_python(root: &Path) -> PathBuf {
+fn resolve_python(root: &Path, packaged_python: Option<&Path>) -> PathBuf {
+    if let Some(candidate) = packaged_python {
+        if candidate.is_file() {
+            return candidate.to_path_buf();
+        }
+    }
     for candidate in candidate_python_paths(root) {
         if candidate.components().count() == 1 || candidate.is_file() {
             return candidate;
         }
     }
     PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
+}
+
+fn packaged_python_path(resource_dir: &Path) -> Option<PathBuf> {
+    let executable = if cfg!(windows) {
+        PathBuf::from("python.exe")
+    } else {
+        PathBuf::from("bin").join("python3")
+    };
+    [
+        resource_dir.join("resources").join("app").join("runtime").join("python").join(&executable),
+        resource_dir.join("app").join("runtime").join("python").join(&executable),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 fn port_available(port: u16) -> bool {
@@ -812,8 +831,8 @@ h1{{font-size:22px;margin:0 0 10px}} code{{background:#f0ece5;border-radius:6px;
     Ok(path)
 }
 
-fn spawn_backend(root: &Path, port: u16) -> Result<Child, io::Error> {
-    let python = resolve_python(root);
+fn spawn_backend(root: &Path, port: u16, packaged_python: Option<&Path>) -> Result<Child, io::Error> {
+    let python = resolve_python(root, packaged_python);
     let log_dir = support_log_dir(root);
     let stdout = fs::OpenOptions::new()
         .create(true)
@@ -934,13 +953,17 @@ fn main() {
                 .ok()
                 .and_then(|raw| raw.parse::<u16>().ok())
                 .unwrap_or(8000);
+            let packaged_python = app
+                .path_resolver()
+                .resource_dir()
+                .and_then(|resource_dir| packaged_python_path(&resource_dir));
 
             let (port, preferred_port, port_switched, spawned_child) =
                 if let Some(existing) = find_existing_backend(&root) {
                     (existing, preferred, existing != preferred, None)
                 } else {
                     let (port, preferred_port, port_switched) = pick_port();
-                    let child = spawn_backend(&root, port)?;
+                    let child = spawn_backend(&root, port, packaged_python.as_deref())?;
                     (port, preferred_port, port_switched, Some(child))
                 };
 

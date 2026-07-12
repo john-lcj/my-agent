@@ -222,6 +222,7 @@ def register_system(app, task_store, template_store, vault, ext_channels,
             "mode": runtime_cfg.get_computer_access_mode() if runtime_cfg else "workspace",
             "full_access_active": full_computer_access_enabled(),
             "workspace_root": os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(),
+            "backend_executable": os.sys.executable,
             "permissions": permissions,
             "ready": bool(permissions.get("accessibility") and permissions.get("screen_recording")),
         })

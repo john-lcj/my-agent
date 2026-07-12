@@ -707,6 +707,7 @@ option{background:var(--card)}
 .computer-access-modes button[data-computer-mode="full"].active{color:var(--red);background:rgba(220,38,38,.06)}
 .computer-permissions{display:grid;gap:6px;margin-top:12px}
 .computer-permission-row{display:grid;grid-template-columns:minmax(100px,1fr) auto auto;gap:8px;align-items:center;min-height:34px;font-size:12px}
+.computer-permission-row[hidden]{display:none!important}
 .computer-permission-state{color:var(--yellow);white-space:nowrap}
 .computer-permission-state.ok{color:var(--green)}
 .computer-access-actions{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11px;color:var(--muted)}
