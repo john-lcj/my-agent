@@ -11,6 +11,7 @@ Profile 说明:
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -103,10 +104,11 @@ def build_registry(
             GoalSet(), GoalList(), GoalRemove(),
             ChannelStatus(), ChannelConfigure(),
             ModelKeySave(), ModelKeyList(), ModelKeyClear(),
-            ExaSearch(),
             SuggestAdd(), SuggestList(),
             GitRead(), GitCommit(),
             CalendarAdd(), CalendarList(), CalendarRemove()]
+    if os.environ.get("EXA_API_KEY", "").strip():
+        caps.append(ExaSearch())
     if profile in _gui_capable_profiles():
         from capabilities.gui import GUIControl, GUIObserve
         caps.extend([GUIObserve(), GUIControl()])

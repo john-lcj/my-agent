@@ -11,12 +11,20 @@ from capabilities.tools.exa_search import ExaSearch
 from core.types import Risk
 
 
-def test_registered():
+def test_registered_when_configured(monkeypatch):
     os.environ.setdefault("AGENT_LLM_PROVIDER", "mock")
+    monkeypatch.setenv("EXA_API_KEY", "configured")
     from core.bootstrap import build_registry
     reg = build_registry(profile="interactive")
     assert reg.get("exa.search") is not None
     assert reg.get("exa.search").risk == Risk.READ
+
+
+def test_hidden_when_unconfigured(monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    from core.bootstrap import build_registry
+    reg = build_registry(profile="interactive")
+    assert "exa.search" not in {item["name"] for item in reg.specs()}
 
 
 def test_no_key_clear_error(monkeypatch):
