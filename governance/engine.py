@@ -170,7 +170,10 @@ class DeclarativePolicy:
 
     def _workspace_review(self, call: CapabilityCall):
         """fs.* 的 path 若落在工作区根之外:strict→BLOCK,否则→ASK。未配置则不干预。"""
-        if os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1":
+        if (
+            os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1"
+            or os.environ.get("CAPTAIN_AUTONOMOUS_ACCESS", "") == "1"
+        ):
             return None
         if not self._ws_root:
             return None
@@ -180,7 +183,10 @@ class DeclarativePolicy:
         raw = str(call.args.get("path", "")).strip()
         if not raw:
             return None
-        target = _os.path.realpath(_os.path.expanduser(raw))
+        candidate = _os.path.expanduser(raw)
+        if not _os.path.isabs(candidate):
+            candidate = _os.path.join(self._ws_root, candidate)
+        target = _os.path.realpath(candidate)
         inside = target == self._ws_root or target.startswith(self._ws_root + _os.sep)
         if inside:
             return None
@@ -299,6 +305,22 @@ class DeclarativePolicy:
         ws = self._workspace_review(call)
         if ws is not None:
             return ws
+
+        # Autonomous access is a local-owner opt-in. It removes confirmation
+        # gates, but only after manifest, authority, catastrophic command, and
+        # sensitive-path checks above have passed.
+        if (
+            authority == "owner"
+            and os.environ.get("CAPTAIN_DESKTOP", "") == "1"
+            and os.environ.get("CAPTAIN_AUTONOMOUS_ACCESS", "") == "1"
+            and getattr(actor, "channel", "") in {"web", "cli"}
+            and not call.name.startswith("payment.")
+        ):
+            return GovReview(
+                Decision.ALLOW,
+                reason="local owner enabled autonomous computer access.",
+                rule="computer-access:autonomous-owner",
+            )
 
         # Full computer access is an explicit local owner opt-in. It removes
         # repeated GUI confirmations, while all hard blocks above still apply.

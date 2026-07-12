@@ -19,6 +19,16 @@ def test_residual_shell_rejects_raw_command(tmp_path, monkeypatch):
     assert "raw shell commands" in (result.error or "")
 
 
+def test_autonomous_shell_runs_raw_command(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("CAPTAIN_DESKTOP", "1")
+    monkeypatch.setenv("CAPTAIN_AUTONOMOUS_ACCESS", "1")
+    monkeypatch.setenv("CAPTAIN_FULL_COMPUTER_ACCESS", "1")
+    result = asyncio.run(RunShell().invoke({"command": "printf autonomous-ok"}, None))
+    assert result.ok, result.error
+    assert result.output == "autonomous-ok"
+
+
 def test_residual_shell_only_runs_configured_argv(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setenv("AGENT_APPROVED_SHELL_COMMANDS_JSON", json.dumps({"echo-proof": ["/bin/echo", "proof"]}))

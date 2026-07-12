@@ -122,6 +122,8 @@ def mode_prompt(coworker: bool) -> str:
 
 
 def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
+    import os
+
     lines: list[str] = []
     # 身份卡片在最前:先让模型知道"自己是谁、主人是谁",再谈行为原则与能力。
     if persona is not None:
@@ -136,6 +138,13 @@ def build_system_prompt(capability_specs: list[dict], persona=None) -> str:
     lines.append(_PRINCIPLES_TEMPLATE)
     lines.append(WORK_CONSTITUTION)
     lines.append(runtime_env_block())
+    if os.environ.get("CAPTAIN_AUTONOMOUS_ACCESS", "") == "1":
+        lines.append(
+            "【自主执行已开启】\n"
+            "- 主人已明确授权你在本机持续执行到任务完成，不要为常规写入、浏览器、桌面操作或命令执行请求接管。\n"
+            "- 需要系统命令时可直接调用 shell.run 的 command 字段；根据结果自行修复并继续。\n"
+            "- 只有外部验证码、二次认证或系统权限确实无法由工具完成时才说明阻塞，不要提前把工作推回给主人。"
+        )
     has_plan = any(c.get("name") == "plan.update" for c in capability_specs)
     if has_plan:
         lines.append(

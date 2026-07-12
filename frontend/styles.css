@@ -1,12 +1,12 @@
 /* Claude Cowork 三栏:暖灰侧栏 + 居中对话 + 右侧 Progress/Files/Context */
 :root{
-  --bg:#FAFAF8; --sb:#F3F2EE; --main:#FAFAF8; --panel:#FFFFFF; --card:#FFFFFF;
-  --border:#E8E6E1; --txt:#1A1A1A; --muted:#5C5C5C; --dim:#8A8A8A;
-  --accent:#D97757; --accent2:#C4684A; --accent-soft:#F5EBE6;
-  --blue:#2563EB; --green:#15803D; --red:#DC2626;
-  --yellow:#B8860B; --purple:#6B4FA8;
-  --r:12px; --r-sm:8px; --r-pill:999px; --r-composer:20px;
-  --trans:140ms ease;
+  --bg:#F5F5F7; --sb:rgba(245,245,247,.88); --main:#FFFFFF; --panel:#FFFFFF; --card:#FFFFFF;
+  --border:rgba(0,0,0,.09); --txt:#1D1D1F; --muted:#6E6E73; --dim:#8E8E93;
+  --accent:#0071E3; --accent2:#0077ED; --accent-soft:#E8F2FF;
+  --blue:#0071E3; --green:#248A3D; --red:#FF3B30;
+  --yellow:#A05A00; --purple:#8944AB;
+  --r:10px; --r-sm:7px; --r-pill:999px; --r-composer:18px;
+  --trans:160ms cubic-bezier(.2,.8,.2,1);
   --sb-w:240px;
   --sb-w-collapsed:0px;
   --wb-w:300px;
@@ -15,9 +15,9 @@
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#1a1a18; --sb:#252523; --main:#1a1a18; --panel:#2d2d2a; --card:#2d2d2a;
-    --border:#3a3a36; --txt:#ececec; --muted:#a8a8a4; --dim:#7a7a76;
-    --accent:#d97757; --accent2:#e88b6a; --accent-soft:#3d2e28;
+    --bg:#000000; --sb:rgba(28,28,30,.9); --main:#000000; --panel:#1C1C1E; --card:#1C1C1E;
+    --border:rgba(255,255,255,.12); --txt:#F5F5F7; --muted:#A1A1A6; --dim:#7D7D82;
+    --accent:#0A84FF; --accent2:#409CFF; --accent-soft:rgba(10,132,255,.16);
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1034,6 +1034,89 @@ option{background:var(--card)}
                                box-shadow:4px 0 24px rgba(0,0,0,.12)}
   #app.work-mode-chat #view-chat.has-messages .sb-toggle{display:inline-flex}
   .mode-switch{display:none}
+}
+
+/* Apple-like product finish: neutral materials, quiet hierarchy, restrained motion. */
+*{letter-spacing:0!important}
+body{background:var(--main);font-weight:400}
+#sidebar{
+  background:var(--sb);
+  -webkit-backdrop-filter:saturate(180%) blur(24px);
+  backdrop-filter:saturate(180%) blur(24px);
+  border-right-color:var(--border);
+}
+.chat-topbar{
+  min-height:56px;
+  padding:10px 22px;
+  background:color-mix(in srgb,var(--main) 88%,transparent);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  backdrop-filter:saturate(180%) blur(20px);
+}
+.sb-nav-item,.history-item-wrap,.settings-nav-item{border-radius:7px}
+.sb-nav-item:hover,.history-item-wrap:hover,.settings-nav-item:hover{background:rgba(0,0,0,.045)}
+.sb-nav-item.active,.settings-nav-item.active,.history-item-wrap:has(.history-item.current){
+  background:rgba(0,0,0,.065);
+  box-shadow:none;
+}
+#btn-new-chat{
+  min-height:38px;
+  background:rgba(255,255,255,.72);
+  border-color:rgba(0,0,0,.08);
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+}
+#btn-new-chat:hover{background:#fff;border-color:rgba(0,0,0,.12)}
+.msg{animation:apple-message-in 180ms cubic-bezier(.2,.8,.2,1)}
+@keyframes apple-message-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.msg-body.user-body{
+  background:var(--accent-soft);
+  border-color:color-mix(in srgb,var(--accent) 18%,transparent);
+  border-radius:14px;
+}
+.composer{
+  border-color:rgba(0,0,0,.11);
+  border-radius:var(--r-composer);
+  box-shadow:0 8px 28px rgba(0,0,0,.07),0 1px 3px rgba(0,0,0,.05);
+}
+.composer:focus-within{
+  border-color:color-mix(in srgb,var(--accent) 44%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent),0 10px 30px rgba(0,0,0,.08);
+}
+.btn-send{background:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn-send:hover{background:var(--accent2);transform:translateY(-1px)}
+.btn-send:active,button:active{transform:scale(.97)}
+.modal,.model-picker,.attach-menu{
+  border-color:rgba(0,0,0,.1);
+  box-shadow:0 24px 70px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.08);
+}
+.overlay{background:rgba(0,0,0,.22);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.settings-overlay .modal{border-radius:14px}
+.settings-nav{background:var(--bg)}
+.settings-content{padding:28px 32px 36px}
+.settings-content h2{font-size:20px;font-weight:650}
+.settings-content .settings-desc{max-width:58ch;line-height:1.5;margin-bottom:24px}
+.field-label{text-transform:none;color:var(--txt);font-size:13px;font-weight:600}
+.field-input,select{min-height:38px;background:var(--panel);border-color:rgba(0,0,0,.11)}
+.field-input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent)}
+.btn-sm{min-height:30px;background:var(--panel);border-color:rgba(0,0,0,.1)}
+.btn-sm:hover{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+.computer-access-card{padding:14px 0;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent}
+.computer-access-modes{grid-template-columns:repeat(3,minmax(0,1fr));border:0;background:rgba(0,0,0,.055);padding:3px}
+.computer-access-modes button.active{background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.computer-access-modes button[data-computer-mode="full"].active{color:var(--accent);background:var(--panel)}
+.computer-access-modes button[data-computer-mode="autonomous"].active{color:var(--red);background:var(--panel)}
+.security-help-card{display:none}
+.welcome-title{font-weight:600}
+.welcome-greet-ic,.msg-sparkle{filter:none!important;color:var(--accent)!important}
+@media (prefers-color-scheme:dark){
+  .sb-nav-item:hover,.history-item-wrap:hover,.settings-nav-item:hover{background:rgba(255,255,255,.07)}
+  .sb-nav-item.active,.settings-nav-item.active,.history-item-wrap:has(.history-item.current){background:rgba(255,255,255,.1)}
+  #btn-new-chat{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.1)}
+  #btn-new-chat:hover{background:rgba(255,255,255,.11)}
+  .composer{border-color:rgba(255,255,255,.14);box-shadow:0 12px 34px rgba(0,0,0,.42)}
+  .computer-access-modes{background:rgba(255,255,255,.09)}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
 /* ── 专注写作模式 ─────────────────────────────────────────────── */

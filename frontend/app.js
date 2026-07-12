@@ -3566,9 +3566,11 @@ async function loadComputerAccessStatus(showResult = false) {
       button.classList.toggle('active', button.dataset.computerMode === data.mode);
     });
     const root = document.getElementById('computer-access-root');
-    if (root) root.textContent = data.mode === 'full'
-      ? 'Captain 可访问整台电脑；系统隐私目录仍受 macOS 权限控制。'
-      : `Captain 的文件访问限制在：${data.workspace_root || '-'}`;
+    if (root) root.textContent = data.mode === 'autonomous'
+      ? 'Captain 会持续执行到完成，并可运行原始命令。灾难性操作仍受硬边界保护。'
+      : data.mode === 'full'
+        ? 'Captain 可访问整台电脑；产生副作用的操作仍会确认。'
+        : `Captain 的文件访问限制在：${data.workspace_root || '-'}`;
     const accessibility = document.getElementById('computer-accessibility-state');
     const screen = document.getElementById('computer-screen-state');
     const setPermission = (element, enabled) => {
@@ -3579,7 +3581,7 @@ async function loadComputerAccessStatus(showResult = false) {
     setPermission(accessibility, data.permissions?.accessibility);
     setPermission(screen, data.permissions?.screen_recording);
     const diskRow = document.getElementById('computer-full-disk-row');
-    if (diskRow) diskRow.hidden = data.mode !== 'full';
+    if (diskRow) diskRow.hidden = data.mode === 'workspace';
     if (message) message.textContent = data.ready
       ? '电脑控制已就绪'
       : '请在系统设置里允许「Captain」，授权后完全退出并重新打开 App，再点重新检测';
@@ -3592,11 +3594,18 @@ async function loadComputerAccessStatus(showResult = false) {
 }
 
 async function setComputerAccessMode(mode) {
-  if (!['workspace', 'full'].includes(mode)) return;
+  if (!['workspace', 'full', 'autonomous'].includes(mode)) return;
   if (mode === 'full') {
     const accepted = window.confirm(
       '完全电脑访问会允许 Captain 读取和修改工作区之外的本机文件，并自动执行桌面操作。\n\n' +
       '敏感凭据、支付、磁盘格式化和不可逆强制删除仍会被拦截。确认开启吗？'
+    );
+    if (!accepted) return;
+  }
+  if (mode === 'autonomous') {
+    const accepted = window.confirm(
+      '自主执行会允许 Captain 无需逐项确认地修改文件、操作应用、访问整台电脑并运行原始命令。\n\n' +
+      '磁盘格式化、凭据目录、支付和灾难性不可逆操作仍会被拦截。仅在你信任当前任务和模型时开启。'
     );
     if (!accepted) return;
   }
@@ -3605,14 +3614,22 @@ async function setComputerAccessMode(mode) {
   try {
     const response = await fetch('/api/system/computer-access', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({mode, confirmation: mode === 'full' ? 'FULL COMPUTER ACCESS' : ''}),
+      body:JSON.stringify({
+        mode,
+        confirmation: mode === 'full'
+          ? 'FULL COMPUTER ACCESS'
+          : mode === 'autonomous' ? 'AUTONOMOUS COMPUTER ACCESS' : '',
+      }),
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || '切换失败');
     reconnectWebSocket();
     await loadComputerAccessStatus();
     await loadSetupStatus();
-    showToast(mode === 'full' ? '完全电脑访问已开启' : '已恢复工作区访问', 2400);
+    showToast(
+      mode === 'autonomous' ? '自主执行已开启' : mode === 'full' ? '完全电脑访问已开启' : '已恢复工作区访问',
+      2400,
+    );
   } catch (error) {
     if (message) message.textContent = `切换失败：${String(error.message || error)}`;
     showToast(`切换失败：${String(error.message || error)}`, 3600);

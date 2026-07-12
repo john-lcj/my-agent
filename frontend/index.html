@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Captain"/>
 <meta name="theme-color" content="#0d0d0d"/>
 <title>Captain</title>
-<link rel="stylesheet" href="/styles.css?v=20260712a">
+<link rel="stylesheet" href="/styles.css?v=20260712b">
 </head>
 <body>
 
@@ -510,7 +510,10 @@
                 工作区访问
               </button>
               <button type="button" data-computer-mode="full" onclick="setComputerAccessMode('full')">
-                完全电脑访问
+                完全访问
+              </button>
+              <button type="button" data-computer-mode="autonomous" onclick="setComputerAccessMode('autonomous')">
+                自主执行
               </button>
             </div>
             <div class="field-hint" id="computer-access-root">正在检查访问范围…</div>
@@ -1015,7 +1018,7 @@ AUTH_SECRET=用随机字符串替换，例如运行: python -c "import secrets;p
   </div>
 </div>
 
-<script src="/app.js?v=20260712a"></script>
+<script src="/app.js?v=20260712b"></script>
 
 <!-- ══ 任务 Mission ════════════════════════════════════════════ -->
 <div class="overlay" id="mission-overlay">

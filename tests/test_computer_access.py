@@ -7,7 +7,12 @@ import pytest
 
 from capabilities.base import CapabilityRegistry
 from capabilities.gui import GUIControl, GUIObserve, _screenshot
-from core.computer_access import FULL_ACCESS, WORKSPACE_ACCESS, apply_computer_access_mode
+from core.computer_access import (
+    AUTONOMOUS_ACCESS,
+    FULL_ACCESS,
+    WORKSPACE_ACCESS,
+    apply_computer_access_mode,
+)
 from core.types import CapabilityCall, Decision, Identity
 from governance.engine import DeclarativePolicy
 from governance.workspace import resolve_path
@@ -53,6 +58,28 @@ def test_full_access_auto_allows_owner_gui_but_default_asks(monkeypatch):
     assert policy.review(call, Identity(), _Ctx()) == Decision.ASK
     monkeypatch.setenv("CAPTAIN_FULL_COMPUTER_ACCESS", "1")
     assert policy.review(call, Identity(), _Ctx()) == Decision.ALLOW
+
+
+def test_autonomous_access_allows_local_owner_writes_without_confirmation(monkeypatch):
+    from capabilities.tools.fs import WriteFile
+
+    registry = CapabilityRegistry([WriteFile()])
+    policy = DeclarativePolicy(registry, config_path="governance/policy.yaml")
+    call = CapabilityCall(name="fs.write", args={"path": "result.txt", "content": "done"})
+    monkeypatch.setenv("CAPTAIN_DESKTOP", "1")
+    monkeypatch.setenv("CAPTAIN_AUTONOMOUS_ACCESS", "1")
+    assert policy.review(call, Identity(channel="web"), _Ctx()) == Decision.ALLOW
+
+
+def test_autonomous_access_keeps_catastrophic_command_block(monkeypatch):
+    from capabilities.tools.shell import RunShell
+
+    registry = CapabilityRegistry([RunShell()])
+    policy = DeclarativePolicy(registry, config_path="governance/policy.yaml")
+    call = CapabilityCall(name="shell.run", args={"command": "rm -rf /"})
+    monkeypatch.setenv("CAPTAIN_DESKTOP", "1")
+    monkeypatch.setenv("CAPTAIN_AUTONOMOUS_ACCESS", "1")
+    assert policy.review(call, Identity(channel="web"), _Ctx()) == Decision.BLOCK
 
 
 def test_screenshot_failure_is_not_reported_as_success(tmp_path, monkeypatch):
@@ -123,6 +150,18 @@ def test_local_desktop_can_toggle_full_access_with_explicit_confirmation(tmp_pat
         )
         assert enabled.status_code == 200
         assert enabled.json()["full_access_active"] is True
+        autonomous_denied = client.post(
+            "/api/system/computer-access",
+            json={"mode": "autonomous", "confirmation": "FULL COMPUTER ACCESS"},
+        )
+        assert autonomous_denied.status_code == 400
+        autonomous = client.post(
+            "/api/system/computer-access",
+            json={"mode": "autonomous", "confirmation": "AUTONOMOUS COMPUTER ACCESS"},
+        )
+        assert autonomous.status_code == 200
+        assert autonomous.json()["autonomous_active"] is True
+        assert os.environ.get("CAPTAIN_AUTONOMOUS_ACCESS") == "1"
         restored = client.post("/api/system/computer-access", json={"mode": "workspace"})
         assert restored.status_code == 200
         assert restored.json()["full_access_active"] is False

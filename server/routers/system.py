@@ -214,13 +214,18 @@ def register_system(app, task_store, template_store, vault, ext_channels,
 
     @app.get("/api/system/computer-access")
     async def computer_access_status() -> JSONResponse:
-        from core.computer_access import computer_permission_status, full_computer_access_enabled
+        from core.computer_access import (
+            autonomous_computer_access_enabled,
+            computer_permission_status,
+            full_computer_access_enabled,
+        )
 
         permissions = computer_permission_status()
         return JSONResponse({
             "ok": True,
             "mode": runtime_cfg.get_computer_access_mode() if runtime_cfg else "workspace",
             "full_access_active": full_computer_access_enabled(),
+            "autonomous_active": autonomous_computer_access_enabled(),
             "workspace_root": os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(),
             "backend_executable": os.sys.executable,
             "permissions": permissions,
@@ -229,7 +234,12 @@ def register_system(app, task_store, template_store, vault, ext_channels,
 
     @app.post("/api/system/computer-access")
     async def set_computer_access(request: Request) -> JSONResponse:
-        from core.computer_access import FULL_ACCESS, apply_computer_access_mode, normalize_access_mode
+        from core.computer_access import (
+            AUTONOMOUS_ACCESS,
+            FULL_ACCESS,
+            apply_computer_access_mode,
+            normalize_access_mode,
+        )
 
         client = request.client.host if request.client else ""
         if client not in {"127.0.0.1", "::1"} or os.environ.get("CAPTAIN_DESKTOP", "") != "1":
@@ -244,6 +254,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
         mode = normalize_access_mode(body.get("mode"))
         if mode == FULL_ACCESS and body.get("confirmation") != "FULL COMPUTER ACCESS":
             return JSONResponse({"ok": False, "error": "explicit confirmation is required"}, status_code=400)
+        if mode == AUTONOMOUS_ACCESS and body.get("confirmation") != "AUTONOMOUS COMPUTER ACCESS":
+            return JSONResponse({"ok": False, "error": "autonomous access requires explicit confirmation"}, status_code=400)
         if runtime_cfg is None:
             return JSONResponse({"ok": False, "error": "runtime configuration is unavailable"}, status_code=503)
         runtime_cfg.save({"computer_access_mode": mode})
@@ -251,7 +263,8 @@ def register_system(app, task_store, template_store, vault, ext_channels,
         return JSONResponse({
             "ok": True,
             "mode": mode,
-            "full_access_active": mode == FULL_ACCESS,
+            "full_access_active": mode in {FULL_ACCESS, AUTONOMOUS_ACCESS},
+            "autonomous_active": mode == AUTONOMOUS_ACCESS,
             "workspace_root": os.environ.get("AGENT_WORKSPACE_ROOT", "") or os.getcwd(),
         })
 

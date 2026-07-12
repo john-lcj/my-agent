@@ -9,16 +9,18 @@ import subprocess
 
 WORKSPACE_ACCESS = "workspace"
 FULL_ACCESS = "full"
+AUTONOMOUS_ACCESS = "autonomous"
 _BASE_WORKSPACE_ROOT = os.environ.get("AGENT_WORKSPACE_ROOT", "").strip()
 
 
 def normalize_access_mode(value: str | None) -> str:
-    return FULL_ACCESS if str(value or "").strip().lower() == FULL_ACCESS else WORKSPACE_ACCESS
+    mode = str(value or "").strip().lower()
+    return mode if mode in {WORKSPACE_ACCESS, FULL_ACCESS, AUTONOMOUS_ACCESS} else WORKSPACE_ACCESS
 
 
 def apply_computer_access_mode(value: str | None) -> str:
     mode = normalize_access_mode(value)
-    if mode == FULL_ACCESS:
+    if mode in {FULL_ACCESS, AUTONOMOUS_ACCESS}:
         os.environ["CAPTAIN_FULL_COMPUTER_ACCESS"] = "1"
     else:
         os.environ.pop("CAPTAIN_FULL_COMPUTER_ACCESS", None)
@@ -26,11 +28,19 @@ def apply_computer_access_mode(value: str | None) -> str:
             os.environ["AGENT_WORKSPACE_ROOT"] = _BASE_WORKSPACE_ROOT
         else:
             os.environ.pop("AGENT_WORKSPACE_ROOT", None)
+    if mode == AUTONOMOUS_ACCESS:
+        os.environ["CAPTAIN_AUTONOMOUS_ACCESS"] = "1"
+    else:
+        os.environ.pop("CAPTAIN_AUTONOMOUS_ACCESS", None)
     return mode
 
 
 def full_computer_access_enabled() -> bool:
     return os.environ.get("CAPTAIN_FULL_COMPUTER_ACCESS", "") == "1"
+
+
+def autonomous_computer_access_enabled() -> bool:
+    return os.environ.get("CAPTAIN_AUTONOMOUS_ACCESS", "") == "1"
 
 
 def _macos_accessibility_trusted() -> bool:
